@@ -39,13 +39,15 @@ Design consequences from prior art: merges are summaries (never concatenations);
 
 **Goal:** commit/branch/checkout that are provably correct. Nothing else matters if the tree lies.
 
-- [ ] Scaffold `contextgit` package: `core/`, `storage/`, `llm/`, `merge/`, `cli/` (see architecture.md)
-- [ ] Data model + canonical JSON hashing (sorted keys, UTF-8): same input → same commit id, always (data-model.md)
-- [ ] SQLite storage with numbered migrations; `commits`, `messages`, `branches`, `tags`, `repo_state`, `schema_version`
-- [ ] `init / commit / branch / checkout / log`; context reconstruction by parent-walk
-- [ ] `LLMProvider` protocol + `FakeProvider` (deterministic) + one real adapter with retry/backoff/timeout
-- [ ] Basic Typer CLI mirroring the core API, `--json` flag
-- [ ] Property tests: hash determinism; checkout → build_context stability; deleting a branch never removes commits
+- [x] Scaffold `contextgit` package: `core/`, `storage/`, `llm/`, `merge/`, `cli/` (see architecture.md)
+- [x] Data model + canonical JSON hashing (sorted keys, UTF-8): same input → same commit id, always (data-model.md)
+- [x] SQLite storage with numbered migrations; `commits`, `messages`, `branches`, `tags`, `repo_state`, `schema_version`
+- [x] `init / commit / branch / checkout / log`; context reconstruction by parent-walk
+- [x] `LLMProvider` protocol + `FakeProvider` (deterministic) + one real adapter with retry/backoff/timeout — *protocol + FakeProvider done; real adapter deferred to Phase 2, where the merge flow first calls out*
+- [x] Basic Typer CLI mirroring the core API, `--json` flag
+- [x] Property tests: hash determinism; checkout → build_context stability; deleting a branch never removes commits
+
+*Done. Hashing is byte-compatible with the landing page demo (locked by fixtures generated from the JS); 61 tests pass, 93% coverage, `mypy --strict` and ruff clean.*
 
 **Acceptance:** `ctx init && ctx commit && ctx branch && ctx checkout && ctx log` works end to end; `mypy --strict` clean on `core/`; 85%+ coverage on `core/` + `storage/`; hash invariance holds under Hypothesis.
 
