@@ -51,6 +51,14 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Never allow page-level horizontal panning on any viewport.
+   clip (with hidden fallback) does not create a scroll container,
+   so vertical scrolling and position: fixed are unaffected. */
+html, body {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   background: var(--paper);
@@ -1007,6 +1015,8 @@ textarea:hover { border-color: var(--night-ink-2); }
   .problem-grid { grid-template-columns: 1fr; }
   .problem-aside { position: static; }
   .verbs { grid-template-columns: 1fr; }
+  /* Scale the commit graph to fit instead of scrolling horizontally */
+  .graph { min-width: 0; }
   .verb-list { grid-auto-flow: column; grid-auto-columns: minmax(140px, 1fr); overflow-x: auto; border-top: 0; border-bottom: 1px solid var(--ink); }
   .verb-list [role="tab"] { border-bottom: 0; border-inline-start: 0; border-top: 4px solid transparent; flex-direction: column; align-items: flex-start; gap: 0; }
   .verb-list [role="tab"][aria-selected="true"] { border-top-color: var(--signal); }
@@ -1043,6 +1053,9 @@ textarea:hover { border-color: var(--night-ink-2); }
   .hero-actions .btn-primary { width: 100%; }
   .layer-three { grid-auto-flow: row; }
   .console-bar { flex-direction: column; gap: var(--s1); }
+  /* The graph scales down with the viewport, so scale its labels up to stay readable */
+  .g-id { font-size: 20px; }
+  .g-branch { font-size: 18px; }
 }
 
 @media (max-width: 400px) {

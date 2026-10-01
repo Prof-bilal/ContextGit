@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: contextgit
+Version: 0.1.0
+Summary: Version control for LLM conversations: branch, diff, merge, and roll back context.
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2
+Requires-Dist: typer>=0.12
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=5; extra == "dev"
+Requires-Dist: hypothesis>=6; extra == "dev"
+Requires-Dist: mypy>=1.8; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+
+# ContextGit
+
+Version control for LLM conversations: branch, diff, merge, and roll back context.
+
+AI assistants: start with `docs/ai/AGENTS.md`.
