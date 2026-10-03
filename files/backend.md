@@ -15,7 +15,25 @@ repo.cherry_pick(commit_id, onto_branch)
 repo.tag(name, commit_id, label=None)
 repo.build_context(commit_id) -> list[Message]
 repo.count_tokens(commit_id, model) -> int
+# sessions (parallel AI runs) + commit-on-demand staging
+repo.create_session(name, kind="chat", branch=None, agent=None, auto_commit=False) -> Session
+repo.list_sessions() -> list[Session]
+repo.stage(session_id, messages) -> list[Message]      # buffer, not commits
+repo.staged(session_id) -> list[Message]
+repo.unstage(session_id, last_only=False) -> list[Message]
+repo.commit_staged(session_id, summary=None, model=None) -> Commit  # clears staging
 ```
+
+## Sessions and staging
+Sessions are the sidebar entries: one AI run bound to one branch. Messages go
+through `stage()` first (the `git add` step); `commit_staged()` is the only thing
+that writes them to history, and it raises `StagingEmpty` when the buffer is
+empty. Chat turns with `session_id` and `auto_commit: false` are staged by the
+stream endpoint instead of committed. Terminal sessions stage output from the UI.
+
+Routes: `GET/POST /sessions`, `GET/PATCH/DELETE /sessions/{id}`,
+`GET/POST/DELETE /sessions/{id}/staging` (`?last=true` unstages one),
+`POST /sessions/{id}/commit`.
 
 ## API conventions
 - REST under `/api/v1`. JSON in, JSON out.

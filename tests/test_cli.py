@@ -95,6 +95,31 @@ class TestForkFromCommit:
         assert "one" in result.output
 
 
+class TestDiffMergeNote:
+    def test_diff_cli_json_and_saved_preview_apply(self, cwd: Path) -> None:
+        run("init")
+        run("commit", "base", "--model", "m")
+        run("branch", "feature")
+        run("checkout", "feature")
+        run("commit", "source change", "--model", "m")
+        run("checkout", "main")
+        run("commit", "target change", "--model", "m")
+        diff_data = json.loads(run("diff", "main", "feature", "--json").output)
+        assert diff_data["b_messages"][0]["content"] == "source change"
+        preview_path = cwd / "preview.json"
+        preview = run("merge", "feature", "--preview-file", str(preview_path))
+        assert "Nothing is applied" in preview.output
+        result = run("merge", "feature", "--apply", "--preview-file", str(preview_path))
+        assert "merge commit created" in result.output
+        assert "merge" in run("log").output
+
+    def test_note_cli_records_note_kind(self, cwd: Path) -> None:
+        run("init")
+        run("note", "failed attempt: memory counters reset on failover")
+        data = json.loads(run("log", "--json").output)
+        assert data[0]["kind"] == "note"
+
+
 class TestContextAndTag:
     def test_context_command(self, cwd: Path) -> None:
         run("init")

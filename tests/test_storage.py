@@ -22,7 +22,9 @@ def make_commit(i: int = 0, parents: list[str] | None = None, kind: str = "norma
     return Commit(
         id=f"{i:064x}",
         parent_ids=parents or [],
-        messages=[Message(role="user", content=f"m{i}", created_at=datetime(2026, 1, 1, tzinfo=UTC))],
+        messages=[
+            Message(role="user", content=f"m{i}", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        ],
         kind=cast("CommitKind", kind),
         model="test-model",
         summary=f"summary {i}",
@@ -37,11 +39,20 @@ class TestSchema:
             row[0]
             for row in storage._conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        assert {"commits", "messages", "branches", "tags", "repo_state", "schema_version"} <= tables
+        assert {
+            "commits",
+            "messages",
+            "branches",
+            "tags",
+            "repo_state",
+            "schema_version",
+            "sessions",
+            "staging",
+        } <= tables
 
     def test_migration_recorded_once(self, storage: SqliteStorage) -> None:
         versions = [r[0] for r in storage._conn.execute("SELECT version FROM schema_version")]
-        assert versions == [1]
+        assert versions == [1, 2]
 
     def test_reopen_does_not_reapply(self, tmp_path: Path) -> None:
         db = tmp_path / "again.db"
@@ -49,7 +60,7 @@ class TestSchema:
         s2 = SqliteStorage(db)
         versions = [r[0] for r in s2._conn.execute("SELECT version FROM schema_version")]
         s2.close()
-        assert versions == [1]
+        assert versions == [1, 2]
 
 
 class TestCommits:
@@ -69,11 +80,15 @@ class TestCommits:
 
     def test_multiple_messages_ordered(self, storage: SqliteStorage) -> None:
         c = make_commit(2)
-        c = c.model_copy(update={"messages": [
-            Message(role="user", content="first"),
-            Message(role="assistant", content="second"),
-            Message(role="user", content="third"),
-        ]})
+        c = c.model_copy(
+            update={
+                "messages": [
+                    Message(role="user", content="first"),
+                    Message(role="assistant", content="second"),
+                    Message(role="user", content="third"),
+                ]
+            }
+        )
         storage.insert_commit(c)
         got = storage.get_commit(c.id)
         assert [m.content for m in got.messages] == ["first", "second", "third"]

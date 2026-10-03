@@ -59,3 +59,25 @@ class Tag(BaseModel):
     name: str
     commit_id: str
     label: str | None = None
+
+
+SessionKind = Literal["chat", "terminal"]
+SessionStatus = Literal["idle", "running", "done", "error"]
+
+
+class Session(BaseModel):
+    """One AI run bound to a branch, with its own staging buffer.
+
+    Sessions are mutable pointers (like branches): status and name change,
+    the staged messages accumulate until the user commits them.
+    """
+
+    id: str
+    name: str
+    kind: SessionKind
+    branch: str
+    status: SessionStatus = "idle"
+    agent: str | None = None
+    auto_commit: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

@@ -11,8 +11,18 @@ from importlib import resources
 from pathlib import Path
 from typing import cast
 
-from contextgit.core.errors import BranchNotFound, CommitNotFound
-from contextgit.core.models import Branch, Commit, CommitKind, Message, Role, Tag
+from contextgit.core.errors import BranchNotFound, CommitNotFound, SessionNotFound
+from contextgit.core.models import (
+    Branch,
+    Commit,
+    CommitKind,
+    Message,
+    Role,
+    Session,
+    SessionKind,
+    SessionStatus,
+    Tag,
+)
 
 _MIGRATIONS_DIR = "migrations"
 
@@ -29,7 +39,9 @@ class SqliteStorage:
     # ---------- connection / schema ----------
 
     def _connect(self) -> None:
-        self._conn = sqlite3.connect(self._db_path)
+        # FastAPI handlers and TestClient can execute requests on a different thread.
+        # SQLite serializes operations on this connection; API uses one worker by default.
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
 
@@ -176,6 +188,127 @@ class SqliteStorage:
         sql = "SELECT name, commit_id, label FROM tags ORDER BY name"
         rows = self._conn.execute(sql).fetchall()
         return [Tag(name=r["name"], commit_id=r["commit_id"], label=r["label"]) for r in rows]
+
+    # ---------- sessions ----------
+
+    @staticmethod
+    def _row_to_session(row: sqlite3.Row) -> Session:
+        return Session(
+            id=row["id"],
+            name=row["name"],
+            kind=cast("SessionKind", row["kind"]),
+            branch=row["branch"],
+            status=cast("SessionStatus", row["status"]),
+            agent=row["agent"],
+            auto_commit=bool(row["auto_commit"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_session(self, session: Session) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO sessions"
+                " (id, name, kind, branch, status, agent, auto_commit, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session.id,
+                    session.name,
+                    session.kind,
+                    session.branch,
+                    session.status,
+                    session.agent,
+                    int(session.auto_commit),
+                    session.created_at.isoformat(),
+                    session.updated_at.isoformat(),
+                ),
+            )
+
+    def get_session(self, session_id: str) -> Session:
+        row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            raise SessionNotFound(f"session '{session_id[:12]}' not found")
+        return self._row_to_session(row)
+
+    def list_sessions(self) -> list[Session]:
+        rows = self._conn.execute("SELECT * FROM sessions ORDER BY created_at").fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def update_session(self, session: Session) -> None:
+        """Persist all mutable session fields (id is the key)."""
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
+                " auto_commit = ?, updated_at = ? WHERE id = ?",
+                (
+                    session.name,
+                    session.branch,
+                    session.status,
+                    session.agent,
+                    int(session.auto_commit),
+                    session.updated_at.isoformat(),
+                    session.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise SessionNotFound(f"session '{session.id[:12]}' not found")
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a session and its staged messages; commits/branches survive."""
+        with self._conn:
+            cur = self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            if cur.rowcount == 0:
+                raise SessionNotFound(f"session '{session_id[:12]}' not found")
+
+    # ---------- staging ----------
+
+    def append_staged(self, session_id: str, messages: list[Message]) -> None:
+        """Append messages to a session's staging buffer (not commits yet)."""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(seq), -1) + 1 FROM staging WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            seq = int(row[0])
+            for offset, msg in enumerate(messages):
+                self._conn.execute(
+                    "INSERT INTO staging (session_id, seq, role, content, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (session_id, seq + offset, msg.role, msg.content, msg.created_at.isoformat()),
+                )
+
+    def staged_messages(self, session_id: str) -> list[Message]:
+        rows = self._conn.execute(
+            "SELECT role, content, created_at FROM staging WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        ).fetchall()
+        return [
+            Message(
+                role=cast("Role", row["role"]), content=row["content"], created_at=row["created_at"]
+            )
+            for row in rows
+        ]
+
+    def clear_staged(self, session_id: str) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM staging WHERE session_id = ?", (session_id,))
+
+    def unstage_last(self, session_id: str) -> Message | None:
+        """Remove and return the newest staged message, or None if empty."""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT seq, role, content, created_at FROM staging WHERE session_id = ?"
+                " ORDER BY seq DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute(
+                "DELETE FROM staging WHERE session_id = ? AND seq = ?", (session_id, row["seq"])
+            )
+        return Message(
+            role=cast("Role", row["role"]), content=row["content"], created_at=row["created_at"]
+        )
 
     # ---------- repo state (HEAD) ----------
 

@@ -5,7 +5,17 @@ from contextgit.llm import FakeProvider
 
 
 def msgs(*contents: str) -> list[Message]:
-    roles = ("user", "assistant", "user", "assistant", "user", "assistant", "user", "assistant", "user")
+    roles = (
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+    )
     return [Message(role=roles[i % len(roles)], content=c) for i, c in enumerate(contents)]
 
 
@@ -29,7 +39,9 @@ class TestComplete:
 
 class TestStream:
     def test_stream_yields_chunks_concatenating_to_reply(self) -> None:
-        p = FakeProvider({"q": "a deterministic reply"}, )
+        p = FakeProvider(
+            {"q": "a deterministic reply"},
+        )
         chunks = list(p.stream(msgs("q")))
         assert "".join(chunks) == "a deterministic reply"
         assert len(chunks) > 1  # actually chunked

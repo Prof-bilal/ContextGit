@@ -57,14 +57,15 @@ Design consequences from prior art: merges are summaries (never concatenations);
 
 **Goal:** merge meaning, not lines. This is the part nobody else ships; budget slack here.
 
-- [ ] Common-ancestor finder (LCA on the commit DAG)
-- [ ] Message diff + token diff from the ancestor (pure functions, no LLM)
-- [ ] Semantic diff: LLM extracts decisions / facts / dead ends / open questions per branch
-- [ ] Merge summarization: propose a compact summary commit; preview before anything is written
-- [ ] Conflict detection: contradictory decisions/facts between source and target; user resolves (pick a side or edit) — never auto-resolve silently (merge-engine.md)
-- [ ] `repo.merge(source, into, dry_run)` → two-step API flow: `POST /merge/preview` then `/merge/apply`
-- [ ] Dead-end notes (`kind: note`) so failed attempts survive as cheap context
-- [ ] Prompt files under `merge/prompts/` with JSON-schema-validated output; one eval per prompt revision
+- [x] Common-ancestor finder (LCA on the commit DAG)
+- [x] Message diff + token diff from the ancestor (pure functions, no LLM)
+- [x] Semantic diff: LLM extracts decisions / facts / dead ends / open questions per branch
+- [x] Merge summarization: propose a compact summary commit; preview before anything is written
+- [x] Conflict detection: contradictory decisions/facts between source and target; user resolves (pick a side or edit) — never auto-resolve silently (merge-engine.md)
+- [x] `repo.merge(source, into, dry_run)` preview/apply core flow; persisted CLI preview/apply flow (HTTP routes deferred to Phase 3)
+- [x] Dead-end notes (`kind: note`) so failed attempts survive as cheap context
+- [x] Versioned prompt files under `merge/prompts/` with Pydantic-validated JSON output; focused deterministic tests
+- [x] Configurable OpenAI-compatible chat-completions adapter (`CTX_LLM_API_KEY`, `CTX_LLM_BASE_URL`, `CTX_LLM_MODEL`)
 
 **Acceptance:** the landing page's merge dialog is reproducible in the CLI: ancestor → extract → conflict → preview → apply; `test_merge_creates_commit_with_two_parents` passes; a merged context answers probe questions as well as the source branch (see evals below).
 
@@ -74,15 +75,63 @@ Design consequences from prior art: merges are summaries (never concatenations);
 
 **Goal:** three panels — graph, chat, inspector — backed by FastAPI + SSE (frontend.md, backend.md).
 
-- [ ] FastAPI routes under `/api/v1` (thin: validate → call core → return); SSE streaming chat
-- [ ] Graph panel (React Flow): commit graph, branch labels not just colors, click to select, keyboard navigable
-- [ ] Chat panel pinned to the selected commit; sending a message commits on the current branch
-- [ ] Inspector: token budget bar, summary, parents, health warnings
-- [ ] Merge preview dialog (the landing page interaction, wired to the real API)
-- [ ] Compare mode: same prompt to two branches, answers side by side
-- [ ] Scale check at 500 commits: collapse linear chains or virtualize; Playwright e2e on FakeProvider
+- [x] FastAPI routes under `/api/v1` (thin: validate → call core → return); SSE streaming chat
+- [x] Graph panel (React Flow): commit graph, branch labels not just colors, click to select, keyboard navigable
+- [x] Chat panel pinned to the selected commit; sending a message commits on the current branch
+- [x] Inspector: token budget bar, summary, parents, health warnings placeholder
+- [x] Merge preview dialog wired to the preview/apply API with explicit conflict resolution
+- [x] Compare mode: same prompt to two branches, answers side by side
+- [x] Scale-aware graph with pan/zoom/minimap and visible-branch traversal; Playwright e2e acceptance test
 
 **Acceptance:** full branch → chat → merge loop in the browser; graph usable at 500+ commits; a11y: keyboard graph navigation, visible focus, no color-only encoding.
+
+## Phase 5 — Desktop app (Electron): move the workbench off the web
+
+**Goal:** one native window that owns its own local backend; the web keeps only the landing page.
+
+- [x] `desktop/` scaffold: Electron main + preload + Vite renderer reusing `components/` and `lib/`
+- [x] Backend lifecycle: main spawns uvicorn (dev) / PyInstaller binary (packaged), health-gates the window, error screen with restart
+- [x] Electron-builder packaging (AppImage/deb/dmg/nsis) with the backend as an extraResource
+- [x] Smoke test path: `CONTEXTGIT_SMOKE=1` verifies status + rendered DOM, exits with code
+- [x] All existing checks stay green (74 tests, `mypy --strict`, ruff, root + desktop `tsc`, both builds)
+
+*Done: dev and packaged apps both reach `ready` and mount the workbench against a fresh repo.*
+
+## Phase 6 — Parallel AI runs (sessions + terminals)
+
+**Goal:** BridgeMind-style sidebar: multiple agent sessions side by side (Claude, Codex, Gemini, or any CLI), commit on demand.
+
+- [x] Core: `sessions` + staging table (migration), `repo.stage() / unstage() / commit_staged()`; sends land in the staging buffer by default (auto-commit toggle)
+- [x] API: `/sessions`, `/staging` routes + tests
+- [x] Electron PTY manager (node-pty) + xterm.js tabs with CLI presets (`claude`, `codex`, `gemini`, custom)
+- [x] Sessions sidebar: live status dot, branch chip, per-session actions (commit…, branch here, switch, kill)
+- [x] Commit-on-demand bar wired to staging; session ↔ branch binding
+
+**Acceptance:** run two different agent CLIs in parallel, stage messages from each, commit on demand, see GitHub-style rows in History.
+
+## Phase 7 — GitHub-style redesign
+
+**Goal:** History as the primary view — graph column + commit rows, PR-style merge.
+
+- [x] List/graph toggle; commit rows (kind icon, message, relative time, branch chips)
+- [x] PR-style merge preview (changed decisions/facts as "files", conflict blocks)
+- [x] Theming pass (GitHub-like light/dark), verify History minimap fix in dark mode
+
+## Phase 8 — Web cleanup
+
+**Goal:** the website keeps only the landing page.
+
+- [x] Remove `/workbench` route + workbench links from the landing page (components stay shared: desktop imports them)
+- [x] Move e2e to Playwright `_electron`; update `frontend.md` (desktop-first), `README`
+
+## Phase 9 — Ideas backlog (researched, prioritized)
+
+1. Transcript import (Claude Code JSONL / ChatGPT exports → root commits)
+2. Semantic search across all history
+3. Context packets + MCP server (any agent can pull "what we decided")
+4. Time-travel replay · 5. Context health dashboard · 6. Merge-quality badge (probe evals in UI) · 7. Compare arena (N branches × M models) · 8. Automation hooks (auto-commit on idle, auto-tag on green probes) · 9. Budget & burn dashboard · 10. Local/offline provider (Ollama)
+
+---
 
 ## Phase 4 — Polish & proof (week 6+)
 

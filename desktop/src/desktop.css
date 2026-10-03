@@ -1,0 +1,51 @@
+/* Desktop shell chrome outside the workspace: the backend status screens.
+   Everything else lives in shell.css (scoped to .cg-shell). */
+.backend-screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 2rem;
+  background: #191612;
+  color: #f4efe6;
+}
+
+.backend-screen .backend-kicker {
+  margin: 0;
+  font: 500 0.7rem/1 "Martian Mono", ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #918879;
+}
+
+.backend-screen h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.backend-screen .backend-detail {
+  max-width: 46rem;
+  margin: 0 auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 400 0.8rem/1.5 "Martian Mono", ui-monospace, monospace;
+  color: #c6bdb1;
+  text-align: left;
+}
+
+.backend-screen button {
+  justify-self: center;
+  padding: 0.55rem 1.2rem;
+  border: 1px solid #4e463b;
+  border-radius: 8px;
+  background: #2a251f;
+  color: inherit;
+  font: 600 0.9rem "Schibsted Grotesk", sans-serif;
+  cursor: pointer;
+}
+
+.backend-screen button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

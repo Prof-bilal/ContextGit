@@ -15,6 +15,14 @@
 **Ref/Tag**: `name`, `commit_id`, `label` (e.g. "known-good")
 **Repo state**: current branch name (HEAD)
 
+**Session** (mutable — one AI run bound to a branch)
+- `id`: uuid4 hex, `name`, `kind`: `chat` | `terminal`
+- `branch`: bound branch (session commits land here, not on HEAD)
+- `status`: `idle` | `running` | `done` | `error`, `agent` (CLI preset), `auto_commit`
+
+**Staged message** (not a commit; cleared by `commit_staged`)
+- `session_id`, `seq`, `role`, `content`, `created_at`
+
 ## Rules
 - Reconstructing context = walking parents from a commit and concatenating messages.
 - Merge commits store two parents and a summary message, not the branch's full messages.
@@ -22,5 +30,5 @@
 - Hashing must be deterministic: sorted keys, UTF-8, no whitespace variance.
 
 ## SQLite tables
-`commits`, `messages`, `branches`, `tags`, `repo_state`, `schema_version`.
+`commits`, `messages`, `branches`, `tags`, `repo_state`, `schema_version`, `sessions`, `staging`.
 Schema changes require a numbered migration in `storage/migrations/`.

@@ -1,0 +1,34 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, "..");
+
+export default defineConfig({
+  base: "./",
+  plugins: [react()],
+  resolve: {
+    // Single React instance: shared components resolve react from the repo
+    // root's node_modules, the renderer from desktop's — force one copy.
+    alias: [
+      { find: /^react$/, replacement: path.join(here, "node_modules/react") },
+      { find: /^react\/(.*)$/, replacement: path.join(here, "node_modules/react/$1") },
+      { find: /^react-dom$/, replacement: path.join(here, "node_modules/react-dom") },
+      { find: /^react-dom\/(.*)$/, replacement: path.join(here, "node_modules/react-dom/$1") },
+      { find: /^@\/(.*)$/, replacement: path.join(repoRoot, "$1") },
+    ],
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    fs: { allow: [repoRoot] },
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    target: "es2022",
+  },
+});

@@ -1,0 +1,145 @@
+"""Sessions: parallel AI runs with commit-on-demand staging."""
+
+import pytest
+
+from contextgit.core.errors import InvalidRefName, SessionNotFound, StagingEmpty
+from contextgit.core.models import Message
+from contextgit.core.repo import Repo
+
+
+def _messages(*contents: str) -> list[Message]:
+    return [Message(role="user", content=content) for content in contents]
+
+
+class TestSessions:
+    def test_create_session_creates_bound_branch(self, repo: Repo) -> None:
+        session = repo.create_session("claude fix", kind="terminal", agent="claude")
+        assert session.kind == "terminal"
+        assert session.agent == "claude"
+        assert session.status == "idle"
+        assert not session.auto_commit
+        assert repo.get_session(session.id).branch == session.branch
+        assert repo.get_branch(session.branch) is not None
+
+    def test_session_branch_names_are_unique_and_valid(self, repo: Repo) -> None:
+        first = repo.create_session("fix bug")
+        second = repo.create_session("fix bug")
+        assert first.branch != second.branch
+        assert " " not in first.branch
+        assert repo.get_branch(first.branch)
+        assert repo.get_branch(second.branch)
+
+    def test_session_can_bind_existing_branch(self, repo: Repo) -> None:
+        repo.branch("feature-x")
+        session = repo.create_session("on feature", branch="feature-x")
+        assert session.branch == "feature-x"
+
+    def test_session_on_missing_branch_creates_it_from_commit(self, repo: Repo) -> None:
+        session = repo.create_session("explorer", branch="fresh-branch")
+        assert repo.get_branch("fresh-branch").head_commit_id == session_branch_head(
+            repo, session.branch
+        )
+
+    def test_list_get_and_delete(self, repo: Repo) -> None:
+        kept = repo.create_session("keep")
+        removed = repo.create_session("remove")
+        ids = {item.id for item in repo.list_sessions()}
+        assert {kept.id, removed.id} <= ids
+        repo.delete_session(removed.id)
+        with pytest.raises(SessionNotFound):
+            repo.get_session(removed.id)
+        assert repo.get_session(kept.id).name == "keep"
+
+    def test_delete_session_keeps_branch_and_commits(self, repo: Repo) -> None:
+        session = repo.create_session("temp")
+        branch = session.branch
+        repo.stage(session.id, _messages("hello"))
+        commit = repo.commit_staged(session.id)
+        repo.delete_session(session.id)
+        assert repo.get_branch(branch).head_commit_id == commit.id
+        assert repo.get_commit(commit.id).messages[0].content == "hello"
+
+    def test_status_and_auto_commit_updates(self, repo: Repo) -> None:
+        session = repo.create_session("runner")
+        running = repo.set_session_status(session.id, "running")
+        assert running.status == "running"
+        toggled = repo.set_session_auto_commit(session.id, True)
+        assert toggled.auto_commit is True
+        assert repo.get_session(session.id).status == "running"
+        with pytest.raises(InvalidRefName):
+            repo.set_session_status(session.id, "sideways")
+
+
+class TestStaging:
+    def test_stage_accumulates_without_committing(self, repo: Repo) -> None:
+        session = repo.create_session("stager")
+        repo.stage(session.id, _messages("one"))
+        staged = repo.stage(session.id, _messages("two", "three"))
+        assert [m.content for m in staged] == ["one", "two", "three"]
+        head_before = repo.get_branch(session.branch).head_commit_id
+        assert head_before == repo.get_branch(repo.current_branch()).head_commit_id
+        assert len(repo.log(session.branch)) == 1  # only the root commit
+
+    def test_commit_staged_moves_messages_and_clears_buffer(self, repo: Repo) -> None:
+        session = repo.create_session("committer")
+        repo.stage(session.id, _messages("first", "second"))
+        commit = repo.commit_staged(session.id, summary="did things")
+        assert [m.content for m in commit.messages] == ["first", "second"]
+        assert commit.summary == "did things"
+        assert repo.staged(session.id) == []
+        assert repo.get_branch(session.branch).head_commit_id == commit.id
+        context = repo.build_context(commit.id)
+        assert [m.content for m in context] == ["first", "second"]
+
+    def test_commit_staged_on_branch_independent_of_head(self, repo: Repo) -> None:
+        repo.checkout("main")
+        session = repo.create_session("side run")
+        repo.stage(session.id, _messages("side note"))
+        commit = repo.commit_staged(session.id)
+        assert repo.current_branch() == "main"
+        assert repo.get_branch("main").head_commit_id != commit.id
+        assert repo.get_branch(session.branch).head_commit_id == commit.id
+
+    def test_commit_empty_staging_raises(self, repo: Repo) -> None:
+        session = repo.create_session("empty")
+        with pytest.raises(StagingEmpty):
+            repo.commit_staged(session.id)
+
+    def test_stage_empty_list_raises(self, repo: Repo) -> None:
+        session = repo.create_session("nothing")
+        with pytest.raises(StagingEmpty):
+            repo.stage(session.id, [])
+
+    def test_stage_unknown_session_raises(self, repo: Repo) -> None:
+        with pytest.raises(SessionNotFound):
+            repo.stage("missing-session", _messages("x"))
+
+    def test_unstage_clears_and_last_only(self, repo: Repo) -> None:
+        session = repo.create_session("unstager")
+        repo.stage(session.id, _messages("a", "b", "c"))
+        remaining = repo.unstage(session.id, last_only=True)
+        assert [m.content for m in remaining] == ["a", "b"]
+        assert repo.unstage(session.id) == []
+        assert repo.staged(session.id) == []
+
+    def test_default_summary_is_first_user_message(self, repo: Repo) -> None:
+        session = repo.create_session("summarizer")
+        repo.stage(
+            session.id,
+            [
+                Message(role="assistant", content="context"),
+                Message(role="user", content="the actual question"),
+            ],
+        )
+        commit = repo.commit_staged(session.id)
+        assert commit.summary == "the actual question"
+
+    def test_commit_staged_uses_session_agent_as_model(self, repo: Repo) -> None:
+        session = repo.create_session("agent run", kind="terminal", agent="codex")
+        repo.stage(session.id, _messages("work done"))
+        commit = repo.commit_staged(session.id)
+        assert commit.model == "codex"
+
+
+def session_branch_head(repo: Repo, branch: str) -> str:
+    return repo.get_branch(branch).head_commit_id

@@ -1,0 +1,200 @@
+/* Clay avatars — cheap by construction: only transform/opacity animate, one
+   compositor layer per avatar, and loops pause when they are not being looked at. */
+
+.cg-clay-wrap {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.cg-clay {
+  transform-box: fill-box;
+  transform-origin: 50% 62%;
+}
+
+.cg-clay-face {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.cg-clay-eye {
+  fill: var(--cg-bg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.cg-clay-mouth {
+  fill: none;
+  stroke: var(--cg-bg);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.cg-clay-blush ellipse {
+  fill: var(--cg-signal);
+  opacity: 0.32;
+}
+
+.cg-clay-lids path {
+  fill: none;
+  stroke: var(--cg-bg);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.65;
+}
+
+/* ---------------------------------------------------------------- states --- */
+
+.cg-clay[data-state="idle"] {
+  animation: cg-clay-breathe 4.4s ease-in-out infinite;
+}
+.cg-clay[data-state="idle"] .cg-clay-eye {
+  animation: cg-clay-blink 5.2s ease-in-out infinite;
+}
+.cg-clay[data-state="idle"] .cg-clay-eye--r {
+  animation-delay: 0.09s;
+}
+
+.cg-clay[data-state="thinking"] {
+  animation: cg-clay-think 2.4s ease-in-out infinite;
+}
+.cg-clay[data-state="thinking"] .cg-clay-face {
+  transform: translate(-4px, -2px);
+}
+
+.cg-clay[data-state="working"] {
+  animation: cg-clay-work 1.4s ease-in-out infinite;
+}
+.cg-clay[data-state="working"] .cg-clay-face {
+  transform: translate(-5px, -3px);
+}
+.cg-clay[data-state="working"] .cg-clay-eye {
+  transform: scaleY(0.55);
+}
+
+.cg-clay[data-state="done"] {
+  animation: cg-clay-settle 0.7s cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+.cg-clay[data-state="done"] .cg-clay-eye {
+  animation: cg-clay-happy 2.2s ease-in-out infinite;
+}
+
+.cg-clay[data-state="paused"] {
+  opacity: 0.5;
+}
+.cg-clay[data-state="paused"] .cg-clay-eye {
+  transform: scaleY(0.12);
+}
+
+.cg-clay[data-state="error"] {
+  animation: cg-clay-shake 0.45s ease-in-out 1;
+}
+.cg-clay[data-state="error"] .cg-clay-eye--l {
+  transform: rotate(28deg) scaleY(0.4);
+}
+.cg-clay[data-state="error"] .cg-clay-eye--r {
+  transform: rotate(-28deg) scaleY(0.4);
+}
+
+@keyframes cg-clay-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes cg-clay-think {
+  0%,
+  100% {
+    transform: rotate(-2deg) translateY(0);
+  }
+  50% {
+    transform: rotate(2deg) translateY(-2px);
+  }
+}
+@keyframes cg-clay-work {
+  0%,
+  100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: rotate(3deg) translateY(-3px);
+  }
+}
+@keyframes cg-clay-settle {
+  0% {
+    transform: scale(1.14, 0.86);
+  }
+  55% {
+    transform: scale(0.95, 1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes cg-clay-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  20% {
+    transform: translateX(-4px) rotate(-4deg);
+  }
+  45% {
+    transform: translateX(4px) rotate(4deg);
+  }
+  70% {
+    transform: translateX(-2px) rotate(-2deg);
+  }
+}
+@keyframes cg-clay-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes cg-clay-happy {
+  0%,
+  72%,
+  100% {
+    transform: scaleY(1);
+  }
+  82% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* ------------------------------------------------------------ perf guards --- */
+
+/* Rail rows are tiny and numerous: only animate the one being looked at. */
+.cg-clay[data-size="sm"],
+.cg-clay[data-size="sm"] * {
+  animation-play-state: paused;
+}
+.cg-row:hover .cg-clay[data-size="sm"],
+.cg-row:hover .cg-clay[data-size="sm"] *,
+.cg-row[aria-current="true"] .cg-clay[data-size="sm"],
+.cg-row[aria-current="true"] .cg-clay[data-size="sm"] * {
+  animation-play-state: running;
+}
+
+/* Window hidden or tab inactive → freeze everything. */
+.cg-clay[data-paused="true"],
+.cg-clay[data-paused="true"] * {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-clay,
+  .cg-clay * {
+    animation: none !important;
+  }
+}

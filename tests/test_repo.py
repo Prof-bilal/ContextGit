@@ -57,7 +57,9 @@ class TestCommit:
         from contextgit.core.hashing import commit_id as compute
 
         c = repo.commit([Message(role="user", content="hello")], model="mm", author="a")
-        assert c.id == compute(parent_ids=[c.parent_ids[0]], messages=[("user", "hello")], kind="normal", model="mm")
+        assert c.id == compute(
+            parent_ids=[c.parent_ids[0]], messages=[("user", "hello")], kind="normal", model="mm"
+        )
 
     def test_empty_context_at_root(self, repo: Repo) -> None:
         root_id = repo.log()[-1].id

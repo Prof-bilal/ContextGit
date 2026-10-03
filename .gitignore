@@ -32,3 +32,22 @@ __pycache__/
 .ruff_cache/
 htmlcov/
 .coverage
+
+# electron desktop
+.desktop-venv/
+desktop/node_modules/
+desktop/dist/
+desktop/dist-electron/
+desktop/build/
+desktop/release/
+
+# playwright / e2e artifacts
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+# throwaway repos the e2e launches against (one per spec/port)
+.playwright-contextgit*/
+
+# local app data: the app's own repository (sqlite + .contextgit/context.md + assets)
+.contextgit/

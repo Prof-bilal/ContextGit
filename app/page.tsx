@@ -6,6 +6,7 @@ import MergeDialog from "@/components/merge-dialog";
 import HashDemo from "@/components/hash-demo";
 import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
+import ThemeToggle from "@/components/theme-toggle";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
@@ -39,6 +40,7 @@ export default function Page() {
               <li><a href="#install">Install</a></li>
             </ol>
           </details>
+          <ThemeToggle />
           <a className="btn btn-primary btn-sm" href="#install">Install</a>
         </div>
       </header>
@@ -71,7 +73,8 @@ export default function Page() {
               ContextGit gives every LLM chat commits, branches, diffs and merges. A dead end costs you one branch, not the whole context window.
             </p>
             <div className="hero-actions reveal" style={d(180)}>
-              <a className="btn btn-primary" href="#merge">Watch a merge resolve <span aria-hidden="true">&rarr;</span></a>
+              <a className="btn btn-primary" href="#status">Get the desktop app <span aria-hidden="true">&rarr;</span></a>
+              <a className="btn btn-ghost" href="#merge">Watch a merge resolve</a>
               <div className="install">
                 <code>pip install contextgit</code>
                 <button type="button" className="btn btn-ghost btn-copy" data-copy="pip install contextgit" aria-label="Copy install command">Copy</button>
@@ -325,7 +328,7 @@ export default function Page() {
             <header className="section-head reveal">
               <p className="eyebrow"><span className="eyebrow-no">05</span>Interface</p>
               <h2 id="interface-title">Three panels, one conversation tree.</h2>
-              <p className="lede">The web UI puts the graph, the chat and an inspector on one screen. Click a commit and the chat becomes that moment.</p>
+              <p className="lede">The desktop app puts sessions, history and an inspector on one screen — with parallel agent terminals in the sidebar. Click a commit and the chat becomes that moment.</p>
             </header>
 
             <figure className="app reveal" aria-labelledby="app-cap">
@@ -386,8 +389,8 @@ export default function Page() {
             </header>
 
             <div className="internals-grid">
-              <div className="layers reveal" role="img" aria-label="Architecture layers. The React web UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
-                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">React web UI</span><span className="layer">CLI (typer)</span></div>
+              <div className="layers reveal" role="img" aria-label="Architecture layers. The Electron desktop UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
+                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Desktop UI (Electron)</span><span className="layer">CLI (typer)</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>
                 <div className="layer-row" aria-hidden="true"><span className="layer">FastAPI &middot; HTTP and SSE</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>

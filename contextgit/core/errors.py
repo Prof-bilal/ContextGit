@@ -27,3 +27,23 @@ class BranchNotFound(ContextGitError):
 
 class InvalidRefName(ContextGitError):
     """A branch or tag name is not allowed."""
+
+
+class MergeConflict(ContextGitError):
+    """A merge cannot be applied until every conflict is explicitly resolved."""
+
+
+class StaleMergePreview(ContextGitError):
+    """A branch moved after its merge preview was generated."""
+
+
+class InvalidMergeResolution(ContextGitError):
+    """A merge resolution refers to an unknown conflict or invalid choice."""
+
+
+class SessionNotFound(ContextGitError):
+    """The referenced session id does not exist."""
+
+
+class StagingEmpty(ContextGitError):
+    """A commit was requested but the session has no staged messages."""

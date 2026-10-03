@@ -1,7 +1,7 @@
 # Testing
 
 ## Tools
-Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Frontend: `vitest`, React Testing Library, Playwright (e2e).
+Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Desktop: Playwright `_electron` (e2e against the built app).
 
 ## Layers
 | Layer | What | Notes |
@@ -9,7 +9,7 @@ Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Frontend: `vites
 | Unit | hashing, commit building, branch ops, token counting | Fast, no I/O, no network |
 | Integration | Repo + SQLite, API routes via `TestClient` | Use temp DB per test |
 | Merge evals | probe-question retention before/after merge | Separate, may use a real LLM, not run in CI by default |
-| E2E | branch → chat → merge flow in browser | Playwright, uses FakeProvider |
+| E2E | sessions sidebar, history list, terminal session in the desktop app | Playwright `_electron`, uses FakeProvider |
 
 ## Rules
 - **Never call a real LLM in unit or integration tests.** Use `FakeProvider`.
@@ -22,8 +22,9 @@ Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Frontend: `vites
 ```
 pytest -q                    # backend
 pytest --cov=contextgit      # with coverage
-npm --prefix web run test    # frontend unit
-npm --prefix web run e2e     # playwright
+npm run build               # Next.js landing build + TS check
+npm run build --prefix desktop  # desktop renderer + electron bundles (required for e2e)
+npm run test:e2e             # Playwright desktop flow (Electron app spawns its own backend)
 ```
 
 ## Definition of done

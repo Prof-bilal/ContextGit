@@ -1,5 +1,3 @@
 # Taste
 
-## Workflow
-- For UI or website design tasks, do deep research first and gather 2-3 reference sites or examples before building. Confidence: 0.6
-- Wants landing pages to be thorough: a fixed number of sections (e.g. 8), each with full detail about the idea. Confidence: 0.5
+- Wants generated/build/test artifacts (Playwright reports, `test-results/`, throwaway e2e repos) and local app data / cache dirs added to `.gitignore`, so `git status` only shows real source that should be committed. Confidence: 0.6

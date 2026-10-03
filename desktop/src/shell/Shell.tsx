@@ -1,0 +1,737 @@
+import { useCallback, useEffect, useState } from "react";
+
+import { api, type Message, type Session } from "@/lib/api";
+import { CONVERSATIONS, NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
+import { agentLabel } from "./agents";
+import AgentDialog from "./agent/AgentDialog";
+import { DEFAULT_DRAFT, draftFrom, humanSchedule, newSeed, type MissionDraft } from "./agent/mission";
+import BranchDialog from "./git/BranchDialog";
+import { commitsOnBranch } from "./git/branchCommits";
+import DiffSheet from "./git/DiffSheet";
+import DeleteBranchDialog from "./git/DeleteBranchDialog";
+import MergeDialog from "./git/MergeDialog";
+import { useRepo } from "./git/useRepo";
+import { Chip, Field, IconButton, Monogram, StatusDot } from "./primitives";
+import { Dock } from "./Dock";
+import ModelPicker from "./ModelPicker";
+import GovernorPanel from "./chat/GovernorPanel";
+import { DEFAULT_MODEL, findModel, findProvider, type ModelSelection } from "./providers";
+import TopNav, { type TabDef, type TabId } from "./TopNav";
+import AgentRail from "./rail/AgentRail";
+import ChatRail from "./rail/ChatRail";
+import GitRail, { type CommitFilter } from "./rail/GitRail";
+import RosterRail from "./rail/RosterRail";
+import { useSessions } from "./terminal/useSessions";
+import AgentView from "./views/AgentView";
+import ChatView from "./views/ChatView";
+import CodeView from "./views/CodeView";
+import GitView from "./views/GitView";
+
+type Theme = "dark" | "light";
+
+const TAB_IDS: TabId[] = ["chat", "code", "agent", "git"];
+
+function initialTab(): TabId {
+  const value = new URLSearchParams(window.location.search).get("tab");
+  return TAB_IDS.find((tab) => tab === value) ?? "code";
+}
+
+export default function Shell() {
+  const [tab, setTab] = useState<TabId>(initialTab);
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [dockOpen, setDockOpen] = useState(true);
+
+  // ---- Code tab: real sessions + terminals ----
+  const { sessions, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessions();
+  const [openIds, setOpenIds] = useState<string[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [staged, setStaged] = useState<Message[]>([]);
+  const [summary, setSummary] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [barError, setBarError] = useState<string | null>(null);
+
+  // ---- Chat / Agent / Git tabs: fixtures until wired (Phase B) ----
+  const [conversationName, setConversationName] = useState(CONVERSATIONS[0]?.branch.name ?? "");
+  const [agentId, setAgentId] = useState(NAMED_AGENTS[0]?.id ?? "");
+  const [agents, setAgents] = useState<NamedAgent[]>(NAMED_AGENTS);
+  const [agentDialog, setAgentDialog] = useState<{ mode: "create" | "edit"; draft: MissionDraft } | null>(
+    null,
+  );
+  const [commitId, setCommitId] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState("");
+  const [filter, setFilter] = useState<CommitFilter>("all");
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepo();
+  const [model, setModel] = useState<ModelSelection>(DEFAULT_MODEL);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const activeSession = sessions.find((session) => session.id === activeId) ?? null;
+  const activeConversation =
+    CONVERSATIONS.find((conversation) => conversation.branch.name === conversationName) ??
+    CONVERSATIONS[0];
+  const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
+
+  // ---- Git tab: the real snapshot ----
+  const branches = snapshot?.branches ?? [];
+  const commits = [...(snapshot?.commits ?? [])].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  );
+  const branchHead =
+    branches.find((branch) => branch.name === selectedBranch)?.head_commit_id ?? null;
+  // History is scoped to the selected branch, so clicking a branch changes it.
+  const branchCommits = branchHead ? commitsOnBranch(commits, branchHead) : commits;
+  const activeCommit = commits.find((commit) => commit.id === commitId) ?? branchCommits[0] ?? null;
+
+  // Keep the branch selection valid; default to the repo's current branch.
+  useEffect(() => {
+    if (!snapshot) return;
+    setSelectedBranch((current) =>
+      current && snapshot.branches.some((branch) => branch.name === current)
+        ? current
+        : snapshot.current_branch || snapshot.branches[0]?.name || "",
+    );
+  }, [snapshot]);
+
+  // Follow the branch when nothing valid is selected; never clobber a commit pick.
+  useEffect(() => {
+    if (!snapshot) return;
+    const head =
+      snapshot.branches.find((branch) => branch.name === selectedBranch)?.head_commit_id ?? null;
+    setCommitId((current) =>
+      current && snapshot.commits.some((commit) => commit.id === current) ? current : head,
+    );
+  }, [snapshot, selectedBranch]);
+
+  const chooseBranch = (name: string) => {
+    setSelectedBranch(name);
+    const head = branches.find((branch) => branch.name === name)?.head_commit_id ?? null;
+    if (head) setCommitId(head);
+  };
+
+  useEffect(() => {
+    if (!activeSession) {
+      setStaged([]);
+      return;
+    }
+    let alive = true;
+    void api
+      .staging(activeSession.id)
+      .then((items) => {
+        if (alive) setStaged(items);
+      })
+      .catch((cause: unknown) => {
+        if (alive) setBarError(cause instanceof Error ? cause.message : "Could not load staging");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeSession, revision]);
+
+  const openSession = useCallback((session: Session) => {
+    setOpenIds((current) => (current.includes(session.id) ? current : [...current, session.id]));
+    setActiveId(session.id);
+    setSummary("");
+    setBarError(null);
+  }, []);
+
+  const startRun = useCallback(
+    async (name: string, agent: string) => {
+      const created = await create(name, agent);
+      openSession(created);
+    },
+    [create, openSession],
+  );
+
+  const newTerminal = useCallback(async () => {
+    try {
+      const shellCount = sessions.filter((session) => (session.agent ?? "shell") === "shell").length;
+      const created = await create(`shell ${shellCount + 1}`, "shell");
+      openSession(created);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not open a terminal");
+    }
+  }, [create, openSession, sessions]);
+
+  const closeTerminal = useCallback((session: Session) => {
+    // The pane owns its PTY and kills it on unmount; just drop it from the layout.
+    setOpenIds((current) => current.filter((id) => id !== session.id));
+    setActiveId((current) => (current === session.id ? null : current));
+  }, []);
+
+  const deleteRun = useCallback(
+    async (session: Session) => {
+      setOpenIds((current) => current.filter((id) => id !== session.id));
+      setActiveId((current) => (current === session.id ? null : current));
+      try {
+        await remove(session.id);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not delete run");
+      }
+    },
+    [remove],
+  );
+
+  const commitStaged = useCallback(async () => {
+    if (!activeSession || staged.length === 0) return;
+    try {
+      await api.commitStaged(activeSession.id, summary.trim() || undefined);
+      setSummary("");
+      setStaged([]);
+      setBarError(null);
+      setRevision((value) => value + 1);
+      await refresh();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Commit failed");
+    }
+  }, [activeSession, refresh, staged.length, summary]);
+
+  const undoLast = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      setStaged(await api.unstage(activeSession.id, true));
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not unstage");
+    }
+  }, [activeSession]);
+
+  const clearStaged = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      setStaged(await api.unstage(activeSession.id));
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not clear staging");
+    }
+  }, [activeSession]);
+
+  /** Create a new agent, or save edits to the selected one. */
+  const saveAgent = useCallback(
+    (draft: MissionDraft) => {
+      const routine = {
+        enabled: draft.enabled,
+        cron: draft.cron,
+        human: humanSchedule(draft.cron),
+        nextRuns: [],
+      };
+      if (agentDialog?.mode === "edit") {
+        setAgents((current) =>
+          current.map((entry) =>
+            entry.id === activeAgent.id
+              ? {
+                  ...entry,
+                  name: draft.name.trim() || entry.name,
+                  brief: draft.mission.trim(),
+                  skills: draft.skills,
+                  hue: draft.hue,
+                  seed: draft.seed,
+                  monogram: draft.name.trim().charAt(0).toUpperCase() || entry.monogram,
+                  routine: { ...entry.routine, ...routine },
+                }
+              : entry,
+          ),
+        );
+        return;
+      }
+      const slug =
+        draft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24) || "new";
+      const created: NamedAgent = {
+        id: `agent_${slug}_${Math.random().toString(36).slice(2, 6)}`,
+        name: draft.name.trim(),
+        monogram: draft.name.trim().charAt(0).toUpperCase(),
+        hue: draft.hue,
+        seed: draft.seed,
+        brief: draft.mission.trim(),
+        memory: { decisions: [], facts: [], deadEnds: [], openQuestions: [] },
+        skills: draft.skills,
+        routine,
+        runs: [],
+      };
+      setAgents((current) => [...current, created]);
+      setAgentId(created.id);
+    },
+    [agentDialog?.mode, activeAgent.id],
+  );
+
+  const tabs: TabDef[] = [
+    { id: "chat", label: "Chat" },
+    { id: "code", label: "Code" },
+    { id: "agent", label: "Agent" },
+    { id: "git", label: "Git" },
+  ];
+
+  const rail = () => {
+    switch (tab) {
+      case "chat":
+        return (
+          <ChatRail
+            selectedBranch={activeConversation.branch.name}
+            onSelect={(conversation) => setConversationName(conversation.branch.name)}
+          />
+        );
+      case "code":
+        return (
+          <AgentRail
+            sessions={sessions}
+            openIds={openIds}
+            activeId={activeId}
+            onSelect={openSession}
+            onNew={startRun}
+            onDelete={(session) => void deleteRun(session)}
+          />
+        );
+      case "agent":
+        return (
+          <RosterRail
+            agents={agents}
+            selectedId={agentId}
+            onSelect={(agent) => setAgentId(agent.id)}
+            onNewAgent={() =>
+              setAgentDialog({ mode: "create", draft: { ...DEFAULT_DRAFT, seed: newSeed("") } })
+            }
+          />
+        );
+      case "git":
+        return (
+          <GitRail
+            branches={branches}
+            commits={commits}
+            currentBranch={snapshot?.current_branch ?? ""}
+            selectedBranch={selectedBranch}
+            onSelectBranch={chooseBranch}
+            onDelete={(name) => setBranchToDelete(name)}
+            filter={filter}
+            onFilter={setFilter}
+          />
+        );
+    }
+  };
+
+  const view = () => {
+    switch (tab) {
+      case "chat":
+        return (
+          <ChatView
+            conversation={activeConversation}
+            selection={model}
+            onPickModel={() => setPickerOpen(true)}
+          />
+        );
+      case "agent":
+        return (
+          <AgentView
+            agent={activeAgent}
+            onUpdate={(patch) =>
+              setAgents((current) =>
+                current.map((entry) => (entry.id === activeAgent.id ? { ...entry, ...patch } : entry)),
+              )
+            }
+            onEditMission={() =>
+              setAgentDialog({ mode: "edit", draft: draftFrom(activeAgent) })
+            }
+          />
+        );
+      case "git":
+        return (
+          <GitView
+            branches={branches}
+            commits={branchCommits}
+            allCommits={commits}
+            branch={selectedBranch}
+            selectedId={activeCommit?.id ?? null}
+            onSelect={(commit) => setCommitId(commit.id)}
+            filter={filter}
+            loading={repoLoading}
+            onRefresh={() => void refreshRepo()}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  const dock = () => {
+    switch (tab) {
+      case "chat": {
+        const chatProvider = findProvider(model.providerId);
+        const chatModel = findModel(model);
+        const chatBudget = 20_000;
+        const used = activeConversation.tokens;
+        return (
+          <>
+            <button
+              type="button"
+              className="cg-model-card"
+              onClick={() => setPickerOpen(true)}
+              aria-haspopup="dialog"
+              title="Change provider and model"
+            >
+              {chatProvider && <Monogram agent={chatProvider.hue} label={chatProvider.monogram} />}
+              <span className="cg-model-card-copy">
+                <strong>{chatModel?.label ?? "Choose a model"}</strong>
+                <span>{chatProvider?.vendor ?? "—"}</span>
+              </span>
+              <span className="cg-model-card-action">Change</span>
+            </button>
+            <div className="cg-fields">
+              <Field label="Branch">{activeConversation.branch.name}</Field>
+              <Field label="Head">{activeConversation.branch.head_commit_id.slice(0, 7)}</Field>
+              <Field label="Messages">{activeConversation.messages.length}</Field>
+            </div>
+            <GovernorPanel used={used} budget={chatBudget} />
+            <section className="cg-prov" aria-label="Provenance">
+              <header className="cg-block-head">
+                <span className="cg-kicker">Provenance</span>
+              </header>
+              <p className="cg-empty-note">
+                Claims here trace to <strong>2 sessions</strong> and <strong>2 agents</strong>. Hover a
+                message → ⤺ blame.
+              </p>
+            </section>
+            <div className="cg-dock-actions">
+              <button type="button" className="cg-btn">
+                Tag as known-good
+              </button>
+              <button type="button" className="cg-btn" data-variant="primary">
+                Merge into…
+              </button>
+            </div>
+          </>
+        );
+      }
+      case "code":
+        return activeSession ? (
+          <>
+            <div className="cg-fields">
+              <Field label="Run">{activeSession.name}</Field>
+              <Field label="Agent">{agentLabel(activeSession.agent)}</Field>
+              <Field label="Branch">
+                <Chip>{activeSession.branch}</Chip>
+              </Field>
+              <Field label="Status">
+                <span className="cg-inline">
+                  <StatusDot status={activeSession.status} />
+                  {activeSession.status}
+                </span>
+              </Field>
+              <Field label="Staged">{staged.length}</Field>
+            </div>
+            <div className="cg-dock-group">
+              <label className="cg-toggle">
+                <input
+                  type="checkbox"
+                  checked={activeSession.auto_commit}
+                  onChange={(event) => void setAutoCommit(activeSession.id, event.target.checked)}
+                />
+                Auto-checkpoint
+              </label>
+            </div>
+            <div className="cg-dock-actions">
+              <button
+                type="button"
+                className="cg-btn"
+                data-variant="primary"
+                onClick={() => void commitStaged()}
+                disabled={staged.length === 0}
+              >
+                Checkpoint now
+              </button>
+              <button
+                type="button"
+                className="cg-btn"
+                data-variant="danger"
+                onClick={() => void deleteRun(activeSession)}
+              >
+                Delete run
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="cg-empty-note">Select a run to inspect it.</p>
+        );
+      case "agent":
+        return (
+          <>
+            <div className="cg-fields">
+              <Field label="Agent">{activeAgent.name}</Field>
+              <Field label="Routine">
+                <span className="cg-routine-code">{activeAgent.routine.cron}</span>
+              </Field>
+              <Field label="Schedule">{activeAgent.routine.human}</Field>
+              <Field label="Skills">{activeAgent.skills.length}</Field>
+              <Field label="Runs">{activeAgent.runs.length}</Field>
+            </div>
+            <div className="cg-dock-actions">
+              <button
+                type="button"
+                className="cg-btn"
+                data-variant="primary"
+                aria-haspopup="dialog"
+                onClick={() => setAgentDialog({ mode: "edit", draft: draftFrom(activeAgent) })}
+              >
+                Edit brief
+              </button>
+            </div>
+          </>
+        );
+      case "git":
+        return activeCommit ? (
+          <>
+            <div className="cg-fields">
+              <Field label="Commit">
+                <span className="cg-mono">{activeCommit.id.slice(0, 7)}</span>
+              </Field>
+              <Field label="Kind">
+                <Chip>{activeCommit.kind}</Chip>
+              </Field>
+              <Field label="Summary">{activeCommit.summary ?? "—"}</Field>
+              <Field label="Model">{activeCommit.model}</Field>
+              <Field label="Author">{activeCommit.author ?? "—"}</Field>
+              <Field label="Parents">
+                {activeCommit.parent_ids.length > 0
+                  ? activeCommit.parent_ids.map((id) => id.slice(0, 7)).join(", ")
+                  : "root commit"}
+              </Field>
+              <Field label="Messages">{activeCommit.messages.length}</Field>
+            </div>
+            <div className="cg-dock-actions">
+              <button
+                type="button"
+                className="cg-btn"
+                onClick={() => setBranchOpen(true)}
+                aria-haspopup="dialog"
+              >
+                Branch from here
+              </button>
+              <button
+                type="button"
+                className="cg-btn"
+                onClick={() => setDiffOpen(true)}
+                aria-haspopup="dialog"
+              >
+                View diff
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="cg-empty-note">Select a commit to inspect it.</p>
+        );
+    }
+  };
+
+  const bottomBar = () => {
+    if (tab === "agent") {
+      return (
+        <footer className="cg-bottombar">
+          <span className="cg-bb-info">
+            <strong>{activeAgent.name}</strong>
+            <Chip tone={activeAgent.routine.enabled ? "ok" : "warn"}>
+              {activeAgent.routine.enabled ? "routine on" : "paused"}
+            </Chip>
+            <span className="cg-view-sub">{activeAgent.routine.human}</span>
+          </span>
+        </footer>
+      );
+    }
+    if (tab === "git") {
+      return (
+        <footer className="cg-bottombar">
+          <span className="cg-bb-info">
+            <span className="cg-view-sub">
+              {activeCommit
+                ? `${activeCommit.id.slice(0, 7)} · ${activeCommit.kind} · ${activeCommit.messages.length} messages`
+                : "No commit selected."}
+            </span>
+          </span>
+          <span className="cg-bb-actions cg-bb-end">
+            <button
+              type="button"
+              className="cg-btn"
+              data-variant="primary"
+              disabled={branches.length < 2}
+              onClick={() => setMergeOpen(true)}
+              aria-haspopup="dialog"
+            >
+              Review merge…
+            </button>
+          </span>
+        </footer>
+      );
+    }
+    if (tab === "chat") {
+      // No commit bar: the composer is the bottom edge, and the inspector already
+      // shows branch / head / budget.
+      return null;
+    }
+    // Code
+    return (
+      <footer className="cg-bottombar" aria-label="Commit staged messages">
+        <span className="cg-bb-info">
+          <strong>{activeSession?.name ?? "No run selected"}</strong>
+          {activeSession && <Chip>{activeSession.branch}</Chip>}
+          <span className="cg-view-sub">{staged.length} staged</span>
+        </span>
+        <input
+          type="text"
+          value={summary}
+          onChange={(event) => setSummary(event.target.value)}
+          placeholder={staged.length ? "Commit summary (optional)" : "Stage output from a terminal first…"}
+          aria-label="Commit summary"
+          disabled={staged.length === 0}
+        />
+        <span className="cg-bb-actions">
+          <button type="button" className="cg-btn" onClick={() => void undoLast()} disabled={staged.length === 0}>
+            Undo
+          </button>
+          <button type="button" className="cg-btn" onClick={() => void clearStaged()} disabled={staged.length === 0}>
+            Clear
+          </button>
+          <button
+            type="button"
+            className="cg-btn"
+            data-variant="primary"
+            onClick={() => void commitStaged()}
+            disabled={staged.length === 0}
+          >
+            Commit {staged.length || ""}
+          </button>
+        </span>
+      </footer>
+    );
+  };
+
+  const dockTitle =
+    tab === "code" ? "Run" : tab === "chat" ? "Conversation" : tab === "agent" ? "Agent" : "Commit";
+
+  const notice = sessionsError ?? barError ?? repoError;
+
+  return (
+    <div className="cg-shell" data-cg-theme={theme}>
+      <header className="cg-titlebar">
+        <span className="cg-brand">
+          Context<b>Git</b>
+          <small>WORKSPACE</small>
+        </span>
+        <TopNav tabs={tabs} active={tab} onChange={setTab} />
+        <span className="cg-titlebar-spacer" />
+        <button type="button" className="cg-command-hint">
+          ⌘K
+        </button>
+        <button
+          type="button"
+          className="cg-theme-btn"
+          aria-pressed={theme === "dark"}
+          onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+        >
+          <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+          {theme === "dark" ? "Light" : "Dark"}
+        </button>
+        <IconButton
+          label={dockOpen ? "Hide inspector" : "Show inspector"}
+          pressed={dockOpen}
+          onClick={() => setDockOpen((value) => !value)}
+        >
+          ▤
+        </IconButton>
+      </header>
+
+      {notice && (
+        <p className="cg-banner" role="alert">
+          {notice}
+        </p>
+      )}
+
+      <div className="cg-body" data-dock={dockOpen ? "open" : "closed"}>
+        {rail()}
+        <main
+          className="cg-main"
+          id={`cg-panel-${tab}`}
+          role="tabpanel"
+          aria-labelledby={`cg-tab-${tab}`}
+        >
+          {/* Code stays mounted (hidden) so live terminals survive tab switches. */}
+          <div className="cg-view" data-active={tab === "code"}>
+            <CodeView
+              sessions={sessions}
+              openIds={openIds}
+              activeId={activeId}
+              theme={theme}
+              onSelect={openSession}
+              onClose={closeTerminal}
+              onNewTerminal={() => void newTerminal()}
+              onStaged={() => setRevision((value) => value + 1)}
+            />
+          </div>
+          {tab !== "code" && (
+            <div className="cg-view" data-active>
+              {view()}
+            </div>
+          )}
+        </main>
+        {dockOpen && (
+          <Dock title={dockTitle} onClose={() => setDockOpen(false)}>
+            {dock()}
+          </Dock>
+        )}
+      </div>
+
+      {bottomBar()}
+
+      {pickerOpen && (
+        <ModelPicker selection={model} onSelect={setModel} onClose={() => setPickerOpen(false)} />
+      )}
+
+      {agentDialog && (
+        <AgentDialog
+          mode={agentDialog.mode}
+          initial={agentDialog.draft}
+          onSave={saveAgent}
+          onClose={() => setAgentDialog(null)}
+        />
+      )}
+
+      {diffOpen && activeCommit && (
+        <DiffSheet
+          commit={activeCommit}
+          parentId={activeCommit.parent_ids[0] ?? null}
+          onClose={() => setDiffOpen(false)}
+        />
+      )}
+
+      {branchOpen && activeCommit && (
+        <BranchDialog
+          commit={activeCommit}
+          onCreated={() => void refreshRepo()}
+          onClose={() => setBranchOpen(false)}
+        />
+      )}
+
+      {branchToDelete && (
+        <DeleteBranchDialog
+          name={branchToDelete}
+          onDeleted={() => {
+            // If we deleted the branch we were viewing, fall back to the repo's.
+            if (selectedBranch === branchToDelete) {
+              chooseBranch(snapshot?.current_branch || branches[0]?.name || "");
+            }
+            void refreshRepo();
+          }}
+          onClose={() => setBranchToDelete(null)}
+        />
+      )}
+
+      {mergeOpen && (
+        <MergeDialog
+          branches={branches}
+          target={selectedBranch || snapshot?.current_branch || ""}
+          onApplied={(commitId) => {
+            setCommitId(commitId);
+            void refreshRepo();
+          }}
+          onClose={() => setMergeOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

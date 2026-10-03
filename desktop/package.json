@@ -1,0 +1,80 @@
+{
+  "name": "contextgit-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ContextGit desktop workbench — version control for LLM conversations",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:mock": "vite",
+    "typecheck": "tsc --noEmit",
+    "build:renderer": "vite build",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build:backend": "bash scripts/build-backend.sh",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "^12.12.0",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0"
+  },
+  "build": {
+    "appId": "dev.contextgit.desktop",
+    "productName": "ContextGit",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend/contextgit-api",
+        "to": "backend/contextgit-api"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true,
+    "node-pty@1.1.0": true
+  }
+}

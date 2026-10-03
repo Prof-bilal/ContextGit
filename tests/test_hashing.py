@@ -52,8 +52,12 @@ class TestLandingPageSpec:
         assert got == expected
         # and the canonical string itself matches
         payload = (
-            '{"messages":[{"content":' + json.dumps(content, ensure_ascii=False) + ',"role":"user"}],'
-            '"metadata":{"kind":"normal","model":' + json.dumps(model) + '},"parent_ids":["a3f9c21"]}'
+            '{"messages":[{"content":'
+            + json.dumps(content, ensure_ascii=False)
+            + ',"role":"user"}],'
+            '"metadata":{"kind":"normal","model":'
+            + json.dumps(model)
+            + '},"parent_ids":["a3f9c21"]}'
         )
         assert payload == canon
 
@@ -67,7 +71,10 @@ class TestLandingPageSpec:
 
     def test_quotes_and_backslashes(self) -> None:
         _, _, expected = FIXTURES[3]
-        assert content_commit_id('quote" and backslash\\ plus emoji 🌿', model="example-model") == expected
+        assert (
+            content_commit_id('quote" and backslash\\ plus emoji 🌿', model="example-model")
+            == expected
+        )
 
     def test_hash_is_lowercase_hex_sha256(self) -> None:
         cid = content_commit_id("anything", model="m")
@@ -91,9 +98,9 @@ class TestDeterminism:
     def test_kind_and_model_matter(self) -> None:
         base = dict(parent_ids=["p"], messages=[("user", "hi")], model="m")
         assert commit_id(kind="normal", **base) != commit_id(kind="note", **base)
-        assert commit_id(kind="normal", model="m1", **{k: v for k, v in base.items() if k != "model"}) != commit_id(
-            kind="normal", model="m2", **{k: v for k, v in base.items() if k != "model"}
-        )
+        assert commit_id(
+            kind="normal", model="m1", **{k: v for k, v in base.items() if k != "model"}
+        ) != commit_id(kind="normal", model="m2", **{k: v for k, v in base.items() if k != "model"})
 
     @settings(max_examples=200, deadline=None)
     @given(

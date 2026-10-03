@@ -7,17 +7,27 @@ Deleting a branch never deletes commits.
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
+from uuid import uuid4
 
 from contextgit.core import hashing
 from contextgit.core.errors import (
     BranchNotFound,
     CommitNotFound,
+    InvalidMergeResolution,
     InvalidRefName,
+    MergeConflict,
     RepoAlreadyExists,
     RepoNotFound,
+    StagingEmpty,
+    StaleMergePreview,
 )
-from contextgit.core.models import Branch, Commit, CommitKind, Message, Tag
+from contextgit.core.models import Branch, Commit, CommitKind, Message, Session, Tag, utcnow
+from contextgit.llm.base import LLMProvider
+from contextgit.merge.engine import common_ancestor, messages_since
+from contextgit.merge.engine import diff as build_diff
+from contextgit.merge.models import Diff, MergePreview
+from contextgit.merge.semantic import extract_semantics
 from contextgit.storage.sqlite import SqliteStorage
 
 _DB_NAME = "contextgit.db"
@@ -106,6 +116,14 @@ class Repo:
         head = self._storage.get_branch(branch or self._storage.get_current_branch())
         return list(self._walk(head.head_commit_id))
 
+    def get_commit(self, commit_id: str) -> Commit:
+        """Return one immutable commit by id."""
+        return self._storage.get_commit(commit_id)
+
+    def all_commits(self) -> list[Commit]:
+        """Return every stored commit, including commits no branch currently names."""
+        return [self._storage.get_commit(commit_id) for commit_id in self._storage.all_commit_ids()]
+
     def _walk(self, commit_id: str) -> Iterator[Commit]:
         """Walk parents from a commit (first parent for merges), newest first."""
         seen: set[str] = set()
@@ -127,6 +145,304 @@ class Repo:
         for commit in chain:
             messages.extend(commit.messages)
         return messages
+
+    # ---------- diff and merge ----------
+
+    def _resolve_commit_ref(self, ref: str) -> str:
+        """Resolve a branch name or commit id to a commit id."""
+        if self._branch_exists(ref):
+            return self._storage.get_branch(ref).head_commit_id
+        if self._storage.has_commit(ref):
+            return ref
+        raise CommitNotFound(f"branch or commit '{ref[:12]}' not found")
+
+    def common_ancestor(self, a: str, b: str) -> str:
+        """Find the closest common ancestor of two branches or commits."""
+        return common_ancestor(
+            self._resolve_commit_ref(a), self._resolve_commit_ref(b), self._storage.get_commit
+        )
+
+    def diff(self, a: str, b: str) -> Diff:
+        """Compare message additions and estimated token counts since the common ancestor."""
+        return build_diff(
+            self._resolve_commit_ref(a), self._resolve_commit_ref(b), self._storage.get_commit
+        )
+
+    def preview_merge(
+        self,
+        source: str,
+        into: str | None = None,
+        *,
+        provider: LLMProvider | None = None,
+    ) -> MergePreview:
+        """Build a non-mutating merge proposal; conflicts require explicit resolution."""
+        target = into or self._storage.get_current_branch()
+        source_head = self._storage.get_branch(source).head_commit_id
+        target_head = self._storage.get_branch(target).head_commit_id
+        ancestor_id = common_ancestor(source_head, target_head, self._storage.get_commit)
+        source_messages = messages_since(source_head, ancestor_id, self._storage.get_commit)
+        target_messages = messages_since(target_head, ancestor_id, self._storage.get_commit)
+        extraction, fallback = extract_semantics(source_messages, target_messages, provider)
+        conflicts = extraction.conflicts
+        summary = extraction.summary.strip()
+        if not summary:
+            summary = "Merge changes: " + "; ".join(
+                extraction.decisions
+                + extraction.facts
+                + extraction.dead_ends
+                + extraction.open_questions
+            )
+        if not summary or summary == "Merge changes: " or fallback:
+            summary = (
+                "Verbatim branch changes:"
+                + chr(10)
+                + chr(10).join(f"[{message.role}] {message.content}" for message in source_messages)
+            )
+            if not source_messages:
+                summary = "No source messages since common ancestor."
+        return MergePreview(
+            source_branch=source,
+            target_branch=target,
+            source_head_id=source_head,
+            target_head_id=target_head,
+            ancestor_id=ancestor_id,
+            extraction=extraction,
+            conflicts=conflicts,
+            messages=[Message(role="assistant", content=summary)],
+            summary=summary,
+            summary_confidence="low" if fallback else "high",
+            fallback=fallback,
+        )
+
+    def apply_merge(
+        self,
+        preview: MergePreview,
+        *,
+        resolutions: dict[str, str] | None = None,
+        summary: str | None = None,
+        author: str | None = None,
+    ) -> Commit:
+        """Apply an approved preview after validating branch heads and every conflict resolution."""
+        if self._storage.get_branch(preview.source_branch).head_commit_id != preview.source_head_id:
+            raise StaleMergePreview("source branch moved after the merge preview")
+        if self._storage.get_branch(preview.target_branch).head_commit_id != preview.target_head_id:
+            raise StaleMergePreview("target branch moved after the merge preview")
+        choices = resolutions or {}
+        conflict_ids = {conflict.id for conflict in preview.conflicts}
+        if set(choices) - conflict_ids:
+            raise InvalidMergeResolution("resolution provided for an unknown conflict")
+        unresolved = conflict_ids - choices.keys()
+        if unresolved:
+            raise MergeConflict(
+                f"resolve all conflicts before applying: {', '.join(sorted(unresolved))}"
+            )
+        resolved_lines: list[str] = []
+        for conflict_id, choice in choices.items():
+            if choice not in {"source", "target"} and not choice.strip():
+                raise InvalidMergeResolution(f"empty resolution for conflict '{conflict_id}'")
+        final_summary = (summary if summary is not None else preview.summary).strip()
+        if not final_summary:
+            raise InvalidMergeResolution("merge summary cannot be empty")
+        for conflict in preview.conflicts:
+            resolution = choices[conflict.id]
+            if resolution == "source":
+                selected = conflict.source
+            elif resolution == "target":
+                selected = conflict.target
+            else:
+                selected = resolution.strip()
+            resolved_lines.append(f"Resolved {conflict.topic}: {selected}")
+        if resolved_lines:
+            final_summary += chr(10) + chr(10) + (chr(10) + chr(10)).join(resolved_lines)
+        parent_ids = [preview.target_head_id, preview.source_head_id]
+        model = self._storage.get_commit(preview.target_head_id).model
+        message = Message(role="assistant", content=final_summary)
+        cid = hashing.commit_id(
+            parent_ids=parent_ids,
+            messages=[("assistant", final_summary)],
+            kind="merge",
+            model=model,
+        )
+        commit = Commit(
+            id=cid,
+            parent_ids=parent_ids,
+            messages=[message],
+            kind="merge",
+            model=model,
+            summary=final_summary,
+            token_count=self.count_tokens(preview.target_head_id, model),
+            author=author,
+        )
+        self._storage.insert_commit(commit)
+        self._storage.update_branch_head(preview.target_branch, cid)
+        return commit
+
+    def merge(
+        self,
+        source: str,
+        into: str | None = None,
+        dry_run: bool = True,
+        *,
+        provider: LLMProvider | None = None,
+        resolutions: dict[str, str] | None = None,
+        summary: str | None = None,
+    ) -> MergePreview | Commit:
+        """Preview by default; when applying, require explicit conflict resolutions."""
+        preview = self.preview_merge(source, into, provider=provider)
+        if dry_run:
+            return preview
+        return self.apply_merge(preview, resolutions=resolutions, summary=summary)
+
+    def note(
+        self,
+        content: str,
+        *,
+        summary: str | None = None,
+        branch: str | None = None,
+        author: str | None = None,
+    ) -> Commit:
+        """Record a dead-end or observation as a cheap note commit."""
+        return self.commit(
+            [Message(role="assistant", content=content)],
+            model="none",
+            summary=summary or content,
+            author=author,
+            kind="note",
+            branch=branch,
+        )
+
+    # ---------- sessions (parallel AI runs) ----------
+
+    def create_session(
+        self,
+        name: str,
+        *,
+        kind: str = "chat",
+        branch: str | None = None,
+        agent: str | None = None,
+        auto_commit: bool = False,
+        from_commit: str | None = None,
+    ) -> Session:
+        """Create a session bound to a branch (creating the branch if needed).
+
+        Each session owns a staging buffer; messages staged here become one
+        commit when the user calls `commit_staged`.
+        """
+        if kind not in {"chat", "terminal"}:
+            raise InvalidRefName(f"unknown session kind: {kind!r}")
+        branch_name = branch or self._unique_branch_name(name)
+        if not self._branch_exists(branch_name):
+            self.branch(branch_name, from_commit=from_commit)
+        session = Session(
+            id=uuid4().hex,
+            name=name,
+            kind=cast("Literal['chat', 'terminal']", kind),
+            branch=branch_name,
+            agent=agent,
+            auto_commit=auto_commit,
+        )
+        self._storage.insert_session(session)
+        return session
+
+    def get_session(self, session_id: str) -> Session:
+        return self._storage.get_session(session_id)
+
+    def list_sessions(self) -> list[Session]:
+        return self._storage.list_sessions()
+
+    def set_session_status(self, session_id: str, status: str) -> Session:
+        """Update a session's lifecycle status (idle/running/done/error)."""
+        if status not in {"idle", "running", "done", "error"}:
+            raise InvalidRefName(f"unknown session status: {status!r}")
+        session = self._storage.get_session(session_id)
+        session.status = cast("Literal['idle', 'running', 'done', 'error']", status)
+        session.updated_at = utcnow()
+        self._storage.update_session(session)
+        return session
+
+    def rename_session(self, session_id: str, name: str) -> Session:
+        session = self._storage.get_session(session_id)
+        session.name = name
+        session.updated_at = utcnow()
+        self._storage.update_session(session)
+        return session
+
+    def set_session_auto_commit(self, session_id: str, enabled: bool) -> Session:
+        session = self._storage.get_session(session_id)
+        session.auto_commit = enabled
+        session.updated_at = utcnow()
+        self._storage.update_session(session)
+        return session
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a session and its staged messages. Commits/branches survive."""
+        self._storage.delete_session(session_id)
+
+    # ---------- staging (commit on demand) ----------
+
+    def stage(self, session_id: str, messages: list[Message]) -> list[Message]:
+        """Add messages to a session's staging buffer; nothing is committed."""
+        if not messages:
+            raise StagingEmpty("cannot stage an empty message list")
+        self._storage.get_session(session_id)  # validates the session exists
+        self._storage.append_staged(session_id, messages)
+        return self._storage.staged_messages(session_id)
+
+    def staged(self, session_id: str) -> list[Message]:
+        """Current staging buffer for a session (empty list if none)."""
+        self._storage.get_session(session_id)
+        return self._storage.staged_messages(session_id)
+
+    def unstage(self, session_id: str, last_only: bool = False) -> list[Message]:
+        """Clear the staging buffer (or remove just the newest message)."""
+        self._storage.get_session(session_id)
+        if last_only:
+            self._storage.unstage_last(session_id)
+        else:
+            self._storage.clear_staged(session_id)
+        return self._storage.staged_messages(session_id)
+
+    def commit_staged(
+        self,
+        session_id: str,
+        *,
+        summary: str | None = None,
+        model: str | None = None,
+        author: str | None = None,
+    ) -> Commit:
+        """Commit the staged messages on the session's branch, then clear staging.
+
+        Raises StagingEmpty when there is nothing to commit. The commit lands
+        on the session's branch regardless of the repo's current HEAD.
+        """
+        session = self._storage.get_session(session_id)
+        messages = self._storage.staged_messages(session_id)
+        if not messages:
+            raise StagingEmpty(f"session '{session.name}' has no staged messages")
+        commit = self.commit(
+            messages,
+            model=model or session.agent or "none",
+            summary=summary
+            or next((m.content for m in messages if m.role == "user"), messages[0].content)[:120],
+            author=author,
+            branch=session.branch,
+        )
+        self._storage.clear_staged(session_id)
+        session.updated_at = utcnow()
+        self._storage.update_session(session)
+        return commit
+
+    def _unique_branch_name(self, base: str) -> str:
+        """A valid branch name derived from `base`, suffixed if taken."""
+        slug = "".join(c if c.isalnum() or c in "-_." else "-" for c in base).strip(".-_")
+        if not slug:
+            slug = "session"
+        candidate = slug
+        suffix = 2
+        while self._branch_exists(candidate):
+            candidate = f"{slug}-{suffix}"
+            suffix += 1
+        return candidate
 
     # ---------- branches ----------
 
@@ -160,6 +476,10 @@ class Repo:
         if name == self._storage.get_current_branch():
             raise InvalidRefName("cannot delete the current branch")
         self._storage.delete_branch(name)
+
+    def get_branch(self, name: str) -> Branch:
+        """Return one branch pointer by name."""
+        return self._storage.get_branch(name)
 
     def list_branches(self) -> list[Branch]:
         return self._storage.list_branches()
