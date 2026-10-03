@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "react-icons/lu";
 
 import { api, type Message, type Session } from "@/lib/api";
 import { CONVERSATIONS, NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
@@ -11,7 +12,7 @@ import DiffSheet from "./git/DiffSheet";
 import DeleteBranchDialog from "./git/DeleteBranchDialog";
 import MergeDialog from "./git/MergeDialog";
 import { useRepo } from "./git/useRepo";
-import { Chip, Field, IconButton, Monogram, StatusDot } from "./primitives";
+import { AgentMark, Chip, Field, IconButton, StatusIcon } from "./primitives";
 import { Dock } from "./Dock";
 import ModelPicker from "./ModelPicker";
 import GovernorPanel from "./chat/GovernorPanel";
@@ -21,11 +22,15 @@ import AgentRail from "./rail/AgentRail";
 import ChatRail from "./rail/ChatRail";
 import GitRail, { type CommitFilter } from "./rail/GitRail";
 import RosterRail from "./rail/RosterRail";
+import { useFleet } from "./terminal/useFleet";
+import { useMergeQueue } from "./terminal/useMergeQueue";
 import { useSessions } from "./terminal/useSessions";
 import AgentView from "./views/AgentView";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
 import GitView from "./views/GitView";
+import ProjectPicker from "./workspace/ProjectPicker";
+import { useWorkspace } from "./workspace/useWorkspace";
 
 type Theme = "dark" | "light";
 
@@ -43,6 +48,10 @@ export default function Shell() {
 
   // ---- Code tab: real sessions + terminals ----
   const { sessions, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessions();
+  const fleet = useFleet();
+  const mergeQueue = useMergeQueue();
+  const { workspace, error: workspaceError, choose, pickLocation, create: createWorkspace } = useWorkspace();
+  const [projectOpen, setProjectOpen] = useState(false);
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [staged, setStaged] = useState<Message[]>([]);
@@ -138,17 +147,17 @@ export default function Shell() {
   }, []);
 
   const startRun = useCallback(
-    async (name: string, agent: string) => {
-      const created = await create(name, agent);
+    async (name: string, agent: string, scope: string[]) => {
+      const created = await create(name, agent, workspace?.path, scope);
       openSession(created);
     },
-    [create, openSession],
+    [create, openSession, workspace?.path],
   );
 
   const newTerminal = useCallback(async () => {
     try {
       const shellCount = sessions.filter((session) => (session.agent ?? "shell") === "shell").length;
-      const created = await create(`shell ${shellCount + 1}`, "shell");
+      const created = await create(`shell ${shellCount + 1}`, "shell", workspace?.path);
       openSession(created);
     } catch (cause) {
       setBarError(cause instanceof Error ? cause.message : "Could not open a terminal");
@@ -205,6 +214,51 @@ export default function Shell() {
       setBarError(cause instanceof Error ? cause.message : "Could not clear staging");
     }
   }, [activeSession]);
+
+  const queueRun = useCallback(
+    async (session: Session) => {
+      try {
+        await mergeQueue.enqueue(session.id);
+        setBarError(null);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not queue the run");
+      }
+    },
+    [mergeQueue],
+  );
+
+  const mergeQueuedRuns = useCallback(async () => {
+    try {
+      await mergeQueue.run();
+      setBarError(null);
+      await refresh();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not merge the queue");
+    }
+  }, [mergeQueue, refresh]);
+
+  const dropQueued = useCallback(
+    async (id: number) => {
+      try {
+        await mergeQueue.dequeue(id);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not remove the entry");
+      }
+    },
+    [mergeQueue],
+  );
+
+  const integrateActiveRun = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      await api.integrateRun(activeSession.id);
+      setBarError(null);
+      await refresh();
+      await refreshRepo();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not integrate the run");
+    }
+  }, [activeSession, refresh, refreshRepo]);
 
   /** Create a new agent, or save edits to the selected one. */
   const saveAgent = useCallback(
@@ -274,6 +328,7 @@ export default function Shell() {
         return (
           <AgentRail
             sessions={sessions}
+            fleet={fleet}
             openIds={openIds}
             activeId={activeId}
             onSelect={openSession}
@@ -367,7 +422,13 @@ export default function Shell() {
               aria-haspopup="dialog"
               title="Change provider and model"
             >
-              {chatProvider && <Monogram agent={chatProvider.hue} label={chatProvider.monogram} />}
+              {chatProvider && (
+                <AgentMark
+                  agent={chatProvider.hue}
+                  icon={chatProvider.id}
+                  label={chatProvider.monogram}
+                />
+              )}
               <span className="cg-model-card-copy">
                 <strong>{chatModel?.label ?? "Choose a model"}</strong>
                 <span>{chatProvider?.vendor ?? "—"}</span>
@@ -386,7 +447,7 @@ export default function Shell() {
               </header>
               <p className="cg-empty-note">
                 Claims here trace to <strong>2 sessions</strong> and <strong>2 agents</strong>. Hover a
-                message → ⤺ blame.
+                message → <LuCornerUpLeft aria-hidden="true" /> blame.
               </p>
             </section>
             <div className="cg-dock-actions">
@@ -411,7 +472,7 @@ export default function Shell() {
               </Field>
               <Field label="Status">
                 <span className="cg-inline">
-                  <StatusDot status={activeSession.status} />
+                  <StatusIcon status={activeSession.status} />
                   {activeSession.status}
                 </span>
               </Field>
@@ -426,6 +487,70 @@ export default function Shell() {
                 />
                 Auto-checkpoint
               </label>
+            </div>
+            <div className="cg-dock-group">
+              <span className="cg-kicker">Merge queue</span>
+              {mergeQueue.queue.length === 0 ? (
+                <p className="cg-empty-note">Queue runs to merge their branches, one at a time.</p>
+              ) : (
+                <ul className="cg-queue">
+                  {mergeQueue.queue.map((entry) => (
+                    <li key={entry.id} className="cg-queue-row">
+                      <span className="cg-queue-name">
+                        {sessions.find((session) => session.id === entry.session_id)?.name ??
+                          entry.session_id.slice(0, 6)}
+                      </span>
+                      <Chip
+                        tone={
+                          entry.status === "merged"
+                            ? "ok"
+                            : entry.status === "queued"
+                              ? undefined
+                              : "bad"
+                        }
+                      >
+                        {entry.status}
+                      </Chip>
+                      <button
+                        type="button"
+                        className="cg-icon-btn"
+                        aria-label="Remove from queue"
+                        onClick={() => void dropQueued(entry.id)}
+                      >
+                        <LuX aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="cg-dock-actions">
+                <button
+                  type="button"
+                  className="cg-btn"
+                  disabled={!activeSession?.git_branch}
+                  onClick={() => activeSession && void queueRun(activeSession)}
+                >
+                  Queue this run
+                </button>
+                <button
+                  type="button"
+                  className="cg-btn"
+                  data-variant="primary"
+                  disabled={!mergeQueue.queue.some((entry) => entry.status === "queued")}
+                  onClick={() => void mergeQueuedRuns()}
+                >
+                  Merge queue
+                </button>
+                <button
+                  type="button"
+                  className="cg-btn"
+                  data-wide="true"
+                  disabled={!activeSession?.git_branch}
+                  onClick={() => void integrateActiveRun()}
+                >
+                  Integrate code + context
+                </button>
+              </div>
             </div>
             <div className="cg-dock-actions">
               <button
@@ -604,7 +729,7 @@ export default function Shell() {
   const dockTitle =
     tab === "code" ? "Run" : tab === "chat" ? "Conversation" : tab === "agent" ? "Agent" : "Commit";
 
-  const notice = sessionsError ?? barError ?? repoError;
+  const notice = sessionsError ?? barError ?? repoError ?? workspaceError;
 
   return (
     <div className="cg-shell" data-cg-theme={theme}>
@@ -616,7 +741,7 @@ export default function Shell() {
         <TopNav tabs={tabs} active={tab} onChange={setTab} />
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint">
-          ⌘K
+          <LuCommand aria-hidden="true" />K
         </button>
         <button
           type="button"
@@ -624,7 +749,7 @@ export default function Shell() {
           aria-pressed={theme === "dark"}
           onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
         >
-          <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+          <span aria-hidden="true">{theme === "dark" ? <LuSun /> : <LuMoon />}</span>
           {theme === "dark" ? "Light" : "Dark"}
         </button>
         <IconButton
@@ -632,7 +757,7 @@ export default function Shell() {
           pressed={dockOpen}
           onClick={() => setDockOpen((value) => !value)}
         >
-          ▤
+          <LuPanelRight aria-hidden="true" />
         </IconButton>
       </header>
 
@@ -654,13 +779,16 @@ export default function Shell() {
           <div className="cg-view" data-active={tab === "code"}>
             <CodeView
               sessions={sessions}
+              fleet={fleet}
               openIds={openIds}
               activeId={activeId}
               theme={theme}
+              workspace={workspace}
               onSelect={openSession}
               onClose={closeTerminal}
               onNewTerminal={() => void newTerminal()}
               onStaged={() => setRevision((value) => value + 1)}
+              onChooseProject={() => setProjectOpen(true)}
             />
           </div>
           {tab !== "code" && (
@@ -680,6 +808,16 @@ export default function Shell() {
 
       {pickerOpen && (
         <ModelPicker selection={model} onSelect={setModel} onClose={() => setPickerOpen(false)} />
+      )}
+
+      {projectOpen && (
+        <ProjectPicker
+          workspace={workspace}
+          onChoose={choose}
+          onPickLocation={pickLocation}
+          onCreate={createWorkspace}
+          onClose={() => setProjectOpen(false)}
+        />
       )}
 
       {agentDialog && (

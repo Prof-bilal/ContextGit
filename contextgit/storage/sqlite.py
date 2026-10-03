@@ -11,11 +11,18 @@ from importlib import resources
 from pathlib import Path
 from typing import cast
 
-from contextgit.core.errors import BranchNotFound, CommitNotFound, SessionNotFound
+from contextgit.core.errors import (
+    BranchNotFound,
+    CommitNotFound,
+    MergeQueueEntryNotFound,
+    SessionNotFound,
+)
 from contextgit.core.models import (
     Branch,
     Commit,
     CommitKind,
+    MergeQueueEntry,
+    MergeStatus,
     Message,
     Role,
     Session,
@@ -201,6 +208,12 @@ class SqliteStorage:
             status=cast("SessionStatus", row["status"]),
             agent=row["agent"],
             auto_commit=bool(row["auto_commit"]),
+            worktree_path=row["worktree_path"],
+            git_branch=row["git_branch"],
+            base_ref=row["base_ref"],
+            base_commit=row["base_commit"],
+            task=row["task"],
+            scope=json.loads(row["scope"]) if row["scope"] else [],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -209,8 +222,9 @@ class SqliteStorage:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO sessions"
-                " (id, name, kind, branch, status, agent, auto_commit, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " (id, name, kind, branch, status, agent, auto_commit, worktree_path,"
+                " git_branch, base_ref, base_commit, task, scope, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.name,
@@ -219,6 +233,12 @@ class SqliteStorage:
                     session.status,
                     session.agent,
                     int(session.auto_commit),
+                    session.worktree_path,
+                    session.git_branch,
+                    session.base_ref,
+                    session.base_commit,
+                    session.task,
+                    json.dumps(session.scope),
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
@@ -239,13 +259,20 @@ class SqliteStorage:
         with self._conn:
             cur = self._conn.execute(
                 "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
-                " auto_commit = ?, updated_at = ? WHERE id = ?",
+                " auto_commit = ?, worktree_path = ?, git_branch = ?, base_ref = ?,"
+                " base_commit = ?, task = ?, scope = ?, updated_at = ? WHERE id = ?",
                 (
                     session.name,
                     session.branch,
                     session.status,
                     session.agent,
                     int(session.auto_commit),
+                    session.worktree_path,
+                    session.git_branch,
+                    session.base_ref,
+                    session.base_commit,
+                    session.task,
+                    json.dumps(session.scope),
                     session.updated_at.isoformat(),
                     session.id,
                 ),
@@ -310,6 +337,106 @@ class SqliteStorage:
             role=cast("Role", row["role"]), content=row["content"], created_at=row["created_at"]
         )
 
+    # ---------- claims (file scope owned by a run) ----------
+
+    def insert_claims(self, session_id: str, globs: list[str], created_at: str) -> None:
+        with self._conn:
+            for glob in globs:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO claims (session_id, path_glob, created_at)"
+                    " VALUES (?, ?, ?)",
+                    (session_id, glob, created_at),
+                )
+
+    def delete_claims(self, session_id: str) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM claims WHERE session_id = ?", (session_id,))
+
+    def session_claims(self, session_id: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT path_glob FROM claims WHERE session_id = ? ORDER BY path_glob",
+            (session_id,),
+        ).fetchall()
+        return [str(row["path_glob"]) for row in rows]
+
+    def claims_by_session(self) -> dict[str, list[str]]:
+        """Every session's claimed globs, keyed by session id."""
+        rows = self._conn.execute(
+            "SELECT session_id, path_glob FROM claims ORDER BY session_id, path_glob"
+        ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(str(row["session_id"]), []).append(str(row["path_glob"]))
+        return result
+
+    # ---------- merge queue ----------
+
+    @staticmethod
+    def _row_to_merge_entry(row: sqlite3.Row) -> MergeQueueEntry:
+        return MergeQueueEntry(
+            id=int(row["id"]),
+            session_id=row["session_id"],
+            target=row["target"],
+            position=int(row["position"]),
+            status=cast("MergeStatus", row["status"]),
+            conflicts=json.loads(row["conflicts"]) if row["conflicts"] else [],
+            commit_id=row["commit_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_merge_entry(
+        self, session_id: str, target: str, position: int, created_at: str
+    ) -> MergeQueueEntry:
+        with self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO merge_queue"
+                " (session_id, target, position, status, conflicts, commit_id, created_at,"
+                " updated_at) VALUES (?, ?, ?, 'queued', NULL, NULL, ?, ?)",
+                (session_id, target, position, created_at, created_at),
+            )
+        return self.get_merge_entry(int(cur.lastrowid or 0))
+
+    def get_merge_entry(self, entry_id: int) -> MergeQueueEntry:
+        row = self._conn.execute("SELECT * FROM merge_queue WHERE id = ?", (entry_id,)).fetchone()
+        if row is None:
+            raise MergeQueueEntryNotFound(f"merge queue entry {entry_id} not found")
+        return self._row_to_merge_entry(row)
+
+    def list_merge_entries(self) -> list[MergeQueueEntry]:
+        rows = self._conn.execute("SELECT * FROM merge_queue ORDER BY position, id").fetchall()
+        return [self._row_to_merge_entry(row) for row in rows]
+
+    def update_merge_entry(self, entry: MergeQueueEntry) -> None:
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE merge_queue SET target = ?, position = ?, status = ?, conflicts = ?,"
+                " commit_id = ?, updated_at = ? WHERE id = ?",
+                (
+                    entry.target,
+                    entry.position,
+                    entry.status,
+                    json.dumps(entry.conflicts),
+                    entry.commit_id,
+                    entry.updated_at.isoformat(),
+                    entry.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise MergeQueueEntryNotFound(f"merge queue entry {entry.id} not found")
+
+    def next_merge_position(self) -> int:
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM merge_queue"
+        ).fetchone()
+        return int(row[0])
+
+    def delete_merge_entry(self, entry_id: int) -> None:
+        with self._conn:
+            cur = self._conn.execute("DELETE FROM merge_queue WHERE id = ?", (entry_id,))
+            if cur.rowcount == 0:
+                raise MergeQueueEntryNotFound(f"merge queue entry {entry_id} not found")
+
     # ---------- repo state (HEAD) ----------
 
     def get_current_branch(self) -> str:
@@ -325,3 +452,7 @@ class SqliteStorage:
                 " ON CONFLICT(id) DO UPDATE SET current_branch = excluded.current_branch",
                 (name,),
             )
+
+    def is_initialized(self) -> bool:
+        """True once the repository has a HEAD (root commit + branch written)."""
+        return self._conn.execute("SELECT 1 FROM repo_state WHERE id = 1").fetchone() is not None

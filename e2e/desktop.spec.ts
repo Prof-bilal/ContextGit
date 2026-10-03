@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -35,6 +37,19 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
   const root = path.resolve(__dirname, "..");
+  // Runs get real git worktrees, so the workspace must be a throwaway git repo
+  // (not the ContextGit checkout itself).
+  const workdir = path.join(root, ".playwright-workdir");
+  fs.rmSync(workdir, { recursive: true, force: true });
+  fs.mkdirSync(workdir, { recursive: true });
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: workdir });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "e2e@example.com");
+  git("config", "user.name", "e2e");
+  fs.writeFileSync(path.join(workdir, "README.md"), "# e2e project\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+
   app = await electron.launch({
     executablePath: path.join(root, "desktop/node_modules/electron/dist/electron"),
     args: [path.join(root, "desktop"), "--no-sandbox"],
@@ -42,6 +57,7 @@ test.beforeAll(async () => {
       ...process.env,
       CONTEXTGIT_REPO: path.join(root, ".playwright-contextgit-desktop"),
       CONTEXTGIT_PORT: "8757",
+      CONTEXTGIT_WORKDIR: workdir,
     },
   });
 });
@@ -261,7 +277,7 @@ test("start a run and get a live terminal pane", async () => {
   const page = await openShell();
 
   await nav(page, "Code").click();
-  await page.getByRole("button", { name: "＋ New run" }).click();
+  await page.getByRole("button", { name: "New run" }).click();
   await page.getByLabel("Run name").fill("e2e run");
   await page.getByLabel("Agent", { exact: true }).selectOption("shell");
   await page.getByRole("button", { name: "Start run" }).click();
@@ -269,6 +285,163 @@ test("start a run and get a live terminal pane", async () => {
   // The run shows up in the agent-grouped rail and its PTY connects.
   await expect(page.locator(".cg-row", { hasText: "e2e run" }).first()).toBeVisible();
   await expect(page.locator(".cg-term-host .xterm-screen").first()).toBeVisible();
+});
+
+test("choose the project folder from the Code tab", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  // CONTEXTGIT_WORKDIR pins the workspace to the throwaway e2e repo for this run.
+  const trigger = page.locator(".cg-project-btn");
+  await expect(trigger).toContainText(".playwright-workdir");
+  await trigger.click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Project folder");
+  await expect(dialog.getByRole("button", { name: "Choose folder…" })).toBeVisible();
+
+  // The "create a folder" flow shows a location and a name field without
+  // opening a native dialog (which would block the test).
+  await dialog.getByRole("button", { name: "New folder…" }).click();
+  await expect(dialog.getByLabel("Folder name")).toBeVisible();
+  await expect(dialog.getByLabel("Location")).toHaveValue(/.+/);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("the fleet rail shows a run's changed files", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  const name = `fleet ${Date.now()}`;
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill(name);
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  // Wait for the run, then change a file in its own git worktree.
+  await expect(page.locator(".cg-row", { hasText: name })).toBeVisible();
+  const worktree = await page.evaluate(async (runName) => {
+    const base = window.contextgit!.apiBase;
+    const sessions = await fetch(`${base}/api/v1/sessions`).then((r) => r.json());
+    const run = sessions.find((session: { name: string }) => session.name === runName);
+    return (run?.worktree_path as string | undefined) ?? null;
+  }, name);
+  expect(worktree).toBeTruthy();
+  fs.writeFileSync(path.join(String(worktree), "fleet.txt"), "changed\n");
+
+  // The rail polls the fleet and shows the changed-file count.
+  await expect(page.locator(".cg-row", { hasText: name })).toContainText("files", {
+    timeout: 20_000,
+  });
+});
+
+test("the New run form warns when a scope overlaps another run", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  // First run claims a directory.
+  const first = `scope a ${Date.now()}`;
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill(first);
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByLabel("Own files (optional)").fill("src/api/**");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.locator(".cg-row", { hasText: first })).toBeVisible();
+
+  // A second run claiming a file inside it is warned live.
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill("scope b");
+  await page.getByLabel("Own files (optional)").fill("src/api/users.py");
+  await expect(page.locator(".cg-form-warn")).toContainText("Overlaps", { timeout: 10_000 });
+
+  // Collapse the form so later tests start with the rail uncluttered.
+  await page.getByRole("button", { name: "New run" }).click();
+});
+
+test("a run can be queued and removed from the merge queue", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  const name = `queued ${Date.now()}`;
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill(name);
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  const row = page.locator(".cg-row", { hasText: name });
+  await expect(row).toBeVisible();
+  await row.click();
+
+  const dock = page.locator(".cg-dock");
+  await dock.getByRole("button", { name: "Queue this run" }).click();
+  await expect(dock.locator(".cg-queue-name")).toContainText(name);
+
+  await dock.getByRole("button", { name: "Remove from queue" }).click();
+  await expect(dock.locator(".cg-queue-row")).toHaveCount(0);
+});
+
+test("a run's code and context integrate together", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+  const workdir = path.join(path.resolve(__dirname, ".."), ".playwright-workdir");
+
+  const name = `pair ${Date.now()}`;
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill(name);
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  const row = page.locator(".cg-row", { hasText: name });
+  await expect(row).toBeVisible();
+  await row.click();
+
+  const run = await page.evaluate(async (runName) => {
+    const base = window.contextgit!.apiBase;
+    const sessions = await fetch(`${base}/api/v1/sessions`).then((r) => r.json());
+    return sessions.find((session: { name: string }) => session.name === runName) as
+      | { id: string; worktree_path: string }
+      | undefined;
+  }, name);
+  expect(run?.worktree_path).toBeTruthy();
+  const worktree = String(run?.worktree_path);
+
+  // Give the run some context, and commit a code change in its worktree.
+  await page.evaluate(async (sessionId) => {
+    const base = window.contextgit!.apiBase;
+    const headers = { "Content-Type": "application/json" };
+    await fetch(`${base}/api/v1/sessions/${sessionId}/staging`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages: [{ role: "user", content: "decided X" }] }),
+    });
+    await fetch(`${base}/api/v1/sessions/${sessionId}/commit`, { method: "POST", headers, body: "{}" });
+  }, String(run?.id));
+  fs.writeFileSync(path.join(worktree, "paired.txt"), "p\n");
+  spawnSync("git", ["-C", worktree, "add", "-A"]);
+  spawnSync("git", [
+    "-C",
+    worktree,
+    "-c",
+    "user.email=e2e@example.com",
+    "-c",
+    "user.name=e2e",
+    "commit",
+    "-qm",
+    "work",
+  ]);
+
+  const before = spawnSync("git", ["-C", workdir, "rev-parse", "main"]).stdout.toString().trim();
+  await page.locator(".cg-dock").getByRole("button", { name: "Integrate code + context" }).click();
+
+  await expect
+    .poll(() => spawnSync("git", ["-C", workdir, "rev-parse", "main"]).stdout.toString().trim(), {
+      timeout: 15_000,
+    })
+    .not.toBe(before);
+  expect(spawnSync("git", ["-C", workdir, "show", "main:paired.txt"]).stdout.toString()).toBe("p\n");
 });
 
 test("pick a provider and model from the chat picker", async () => {
@@ -498,7 +671,7 @@ test("create a new agent with its own avatar", async () => {
     .locator(".cg-doc-head .cg-clay-wrap")
     .getAttribute("data-variant");
 
-  await page.getByRole("button", { name: "＋ New agent" }).click();
+  await page.getByRole("button", { name: "New agent" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
@@ -581,7 +754,7 @@ test("a run's View diff and Open run open real sheets", async () => {
 test("shuffle keeps producing new designs", async () => {
   const page = await openShell();
   await nav(page, "Agent").click();
-  await page.getByRole("button", { name: "＋ New agent" }).click();
+  await page.getByRole("button", { name: "New agent" }).click();
 
   const preview = page.getByRole("dialog").locator(".cg-clay-wrap");
   const seen = new Set<string>();
@@ -600,7 +773,7 @@ test("typing into a terminal reaches the PTY", async () => {
   const page = await openShell();
 
   await nav(page, "Code").click();
-  await page.getByRole("button", { name: "＋ New run" }).click();
+  await page.getByRole("button", { name: "New run" }).click();
   await page.getByLabel("Run name").fill("typed run");
   await page.getByLabel("Agent", { exact: true }).selectOption("shell");
   await page.getByRole("button", { name: "Start run" }).click();
@@ -613,5 +786,9 @@ test("typing into a terminal reaches the PTY", async () => {
   await pane.locator(".cg-term-host").click();
   await page.keyboard.type("echo CTX_TYPED_$((6*7))");
   await page.keyboard.press("Enter");
-  await expect(pane.locator(".xterm-rows")).toContainText("CTX_TYPED_42", { timeout: 15_000 });
+  // The WebGL renderer draws to a canvas; screenReaderMode exposes the text in
+  // the accessibility DOM instead of .xterm-rows.
+  await expect(pane.locator(".xterm-accessibility-tree")).toContainText("CTX_TYPED_42", {
+    timeout: 15_000,
+  });
 });

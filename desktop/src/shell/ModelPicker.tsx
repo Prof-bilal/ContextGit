@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { LuCornerDownLeft } from "react-icons/lu";
 
-import { Chip, Monogram } from "./primitives";
+import { AgentMark, Chip } from "./primitives";
 import { PROVIDERS, type ModelSelection } from "./providers";
 
 /**
@@ -139,7 +140,7 @@ export default function ModelPicker({
                   searchRef.current?.focus();
                 }}
               >
-                <Monogram agent={provider.hue} label={provider.monogram} />
+                <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />
                 <span className="cg-picker-item-copy">
                   <span className="cg-picker-item-title">{provider.label}</span>
                   <span className="cg-picker-item-meta">
@@ -185,7 +186,10 @@ export default function ModelPicker({
             <kbd>↑</kbd> <kbd>↓</kbd> navigate
           </span>
           <span>
-            <kbd>⏎</kbd> select
+            <kbd>
+              <LuCornerDownLeft aria-hidden="true" />
+            </kbd>{" "}
+            select
           </span>
           <span>
             <kbd>esc</kbd> close

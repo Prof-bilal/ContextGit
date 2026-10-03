@@ -59,3 +59,21 @@ class MergePreview(BaseModel):
     summary: str
     summary_confidence: Literal["high", "low"]
     fallback: bool = False
+
+
+class PairedMerge(BaseModel):
+    """The code *and* context commits created by merging one run."""
+
+    source_branch: str
+    git_target: str
+    context_target: str
+    code_commit_id: str
+    context_commit_id: str
+
+
+class CrossRunConflict(BaseModel):
+    """Semantic conflicts between two runs' context branches."""
+
+    session_id: str
+    name: str
+    conflicts: list[SemanticConflict]

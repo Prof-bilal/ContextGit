@@ -1,30 +1,94 @@
 import type { ReactNode } from "react";
+import type { IconType } from "react-icons";
+import { BsOpenai, BsRobot } from "react-icons/bs";
+import {
+  LuCircle,
+  LuCircleAlert,
+  LuCircleCheck,
+  LuLoaderCircle,
+  LuPlug,
+  LuSparkles,
+} from "react-icons/lu";
+import {
+  SiAnthropic,
+  SiClaude,
+  SiGnubash,
+  SiGooglegemini,
+  SiOllama,
+  SiOpencode,
+} from "react-icons/si";
 
 import type { SessionStatus } from "@/lib/api";
 
-export function StatusDot({ status }: { status: SessionStatus }) {
+/** Real brand mark per agent / provider key; unknown keys fall back to a letter. */
+const MARKS: Record<string, IconType> = {
+  claude: SiClaude,
+  anthropic: SiAnthropic,
+  chatgpt: BsOpenai,
+  openai: BsOpenai,
+  codex: BsOpenai,
+  gemini: SiGooglegemini,
+  google: SiGooglegemini,
+  opencode: SiOpencode,
+  ollama: SiOllama,
+  local: SiOllama,
+  shell: SiGnubash,
+  aider: BsRobot,
+  grok: LuSparkles,
+  compatible: LuPlug,
+};
+
+const STATUS_ICONS: Record<SessionStatus, IconType> = {
+  idle: LuCircle,
+  running: LuLoaderCircle,
+  done: LuCircleCheck,
+  error: LuCircleAlert,
+};
+
+export function StatusIcon({ status }: { status: SessionStatus }) {
+  const Icon = STATUS_ICONS[status];
   return (
-    <span
-      className="cg-dot"
-      data-status={status}
-      role="img"
-      aria-label={`Status: ${status}`}
-    />
+    <Icon className="cg-status" data-status={status} role="img" aria-label={`Status: ${status}`} />
   );
 }
 
-export function Monogram({
+/** Official brand colour per agent / provider key (theme-aware for monochrome marks). */
+const MARK_COLORS: Record<string, string> = {
+  claude: "var(--cg-brand-claude)",
+  anthropic: "var(--cg-brand-claude)",
+  chatgpt: "var(--cg-brand-openai)",
+  openai: "var(--cg-brand-openai)",
+  codex: "var(--cg-brand-openai)",
+  gemini: "var(--cg-brand-gemini)",
+  google: "var(--cg-brand-gemini)",
+  opencode: "var(--cg-brand-opencode)",
+  ollama: "var(--cg-brand-ollama)",
+  local: "var(--cg-brand-ollama)",
+  shell: "var(--cg-brand-shell)",
+  aider: "var(--cg-brand-aider)",
+  grok: "var(--cg-brand-openai)",
+  compatible: "var(--cg-ink-2)",
+};
+
+export function AgentMark({
   agent,
+  icon,
   label,
   size,
 }: {
+  /** Fallback key when no explicit `icon` is given. */
   agent: string;
+  /** Brand key; agents and providers differ here. Defaults to `agent`. */
+  icon?: string;
   label: string;
   size?: "lg";
 }) {
+  const key = icon ?? agent;
+  const Mark = MARKS[key];
+  const color = MARK_COLORS[key] ?? "var(--cg-ink-2)";
   return (
-    <span className="cg-mono-badge" data-agent={agent} data-size={size} aria-hidden="true">
-      {label}
+    <span className="cg-mark" data-size={size} aria-hidden="true" style={{ color }}>
+      {Mark ? <Mark /> : label}
     </span>
   );
 }

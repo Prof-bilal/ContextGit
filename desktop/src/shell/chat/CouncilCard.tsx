@@ -1,5 +1,5 @@
 import type { CouncilAnswer } from "../../mock/chat";
-import { Chip, Monogram } from "../primitives";
+import { AgentMark, Chip } from "../primitives";
 import { PROVIDERS } from "../providers";
 
 /**
@@ -35,7 +35,9 @@ export default function CouncilCard({
           return (
             <article key={id} className="cg-council-col" data-kept={kept === id}>
               <header className="cg-council-head">
-                {provider && <Monogram agent={provider.hue} label={provider.monogram} />}
+                {provider && (
+                  <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />
+                )}
                 <span className="cg-council-name">{provider?.label ?? id}</span>
                 {answer?.stance === "dissents" && <Chip tone="warn">dissents</Chip>}
               </header>

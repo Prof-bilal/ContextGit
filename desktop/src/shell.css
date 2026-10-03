@@ -41,6 +41,15 @@
   --cg-agent-ollama: #d98cff;
   --cg-agent-shell: #9aa0a6;
 
+  /* Official brand colours for the CLI / provider marks. */
+  --cg-brand-claude: #d97757;
+  --cg-brand-openai: #ffffff;
+  --cg-brand-opencode: #cfcecd;
+  --cg-brand-gemini: #8e75b2;
+  --cg-brand-ollama: #ffffff;
+  --cg-brand-shell: #4eaa25;
+  --cg-brand-aider: #14b014;
+
   --cg-rail: 17rem;
   --cg-dock: 20rem;
   --cg-ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -80,6 +89,10 @@
   --cg-agent-gemini: #2f7fd6;
   --cg-agent-aider: #3d8b34;
   --cg-agent-ollama: #8a3fb0;
+  /* Monochrome brand marks flip to near-black on the paper surface. */
+  --cg-brand-openai: #191919;
+  --cg-brand-opencode: #211e1e;
+  --cg-brand-ollama: #191919;
 }
 
 /* ------------------------------------------------------------------ base --- */
@@ -309,6 +322,9 @@
 }
 
 .cg-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin: 0 0.85rem 0.7rem;
   padding: 0.5rem 0.7rem;
   border: 1px dashed var(--cg-line-strong);
@@ -530,50 +546,49 @@
 
 /* Status is carried mostly by the active states; idle/done stay quiet so a
    list of mostly-idle runs does not read as a wall of color. */
-.cg-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
+.cg-status {
+  width: 0.9rem;
+  height: 0.9rem;
   flex: none;
-  background: var(--cg-ink-3);
+  color: var(--cg-ink-3);
 }
-.cg-dot[data-status="running"] {
-  background: var(--cg-ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cg-ok) 22%, transparent);
+.cg-status[data-status="running"] {
+  color: var(--cg-ok);
+  animation: cg-spin 1s linear infinite;
 }
-.cg-dot[data-status="idle"] {
-  background: var(--cg-line-strong);
+.cg-status[data-status="idle"] {
+  color: var(--cg-line-strong);
 }
-.cg-dot[data-status="done"] {
-  background: var(--cg-ink-3);
+.cg-status[data-status="done"] {
+  color: var(--cg-ink-3);
 }
-.cg-dot[data-status="error"] {
-  background: var(--cg-bad);
+.cg-status[data-status="error"] {
+  color: var(--cg-bad);
+}
+@keyframes cg-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.cg-mono-badge {
+/* Agent / provider brand marks: the real logo in its official colour with no
+   chip behind it (a coloured square made brand marks read as placeholders). */
+.cg-mark {
   display: inline-grid;
   place-items: center;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.15rem;
+  height: 1.15rem;
   flex: none;
-  border-radius: 6px;
-  font: 700 0.7rem/1 "Martian Mono", monospace;
-  color: #191612;
-  background: var(--cg-agent-shell);
+  font: 700 0.95rem/1 "Martian Mono", monospace;
 }
-.cg-mono-badge[data-agent="claude"] { background: var(--cg-agent-claude); }
-.cg-mono-badge[data-agent="codex"] { background: var(--cg-agent-codex); }
-.cg-mono-badge[data-agent="opencode"] { background: var(--cg-agent-opencode); }
-.cg-mono-badge[data-agent="gemini"] { background: var(--cg-agent-gemini); }
-.cg-mono-badge[data-agent="aider"] { background: var(--cg-agent-aider); }
-.cg-mono-badge[data-agent="ollama"] { background: var(--cg-agent-ollama); }
-.cg-mono-badge[data-agent="shell"] { background: var(--cg-agent-shell); }
-.cg-mono-badge[data-size="lg"] {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 9px;
-  font-size: 1rem;
+.cg-mark svg {
+  width: 1em;
+  height: 1em;
+}
+.cg-mark[data-size="lg"] {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.4rem;
 }
 
 .cg-chip {
@@ -588,6 +603,11 @@
   color: var(--cg-ink-2);
   font: 500 0.62rem/1.4 "Martian Mono", monospace;
   white-space: nowrap;
+}
+.cg-chip svg {
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
 }
 .cg-chip[data-tone="signal"] {
   color: var(--cg-signal);
@@ -664,6 +684,47 @@
 .cg-toolbar-spacer {
   flex: 1;
 }
+.cg-project-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 22rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  background: var(--cg-bg);
+  color: var(--cg-ink-2);
+  cursor: pointer;
+  font: 500 0.72rem/1 "Martian Mono", ui-monospace, monospace;
+}
+.cg-project-btn:hover {
+  border-color: var(--cg-line-strong);
+  color: var(--cg-ink);
+}
+.cg-project-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--cg-ok);
+}
+.cg-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-project-change {
+  flex: none;
+  color: var(--cg-ink-3);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cg-path {
+  word-break: break-all;
+  font: 400 0.72rem/1.4 "Martian Mono", ui-monospace, monospace;
+  color: var(--cg-ink-2);
+}
 
 .cg-mini-seg {
   display: inline-flex;
@@ -688,6 +749,10 @@
 }
 
 .cg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   border: 1px solid var(--cg-line-strong);
   background: var(--cg-surface-2);
   color: var(--cg-ink);
@@ -819,13 +884,22 @@
   min-height: 0;
   min-width: 0;
   padding: 0.45rem 0.35rem 0.35rem 0.6rem;
+  overflow: hidden;
   background: var(--cg-term-bg);
 }
 .cg-term-host .xterm {
   height: 100%;
 }
+/* The viewport must not reserve scrollbar space: Chromium ignores
+   scrollbar-width and the global 12px ::-webkit-scrollbar would otherwise
+   hide the terminal's last column and clip its bottom row. Scrollback still
+   works via the wheel, keys and touch. */
 .cg-term-host .xterm-viewport {
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.cg-term-host .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .cg-btn-sm {
   padding: 0.24rem 0.5rem;
@@ -855,6 +929,11 @@
   background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
   color: var(--cg-bad);
   font: 400 0.68rem/1.4 "Martian Mono", monospace;
+}
+.cg-form-warn {
+  margin: 0;
+  color: var(--cg-warn);
+  font: 400 0.66rem/1.4 "Martian Mono", monospace;
 }
 
 /* ----------------------------------------------------------- chat view ---- */
@@ -1617,6 +1696,27 @@
   grid-template-columns: 1fr 1fr;
   gap: 0.4rem;
 }
+.cg-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.cg-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.cg-queue-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: var(--cg-ink);
+}
 .cg-dock-actions .cg-btn:only-child,
 .cg-dock-actions .cg-btn[data-wide="true"] {
   grid-column: 1 / -1;
@@ -1964,10 +2064,9 @@
   border-color: var(--cg-line-strong);
   color: var(--cg-ink);
 }
-.cg-chip-btn .cg-mono-badge {
-  width: 0.95rem;
-  height: 0.95rem;
-  border-radius: 4px;
+.cg-chip-btn .cg-mark {
+  width: 0.9rem;
+  height: 0.9rem;
   font-size: 0.55rem;
 }
 
@@ -2148,6 +2247,9 @@
   position: relative;
 }
 .cg-blame-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   position: absolute;
   top: 0;
   right: 0;

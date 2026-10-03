@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LuPlus } from "react-icons/lu";
 
 import { CONVERSATIONS, type Conversation } from "../../mock/fixtures";
 
@@ -36,7 +37,7 @@ export default function ChatRail({
         />
       </div>
       <button type="button" className="cg-new-btn">
-        ＋ New conversation
+        <LuPlus aria-hidden="true" /> New conversation
       </button>
       {filtered.map((conversation) => (
         <button

@@ -63,6 +63,7 @@ class Tag(BaseModel):
 
 SessionKind = Literal["chat", "terminal"]
 SessionStatus = Literal["idle", "running", "done", "error"]
+MergeStatus = Literal["queued", "merged", "blocked", "failed"]
 
 
 class Session(BaseModel):
@@ -79,5 +80,27 @@ class Session(BaseModel):
     status: SessionStatus = "idle"
     agent: str | None = None
     auto_commit: bool = False
+    # Worktree pairing: the git checkout (code) that goes with `branch` (conversation).
+    # All None/empty for non-git projects, which share one workspace folder.
+    worktree_path: str | None = None
+    git_branch: str | None = None
+    base_ref: str | None = None
+    base_commit: str | None = None
+    task: str | None = None
+    scope: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MergeQueueEntry(BaseModel):
+    """A run waiting to merge into a target branch, in queue order."""
+
+    id: int
+    session_id: str
+    target: str
+    position: int
+    status: MergeStatus = "queued"
+    conflicts: list[str] = Field(default_factory=list)
+    commit_id: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

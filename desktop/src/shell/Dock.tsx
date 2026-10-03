@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { LuX } from "react-icons/lu";
 
 export function Dock({
   title,
@@ -21,7 +22,7 @@ export function Dock({
           title="Close inspector"
           onClick={onClose}
         >
-          ×
+          <LuX aria-hidden="true" />
         </button>
       </div>
       <div className="cg-dock-body">{children}</div>

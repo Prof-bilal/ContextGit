@@ -1,4 +1,6 @@
 import { lazy, Suspense, useState } from "react";
+import type { IconType } from "react-icons";
+import { LuCircle, LuCircleDot, LuGitMerge, LuPencilLine } from "react-icons/lu";
 
 import type { Branch, Commit } from "@/lib/api";
 import { Chip, MiniSeg } from "../primitives";
@@ -7,11 +9,11 @@ import type { CommitFilter } from "../rail/GitRail";
 // React Flow is heavy and only needed in the graph view.
 const CommitGraph = lazy(() => import("../git/CommitGraph"));
 
-const KIND_ICON: Record<Commit["kind"], string> = {
-  root: "◉",
-  normal: "●",
-  merge: "⑂",
-  note: "✎",
+const KIND_ICON: Record<Commit["kind"], IconType> = {
+  root: LuCircleDot,
+  normal: LuCircle,
+  merge: LuGitMerge,
+  note: LuPencilLine,
 };
 
 const VIEW_OPTIONS = [
@@ -89,6 +91,7 @@ export default function GitView({
             <ol className="cg-commit-list" aria-label="Commit history">
               {visible.map((commit) => {
                 const labels = branchesAt(commit.id);
+                const KindIcon = KIND_ICON[commit.kind];
                 return (
                   <li key={commit.id}>
                     <button
@@ -98,7 +101,7 @@ export default function GitView({
                       onClick={() => onSelect(commit)}
                     >
                       <span className="cg-kind" data-kind={commit.kind} aria-hidden="true">
-                        {KIND_ICON[commit.kind]}
+                        <KindIcon />
                       </span>
                       <span className="cg-commit-copy">
                         <span className="cg-commit-summary">

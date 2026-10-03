@@ -6,7 +6,7 @@ import { AVATAR_STATE_LABEL, type AvatarState } from "../avatar/traits";
 import { agentSeed, humanSchedule } from "../agent/mission";
 import RunOutput from "../agent/RunOutput";
 import { RunDiffSheet, RunSheet } from "../agent/RunSheets";
-import { Chip, StatusDot } from "../primitives";
+import { Chip, StatusIcon } from "../primitives";
 
 const MEMORY_SECTIONS = [
   { key: "decisions", label: "Decisions" },
@@ -183,7 +183,7 @@ export default function AgentView({
           <div className="cg-runs">
             {state === "working" && (
               <div className="cg-run" data-live="true">
-                <StatusDot status="running" />
+                <StatusIcon status="running" />
                 <span className="cg-run-copy">
                   <strong>Running now…</strong>
                   <span>started just now · this agent is working</span>
@@ -198,7 +198,7 @@ export default function AgentView({
                   aria-expanded={openRun === run.id}
                   onClick={() => setOpenRun((current) => (current === run.id ? null : run.id))}
                 >
-                  <StatusDot status={run.status} />
+                  <StatusIcon status={run.status} />
                   <span className="cg-run-copy">
                     <strong>{run.summary}</strong>
                     <span>

@@ -1,6 +1,7 @@
 {
   "name": "contextgit-landing",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

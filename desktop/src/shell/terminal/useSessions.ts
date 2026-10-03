@@ -29,11 +29,23 @@ export function useSessions() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const create = useCallback(async (name: string, agent: string) => {
-    const created = await api.createSession({ name, kind: "terminal", agent });
-    setSessions((current) => [...current, created]);
-    return created;
-  }, []);
+  const create = useCallback(
+    async (name: string, agent: string, projectPath?: string, scope?: string[]) => {
+      const created = await api.createSession({
+        name,
+        kind: "terminal",
+        agent,
+        projectPath,
+        // One git worktree per run when the project is a git repo (backend falls
+        // back to the shared workspace otherwise).
+        worktree: Boolean(projectPath),
+        scope: scope ?? [],
+      });
+      setSessions((current) => [...current, created]);
+      return created;
+    },
+    [],
+  );
 
   const remove = useCallback(async (id: string) => {
     await api.deleteSession(id);

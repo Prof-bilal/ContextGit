@@ -47,3 +47,7 @@ class SessionNotFound(ContextGitError):
 
 class StagingEmpty(ContextGitError):
     """A commit was requested but the session has no staged messages."""
+
+
+class MergeQueueEntryNotFound(ContextGitError):
+    """The referenced merge-queue entry does not exist."""

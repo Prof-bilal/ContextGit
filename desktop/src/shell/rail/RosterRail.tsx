@@ -1,3 +1,5 @@
+import { LuPlus } from "react-icons/lu";
+
 import type { NamedAgent } from "../../mock/fixtures";
 import ClayAvatar from "../avatar/ClayAvatar";
 import { avatarState } from "../avatar/traits";
@@ -23,7 +25,7 @@ export default function RosterRail({
         <span className="cg-count">{agents.length}</span>
       </div>
       <button type="button" className="cg-new-btn" onClick={onNewAgent}>
-        ＋ New agent
+        <LuPlus aria-hidden="true" /> New agent
       </button>
       {agents.map((agent) => (
         <button

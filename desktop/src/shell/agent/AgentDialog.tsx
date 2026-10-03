@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LuX } from "react-icons/lu";
 
 import ClayAvatar from "../avatar/ClayAvatar";
 import {
@@ -90,7 +91,7 @@ export default function AgentDialog({
           </span>
           <span className="cg-toolbar-spacer" />
           <button type="button" className="cg-icon-btn" aria-label="Close" onClick={onClose}>
-            ×
+            <LuX aria-hidden="true" />
           </button>
         </header>
 

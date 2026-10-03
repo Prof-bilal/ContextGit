@@ -27,11 +27,20 @@ next-env.d.ts
 # python
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 htmlcov/
 .coverage
+.coverage.*
+coverage.xml
+*.egg-info/
+
+# local editor / agent tooling
+.commandcode/
+.freebuff/
 
 # electron desktop
 .desktop-venv/
@@ -46,8 +55,8 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
-# throwaway repos the e2e launches against (one per spec/port)
-.playwright-contextgit*/
+# throwaway repos / worktrees the e2e launches against
+.playwright-*/
 
 # local app data: the app's own repository (sqlite + .contextgit/context.md + assets)
 .contextgit/

@@ -3,13 +3,15 @@
  * PyInstaller binary when packaged), health-gates the window on it, and
  * pushes backend status to the renderer.
  */
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 
 import { PTY_PRESETS, PtyManager } from "./pty";
 import type { BackendStatus } from "../shared/status";
+import type { Workspace } from "../shared/workspace";
 
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(app.getAppPath(), "..");
@@ -142,6 +144,97 @@ ipcMain.on("ctx:status-sync", (event) => {
   event.returnValue = { status, apiBase };
 });
 
+// ---------- Workspace (project folder) ----------
+
+/**
+ * The folder the user works in. New terminals and agents start here; it is
+ * chosen in the Code tab and persisted per machine. `CONTEXTGIT_WORKDIR`, when
+ * set, is a hard override (used by tests/scripts).
+ */
+function workspaceFile(): string {
+  return path.join(app.getPath("userData"), "workspace.json");
+}
+
+function isDirectory(target: string): boolean {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function toWorkspace(target: string): Workspace {
+  const resolved = path.resolve(target);
+  return { path: resolved, name: path.basename(resolved) || resolved, parent: path.dirname(resolved) };
+}
+
+function readWorkspace(): Workspace {
+  const override = process.env.CONTEXTGIT_WORKDIR;
+  if (override && isDirectory(override)) return toWorkspace(override);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(workspaceFile(), "utf8")) as { path?: unknown };
+    if (typeof parsed.path === "string" && isDirectory(parsed.path)) return toWorkspace(parsed.path);
+  } catch {
+    // no saved workspace yet
+  }
+  return toWorkspace(repoRoot);
+}
+
+let workspace: Workspace | null = null;
+
+function currentWorkspace(): Workspace {
+  workspace ??= readWorkspace();
+  return workspace;
+}
+
+function setWorkspace(target: string): Workspace {
+  workspace = toWorkspace(target);
+  try {
+    fs.mkdirSync(path.dirname(workspaceFile()), { recursive: true });
+    fs.writeFileSync(workspaceFile(), `${JSON.stringify({ path: workspace.path }, null, 2)}\n`);
+  } catch {
+    // persistence is best-effort; the in-memory value still applies
+  }
+  return workspace;
+}
+
+/** Native folder picker. `createDirectory` adds the dialog's "New Folder" button. */
+function showFolderDialog(title: string): Promise<Electron.OpenDialogReturnValue> {
+  const options: Electron.OpenDialogOptions = {
+    title,
+    buttonLabel: "Use this folder",
+    defaultPath: currentWorkspace().path,
+    properties: ["openDirectory", "createDirectory"],
+  };
+  return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
+}
+
+ipcMain.handle("ctx:workspace-get", () => currentWorkspace());
+
+ipcMain.handle("ctx:workspace-choose", async () => {
+  const result = await showFolderDialog("Choose a project folder");
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return setWorkspace(result.filePaths[0]);
+});
+
+/** Pick a location without applying it — used as the parent for a new folder. */
+ipcMain.handle("ctx:workspace-pick", async () => {
+  const result = await showFolderDialog("Choose a location");
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle("ctx:workspace-create", (_event, options: { parent: string; name: string }) => {
+  const name = options.name.trim();
+  if (!name) throw new Error("Folder name is required");
+  if (name.includes("/") || name.includes("\\")) throw new Error("Folder name cannot contain slashes");
+  const parent = path.resolve(options.parent);
+  if (!isDirectory(parent)) throw new Error("Choose an existing folder for the location");
+  const target = path.join(parent, name);
+  fs.mkdirSync(target, { recursive: true });
+  return setWorkspace(target);
+});
+
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 const ptys = new PtyManager(
@@ -149,13 +242,29 @@ const ptys = new PtyManager(
   (id, code) => mainWindow?.webContents.send("ctx:pty-exit", id, code),
 );
 
-ipcMain.on("ctx:pty-start", (_event, options: { id: string; command: string; cols: number; rows: number }) => {
-  ptys.start({
-    ...options,
-    cwd: process.env.CONTEXTGIT_WORKDIR ?? repoRoot,
-    env: { TERM: "xterm-256color" },
-  });
-});
+/** Only allow a per-run cwd inside the workspace or its managed worktrees. */
+function resolvePtyCwd(requested?: string): string {
+  const workspace = currentWorkspace().path;
+  if (requested) {
+    const resolved = path.resolve(requested);
+    const worktrees = `${path.join(workspace, ".contextgit", "worktrees")}${path.sep}`;
+    const inside =
+      resolved === path.resolve(workspace) || resolved.startsWith(worktrees);
+    if (inside && isDirectory(resolved)) return resolved;
+  }
+  return isDirectory(workspace) ? workspace : repoRoot;
+}
+
+ipcMain.on(
+  "ctx:pty-start",
+  (_event, options: { id: string; command: string; cols: number; rows: number; cwd?: string }) => {
+    ptys.start({
+      ...options,
+      cwd: resolvePtyCwd(options.cwd),
+      env: { TERM: "xterm-256color" },
+    });
+  },
+);
 ipcMain.on("ctx:pty-write", (_event, id: string, data: string) => ptys.write(id, data));
 ipcMain.on("ctx:pty-resize", (_event, id: string, cols: number, rows: number) =>
   ptys.resize(id, cols, rows),

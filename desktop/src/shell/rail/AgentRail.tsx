@@ -1,15 +1,38 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { Session } from "@/lib/api";
+import { api, type FleetEntry, type Session } from "@/lib/api";
 import { AGENTS, DEFAULT_AGENT, agentLabel, agentMonogram } from "../agents";
-import { Chip, Monogram, StatusDot } from "../primitives";
+import { AgentMark, Chip, StatusIcon } from "../primitives";
+import { LuChevronRight, LuPlus, LuX } from "react-icons/lu";
+
+/** "src/api/**, docs/**" -> ["src/api/**", "docs/**"]. */
+function parseScope(text: string): string[] {
+  return text
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Tooltip for a run row: branch, worktree, changed files and overlap. */
+function fleetTitle(session: Session, entry: FleetEntry | undefined): string {
+  if (!entry) return session.branch;
+  const parts = [session.branch];
+  if (entry.git_branch) {
+    parts.push(entry.behind > 0 ? `${entry.git_branch} (behind ${entry.behind})` : entry.git_branch);
+  }
+  if (entry.changed_files.length > 0) parts.push(`${entry.changed_files.length} files changed`);
+  if (entry.overlaps.length > 0) parts.push(`${entry.overlaps.length} overlapping run(s)`);
+  if (!entry.clean) parts.push("merge conflicts");
+  return parts.join(" · ");
+}
 
 /**
  * Runs rail: sessions from the backend grouped by agent CLI (Claude Code ->
- * its runs, Codex -> its runs, ...). "＋ New run" starts a fresh session.
+ * its runs, Codex -> its runs, ...). "New run" starts a fresh session.
  */
 export default function AgentRail({
   sessions,
+  fleet,
   openIds,
   activeId,
   onSelect,
@@ -17,18 +40,46 @@ export default function AgentRail({
   onDelete,
 }: {
   sessions: Session[];
+  fleet: FleetEntry[];
   openIds: string[];
   activeId: string | null;
   onSelect: (session: Session) => void;
-  onNew: (name: string, agent: string) => Promise<void>;
+  onNew: (name: string, agent: string, scope: string[]) => Promise<void>;
   onDelete: (session: Session) => void;
 }) {
+  const fleetById = new Map(fleet.map((entry) => [entry.session_id, entry]));
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [agent, setAgent] = useState(DEFAULT_AGENT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scopeText, setScopeText] = useState("");
+  const [claimConflicts, setClaimConflicts] = useState<string[]>([]);
+
+  // Warn as you type when the claimed files overlap another run's scope.
+  useEffect(() => {
+    const scope = parseScope(scopeText);
+    if (scope.length === 0) {
+      setClaimConflicts([]);
+      return;
+    }
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void api
+        .checkClaims(scope)
+        .then((result) => {
+          if (alive) setClaimConflicts(result.conflicts);
+        })
+        .catch(() => {
+          if (alive) setClaimConflicts([]);
+        });
+    }, 300);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [scopeText]);
 
   // Reveal a group the first time it has any runs; the user can collapse it after.
   useEffect(() => {
@@ -55,14 +106,19 @@ export default function AgentRail({
     .map((id) => ({ id, items: sessions.filter((session) => (session.agent ?? "shell") === id) }))
     .filter((group) => group.items.length > 0);
 
+  const conflictNames = claimConflicts.map(
+    (id) => sessions.find((session) => session.id === id)?.name ?? id,
+  );
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
     setBusy(true);
     try {
-      await onNew(trimmed, agent);
+      await onNew(trimmed, agent, parseScope(scopeText));
       setName("");
+      setScopeText("");
       setShowForm(false);
       setError(null);
     } catch (cause) {
@@ -87,7 +143,7 @@ export default function AgentRail({
           setError(null);
         }}
       >
-        ＋ New run
+        <LuPlus aria-hidden="true" /> New run
       </button>
       {showForm && (
         <form className="cg-form" onSubmit={(event) => void submit(event)}>
@@ -107,7 +163,19 @@ export default function AgentRail({
               </option>
             ))}
           </select>
-          <p>Gets its own branch and terminal; nothing commits until you do.</p>
+          <label htmlFor="cg-run-scope">Own files (optional)</label>
+          <input
+            id="cg-run-scope"
+            value={scopeText}
+            onChange={(event) => setScopeText(event.target.value)}
+            placeholder="e.g. src/api/**, docs/**"
+          />
+          {conflictNames.length > 0 && (
+            <p className="cg-form-warn" role="status">
+              Overlaps {conflictNames.join(", ")} — they claim the same files.
+            </p>
+          )}
+          <p>Gets its own branch, terminal and worktree; nothing commits until you do.</p>
           <button type="submit" className="cg-btn" data-variant="primary" disabled={busy || !name.trim()}>
             {busy ? "Starting…" : "Start run"}
           </button>
@@ -129,9 +197,9 @@ export default function AgentRail({
               onClick={() => setOpen((current) => ({ ...current, [group.id]: !isOpen }))}
             >
               <span className="cg-group-caret" aria-hidden="true">
-                ▶
+                <LuChevronRight />
               </span>
-              <Monogram agent={group.id} label={agentMonogram(group.id)} />
+              <AgentMark agent={group.id} label={agentMonogram(group.id)} />
               <span className="cg-group-name">{agentLabel(group.id)}</span>
             </button>
             <div className="cg-group-items">
@@ -142,12 +210,18 @@ export default function AgentRail({
                       type="button"
                       className="cg-row"
                       aria-current={session.id === activeId}
-                      title={session.branch}
+                      title={fleetTitle(session, fleetById.get(session.id))}
                       onClick={() => onSelect(session)}
                     >
-                      <StatusDot status={session.status} />
+                      <StatusIcon status={session.status} />
                       <span className="cg-row-title">{session.name}</span>
                       <span className="cg-toolbar-spacer" />
+                      {(fleetById.get(session.id)?.overlaps.length ?? 0) > 0 && (
+                        <Chip tone="warn">overlap</Chip>
+                      )}
+                      {(fleetById.get(session.id)?.changed_files.length ?? 0) > 0 && (
+                        <Chip>{fleetById.get(session.id)?.changed_files.length} files</Chip>
+                      )}
                       {openIds.includes(session.id) && <Chip tone="ok">live</Chip>}
                     </button>
                     <button
@@ -157,7 +231,7 @@ export default function AgentRail({
                       title="Delete run"
                       onClick={() => onDelete(session)}
                     >
-                      ×
+                      <LuX aria-hidden="true" />
                     </button>
                   </div>
                 ))}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LuX } from "react-icons/lu";
 
 import type { Branch, Commit } from "@/lib/api";
 import { commitsOnBranch } from "../git/branchCommits";
@@ -90,7 +91,7 @@ export default function GitRail({
             title="Delete branch (commits are kept)"
             onClick={() => onDelete(branch.name)}
           >
-            ×
+            <LuX aria-hidden="true" />
           </button>
         )}
       </div>

@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Version control for LLM conversations: branch, diff, merge, and roll back context."
 readme = "files/README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     "pydantic>=2",
     "typer>=0.12",

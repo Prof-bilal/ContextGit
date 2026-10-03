@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -13,15 +14,21 @@ from contextgit.api.schemas import (
     BranchRequest,
     ChatRequest,
     CheckoutRequest,
+    ClaimCheckRequest,
+    ClaimCheckResult,
     CommitRequest,
     CommitResponse,
     CommitStagedRequest,
     CompareRequest,
     CompareResult,
+    EnqueueMergeRequest,
     InitRequest,
+    IntegrateRequest,
     MergeApplyRequest,
     MergePreviewRequest,
+    PreflightRequest,
     RepoSnapshot,
+    RunMergeQueueRequest,
     SessionRequest,
     SessionUpdateRequest,
     StageRequest,
@@ -33,6 +40,7 @@ from contextgit.core.errors import (
     InvalidMergeResolution,
     InvalidRefName,
     MergeConflict,
+    MergeQueueEntryNotFound,
     RepoAlreadyExists,
     RepoNotFound,
     SessionNotFound,
@@ -66,20 +74,36 @@ def create_app(
         allow_headers=["*"],
     )
     state: dict[str, Repo] = {"repo": repo} if repo is not None else {}
+    # The first render fires several requests at once; without this lock two of
+    # them can race open/init and the loser opens a half-written database.
+    repo_lock = threading.Lock()
 
     def get_repo() -> Repo:
-        if "repo" not in state:
-            try:
-                state["repo"] = Repo.open(path)
-            except RepoNotFound:
-                state["repo"] = Repo.init(path)
-        return state["repo"]
+        existing = state.get("repo")
+        if existing is not None:
+            return existing
+        with repo_lock:
+            if "repo" not in state:
+                try:
+                    state["repo"] = Repo.open(path)
+                except RepoNotFound:
+                    state["repo"] = Repo.init(path)
+            return state["repo"]
 
     repo_dep = Depends(get_repo)
 
     @app.exception_handler(ContextGitError)
     async def contextgit_error_handler(request: Request, exc: ContextGitError) -> JSONResponse:
-        if isinstance(exc, (BranchNotFound, CommitNotFound, RepoNotFound, SessionNotFound)):
+        if isinstance(
+            exc,
+            (
+                BranchNotFound,
+                CommitNotFound,
+                MergeQueueEntryNotFound,
+                RepoNotFound,
+                SessionNotFound,
+            ),
+        ):
             status = 404
         elif isinstance(exc, (MergeConflict, StaleMergePreview, RepoAlreadyExists, StagingEmpty)):
             status = 409
@@ -218,6 +242,11 @@ def create_app(
             agent=body.agent,
             auto_commit=body.auto_commit,
             from_commit=body.from_commit,
+            project_path=body.project_path,
+            worktree=body.worktree,
+            base_ref=body.base_ref,
+            task=body.task,
+            scope=body.scope,
         )
         return session.model_dump(mode="json")
 
@@ -243,6 +272,66 @@ def create_app(
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
     def delete_session(session_id: str, current: Repo = repo_dep) -> None:
         current.delete_session(session_id)
+
+    @app.get("/api/v1/sessions/{session_id}/workspace")
+    def session_workspace(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return current.session_workspace(session_id).model_dump(mode="json")
+
+    @app.get("/api/v1/fleet")
+    def fleet(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [entry.model_dump(mode="json") for entry in current.fleet()]
+
+    @app.post("/api/v1/sessions/{session_id}/preflight")
+    def preflight_session(
+        session_id: str, body: PreflightRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return current.session_workspace(session_id, target=body.target).model_dump(mode="json")
+
+    @app.post("/api/v1/fleet/claims/check")
+    def check_claims(body: ClaimCheckRequest, current: Repo = repo_dep) -> dict[str, object]:
+        conflicts = current.claim_conflicts(body.scope, exclude_session_id=body.session_id)
+        return ClaimCheckResult(conflicts=conflicts).model_dump(mode="json")
+
+    @app.get("/api/v1/merge-queue")
+    def merge_queue(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [entry.model_dump(mode="json") for entry in current.merge_queue()]
+
+    @app.post("/api/v1/merge-queue", status_code=201)
+    def enqueue_merge(body: EnqueueMergeRequest, current: Repo = repo_dep) -> dict[str, object]:
+        return current.enqueue_merge(body.session_id, body.target).model_dump(mode="json")
+
+    @app.delete("/api/v1/merge-queue/{entry_id}", status_code=204)
+    def dequeue_merge(entry_id: int, current: Repo = repo_dep) -> None:
+        current.dequeue_merge(entry_id)
+
+    @app.post("/api/v1/merge-queue/run")
+    def run_merge_queue(
+        body: RunMergeQueueRequest, current: Repo = repo_dep
+    ) -> list[dict[str, object]]:
+        return [entry.model_dump(mode="json") for entry in current.run_merge_queue(body.target)]
+
+    @app.post("/api/v1/sessions/{session_id}/integrate")
+    def integrate_run(
+        session_id: str, body: IntegrateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        """Merge a run's code and context together."""
+        merged = current.integrate_run(
+            session_id, target=body.target, git_target=body.git_target, provider=llm
+        )
+        return merged.model_dump(mode="json")
+
+    @app.get("/api/v1/sessions/{session_id}/context")
+    def session_context(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """The shared-context digest this run would receive from the others."""
+        return {"text": current.shared_context(session_id)}
+
+    @app.post("/api/v1/sessions/{session_id}/cross-conflicts")
+    def cross_run_conflicts(session_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        """Semantic conflicts between this run's context and every other run's."""
+        return [
+            entry.model_dump(mode="json")
+            for entry in current.cross_run_conflicts(session_id, provider=llm)
+        ]
 
     @app.get("/api/v1/sessions/{session_id}/staging")
     def get_staging(session_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:

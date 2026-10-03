@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LuCornerUpLeft } from "react-icons/lu";
 
 import {
   COUNCIL_ANSWERS,
@@ -14,7 +15,7 @@ import {
 } from "../../mock/chat";
 import type { Conversation } from "../../mock/fixtures";
 import { findModel, findProvider, type ModelSelection } from "../providers";
-import { Chip, Monogram } from "../primitives";
+import { AgentMark, Chip } from "../primitives";
 import BlameSheet from "../chat/BlameSheet";
 import ComposerModes from "../chat/ComposerModes";
 import CouncilCard from "../chat/CouncilCard";
@@ -312,7 +313,7 @@ export default function ChatView({
           aria-haspopup="dialog"
           title="Change provider and model"
         >
-          {provider && <Monogram agent={provider.hue} label={provider.monogram} />}
+          {provider && <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />}
           <span className="cg-model-btn-copy">
             <span className="cg-model-btn-model">{model?.label ?? "Choose a model"}</span>
             <span className="cg-model-btn-provider">{provider?.label ?? "—"}</span>
@@ -336,7 +337,7 @@ export default function ChatView({
                   onClick={() => setBlameIndex(index)}
                   title="Where did this come from?"
                 >
-                  ⤺ blame
+                  <LuCornerUpLeft aria-hidden="true" /> blame
                 </button>
               </article>
             );

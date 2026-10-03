@@ -111,6 +111,12 @@ class SessionRequest(BaseModel):
     agent: str | None = None
     auto_commit: bool = False
     from_commit: str | None = None
+    # Worktree pairing: give this run its own git checkout in `project_path`.
+    project_path: str | None = None
+    worktree: bool = False
+    base_ref: str | None = None  # fresh | head | a branch name
+    task: str | None = None
+    scope: list[str] = Field(default_factory=list)
 
 
 class SessionUpdateRequest(BaseModel):
@@ -133,3 +139,42 @@ class CommitStagedRequest(BaseModel):
     summary: str | None = None
     model: str | None = None
     author: str | None = None
+
+
+class PreflightRequest(BaseModel):
+    """Ask whether a run's branch can still merge into a target."""
+
+    target: str | None = None
+
+
+class ClaimCheckRequest(BaseModel):
+    """Check a proposed file scope against the runs already claiming files."""
+
+    scope: list[str] = Field(min_length=1)
+    session_id: str | None = None
+
+
+class ClaimCheckResult(BaseModel):
+    """Sessions whose claimed files overlap the proposed scope."""
+
+    conflicts: list[str]
+
+
+class EnqueueMergeRequest(BaseModel):
+    """Queue a run's branch for merging into a target."""
+
+    session_id: str = Field(min_length=1)
+    target: str | None = None
+
+
+class RunMergeQueueRequest(BaseModel):
+    """Merge the queued runs into a target branch."""
+
+    target: str | None = None
+
+
+class IntegrateRequest(BaseModel):
+    """Merge a run's code and context into their targets, together."""
+
+    target: str | None = None  # ContextGit branch
+    git_target: str | None = None  # git branch

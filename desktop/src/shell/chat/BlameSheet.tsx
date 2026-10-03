@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { LuX } from "react-icons/lu";
 
 import type { BlameRecord } from "../../mock/chat";
 import { Field } from "../primitives";
@@ -59,7 +60,7 @@ export default function BlameSheet({
           <h2 id="cg-blame-title">Where this came from</h2>
           <span className="cg-toolbar-spacer" />
           <button type="button" className="cg-icon-btn" aria-label="Close blame" onClick={onClose}>
-            ×
+            <LuX aria-hidden="true" />
           </button>
         </header>
 

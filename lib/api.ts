@@ -103,6 +103,85 @@ export interface Session {
   status: SessionStatus;
   agent: string | null;
   auto_commit: boolean;
+  worktree_path: string | null;
+  git_branch: string | null;
+  base_ref: string | null;
+  base_commit: string | null;
+  task: string | null;
+  scope: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** Code state of one run's worktree (`GET /sessions/{id}/workspace`). */
+export interface WorkspaceStatus {
+  session_id: string;
+  worktree_path: string | null;
+  git_branch: string | null;
+  base_commit: string | null;
+  target: string | null;
+  changed_files: string[];
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+  clean: boolean;
+  conflicts: string[];
+}
+
+/** One run in the fleet board (`GET /fleet`). */
+export interface FleetEntry {
+  session_id: string;
+  name: string;
+  agent: string | null;
+  status: SessionStatus;
+  branch: string;
+  git_branch: string | null;
+  worktree_path: string | null;
+  changed_files: string[];
+  ahead: number;
+  behind: number;
+  clean: boolean;
+  overlaps: string[];
+}
+
+/** Sessions whose claimed scope overlaps a proposed one. */
+export interface ClaimCheckResult {
+  conflicts: string[];
+}
+
+export type MergeStatus = "queued" | "merged" | "blocked" | "failed";
+
+/** The code and context commits created by merging one run. */
+export interface PairedMerge {
+  source_branch: string;
+  git_target: string;
+  context_target: string;
+  code_commit_id: string;
+  context_commit_id: string;
+}
+
+/** Semantic conflicts between two runs' context branches. */
+export interface CrossRunConflict {
+  session_id: string;
+  name: string;
+  conflicts: {
+    id: string;
+    category: string;
+    topic: string;
+    source: string;
+    target: string;
+  }[];
+}
+
+/** A run waiting to merge into a target branch. */
+export interface MergeQueueEntry {
+  id: number;
+  session_id: string;
+  target: string;
+  position: number;
+  status: MergeStatus;
+  conflicts: string[];
+  commit_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -156,6 +235,39 @@ export const api = {
     }),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
+  workspace: (id: string) => request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
+  fleet: () => request<FleetEntry[]>("/api/v1/fleet"),
+  preflight: (id: string, target?: string) =>
+    request<WorkspaceStatus>(`/api/v1/sessions/${id}/preflight`, {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    }),
+  checkClaims: (scope: string[], sessionId?: string) =>
+    request<ClaimCheckResult>("/api/v1/fleet/claims/check", {
+      method: "POST",
+      body: JSON.stringify({ scope, session_id: sessionId }),
+    }),
+  mergeQueue: () => request<MergeQueueEntry[]>("/api/v1/merge-queue"),
+  enqueueMerge: (sessionId: string, target?: string) =>
+    request<MergeQueueEntry>("/api/v1/merge-queue", {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, target }),
+    }),
+  dequeueMerge: (id: number) =>
+    request<void>(`/api/v1/merge-queue/${id}`, { method: "DELETE" }),
+  runMergeQueue: (target?: string) =>
+    request<MergeQueueEntry[]>("/api/v1/merge-queue/run", {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    }),
+  integrateRun: (id: string, target?: string, gitTarget?: string) =>
+    request<PairedMerge>(`/api/v1/sessions/${id}/integrate`, {
+      method: "POST",
+      body: JSON.stringify({ target, git_target: gitTarget }),
+    }),
+  sessionContext: (id: string) => request<{ text: string }>(`/api/v1/sessions/${id}/context`),
+  crossRunConflicts: (id: string) =>
+    request<CrossRunConflict[]>(`/api/v1/sessions/${id}/cross-conflicts`, { method: "POST" }),
   createSession: (input: {
     name: string;
     kind?: SessionKind;
@@ -163,6 +275,11 @@ export const api = {
     agent?: string;
     autoCommit?: boolean;
     fromCommit?: string;
+    projectPath?: string;
+    worktree?: boolean;
+    baseRef?: string;
+    task?: string;
+    scope?: string[];
   }) =>
     request<Session>("/api/v1/sessions", {
       method: "POST",
@@ -173,6 +290,11 @@ export const api = {
         agent: input.agent,
         auto_commit: input.autoCommit ?? false,
         from_commit: input.fromCommit,
+        project_path: input.projectPath,
+        worktree: input.worktree ?? false,
+        base_ref: input.baseRef,
+        task: input.task,
+        scope: input.scope ?? [],
       }),
     }),
   updateSession: (

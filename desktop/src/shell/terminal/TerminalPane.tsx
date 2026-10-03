@@ -1,16 +1,59 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
+import { LuX } from "react-icons/lu";
+
 import { api, type Session } from "@/lib/api";
 import { agentLabel, agentMonogram } from "../agents";
-import { Monogram, StatusDot } from "../primitives";
+import { AgentMark, StatusIcon } from "../primitives";
+
+/** ANSI palette shared by both themes so full-screen TUIs render intentional colours. */
+const ANSI = {
+  black: "#3a332b",
+  red: "#ff6b5e",
+  green: "#46b89c",
+  yellow: "#e0a53a",
+  blue: "#5aa9ff",
+  magenta: "#d98cff",
+  cyan: "#4cc9b0",
+  white: "#c6bdb1",
+  brightBlack: "#918879",
+  brightRed: "#ff8a5c",
+  brightGreen: "#6fd6bd",
+  brightYellow: "#f0c05a",
+  brightBlue: "#7fbcff",
+  brightMagenta: "#e6aaff",
+  brightCyan: "#6fdcc7",
+  brightWhite: "#f4efe6",
+} as const;
 
 const TERM_THEME = {
-  dark: { background: "#12100d", foreground: "#e7e0d4" },
-  light: { background: "#17161d", foreground: "#e8e4da" },
+  dark: {
+    background: "#12100d",
+    foreground: "#e7e0d4",
+    cursor: "#e7e0d4",
+    selectionBackground: "#3a332b",
+    ...ANSI,
+  },
+  light: {
+    background: "#17161d",
+    foreground: "#e8e4da",
+    cursor: "#e8e4da",
+    selectionBackground: "#342e26",
+    ...ANSI,
+  },
 } as const;
+
+/**
+ * A terminal-first monospace: unlike the display font it has consistent
+ * metrics for box-drawing and block glyphs, so TUIs (and their ASCII logos)
+ * stay on the character grid.
+ */
+const TERMINAL_FONT =
+  "'JetBrains Mono', 'Cascadia Mono', 'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 function newPtyId(sessionId: string): string {
   return `pty-${sessionId}-${Math.random().toString(36).slice(2, 8)}`;
@@ -75,54 +118,118 @@ export default function TerminalPane({
     const host = hostRef.current;
     if (!host) return;
 
-    const term = new Terminal({
-      fontFamily: "'Martian Mono', ui-monospace, monospace",
-      fontSize: 12.5,
-      theme: TERM_THEME[theme],
-      cursorBlink: true,
-      scrollback: 5000,
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(host);
-    termRef.current = term;
-    fitRef.current = fit;
-    try {
-      fit.fit();
-    } catch {
-      // hidden on first render; the visibility effect refits when shown
-    }
+    const setup = async () => {
+      // Wait for the terminal webfont before xterm measures glyphs; painting
+      // with fallback widths first leaves the character grid misaligned.
+      try {
+        await document.fonts.ready;
+        await document.fonts.load('400 13px "JetBrains Mono"');
+      } catch {
+        // font loading is best-effort; the fallback stack still works
+      }
+      if (!hostRef.current || disposeRef.current) return;
 
-    bridge?.ptyStart({ id: ptyId, command, cols: term.cols, rows: term.rows });
-    const offData = bridge?.onPtyData((id, data) => {
-      if (id === ptyId) term.write(data);
-    });
-    const offExit = bridge?.onPtyExit((id) => {
-      if (id === ptyId) setExited(true);
-    });
-    const input = term.onData((data) => bridge?.ptyWrite(ptyId, data));
-    const observer = new ResizeObserver(() => {
-      if (!hostRef.current) return;
+      const term = new Terminal({
+        fontFamily: TERMINAL_FONT,
+        fontSize: 13,
+        // Keep the default 1.0: any extra line height breaks vertical tiling of
+        // block characters (█ ▀ ▄), which shreds full-screen TUI ASCII art.
+        lineHeight: 1,
+        letterSpacing: 0,
+        fontWeight: "400",
+        fontWeightBold: "600",
+        cursorStyle: "bar",
+        cursorBlink: true,
+        drawBoldTextInBrightColors: true,
+        minimumContrastRatio: 4.5,
+        customGlyphs: true,
+        smoothScrollDuration: 0,
+        // Keep the terminal text in the DOM: the WebGL renderer draws to a
+        // canvas, so this is what exposes the content to screen readers and tests.
+        screenReaderMode: true,
+        scrollback: 10000,
+        theme: TERM_THEME[theme],
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.open(host);
+      termRef.current = term;
+      fitRef.current = fit;
+
+      // `customGlyphs` (seamless block/box drawing) and `rescaleOverlappingGlyphs`
+      // only work in the canvas-based renderers — the DOM renderer draws every
+      // character from the font, which shreds TUI ASCII art into seamed rows.
+      // Load WebGL and fall back to DOM if the GPU context is unavailable.
+      let webgl: WebglAddon | null = null;
+      try {
+        webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl?.dispose();
+          webgl = null;
+        });
+        term.loadAddon(webgl);
+      } catch {
+        webgl = null;
+      }
+
       try {
         fit.fit();
-        bridge?.ptyResize(ptyId, term.cols, term.rows);
       } catch {
-        // zero-size container
+        // hidden on first render; the visibility effect refits when shown
       }
-    });
-    observer.observe(host);
 
-    const dispose = () => {
-      observer.disconnect();
-      input.dispose();
-      offData?.();
-      offExit?.();
-      bridge?.ptyKill(ptyId);
-      term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
+      bridge?.ptyStart({
+        id: ptyId,
+        command,
+        cols: term.cols,
+        rows: term.rows,
+        // The run's own worktree when it has one, else the workspace folder.
+        cwd: session.worktree_path ?? undefined,
+      });
+
+      // Coalesce PTY bursts into one write per frame so large redraws do not jank.
+      let pending = "";
+      let frame = 0;
+      const flush = () => {
+        frame = 0;
+        const chunk = pending;
+        pending = "";
+        if (chunk) term.write(chunk);
+      };
+      const offData = bridge?.onPtyData((id, data) => {
+        if (id !== ptyId) return;
+        pending += data;
+        if (!frame) frame = requestAnimationFrame(flush);
+      });
+      const offExit = bridge?.onPtyExit((id) => {
+        if (id === ptyId) setExited(true);
+      });
+      const input = term.onData((data) => bridge?.ptyWrite(ptyId, data));
+      const observer = new ResizeObserver(() => {
+        if (!hostRef.current) return;
+        try {
+          fit.fit();
+          bridge?.ptyResize(ptyId, term.cols, term.rows);
+        } catch {
+          // zero-size container
+        }
+      });
+      observer.observe(host);
+
+      disposeRef.current = () => {
+        if (frame) cancelAnimationFrame(frame);
+        observer.disconnect();
+        input.dispose();
+        offData?.();
+        offExit?.();
+        webgl?.dispose();
+        bridge?.ptyKill(ptyId);
+        term.dispose();
+        termRef.current = null;
+        fitRef.current = null;
+      };
     };
-    disposeRef.current = dispose;
+    void setup();
 
     return () => {
       teardownRef.current = window.setTimeout(() => {
@@ -202,7 +309,7 @@ export default function TerminalPane({
       onMouseDown={onActivate}
     >
       <header className="cg-pane-head">
-        <Monogram agent={session.agent ?? "shell"} label={agentMonogram(session.agent)} />
+        <AgentMark agent={session.agent ?? "shell"} label={agentMonogram(session.agent)} />
         <span>{agentLabel(session.agent)}</span>
         <span className="cg-pane-cwd">{session.name}</span>
         <span className="cg-toolbar-spacer" />
@@ -210,7 +317,7 @@ export default function TerminalPane({
         <button type="button" className="cg-btn cg-btn-sm" onClick={() => void stageOutput()}>
           Stage output
         </button>
-        <StatusDot status={exited ? "done" : session.status} />
+        <StatusIcon status={exited ? "done" : session.status} />
         <button
           type="button"
           className="cg-icon-btn"
@@ -218,7 +325,7 @@ export default function TerminalPane({
           title="Close pane (the run stays in the rail)"
           onClick={onClose}
         >
-          ×
+          <LuX aria-hidden="true" />
         </button>
       </header>
       {exited && (

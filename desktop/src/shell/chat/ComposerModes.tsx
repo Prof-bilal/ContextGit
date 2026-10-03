@@ -5,7 +5,7 @@ import {
   type ChatMode,
   type ComposerControls,
 } from "../../mock/chat";
-import { Chip, Monogram } from "../primitives";
+import { AgentMark, Chip } from "../primitives";
 import { PROVIDERS } from "../providers";
 
 const DEPTHS: Array<ComposerControls["depth"]> = ["quick", "standard", "deep"];
@@ -69,7 +69,7 @@ export default function ComposerModes({
                 title={`${provider.label} · ${provider.vendor}`}
                 onClick={() => toggleProvider(provider.id)}
               >
-                <Monogram agent={provider.hue} label={provider.monogram} />
+                <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />
                 {provider.label}
               </button>
             );

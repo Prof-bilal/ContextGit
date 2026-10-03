@@ -1,4 +1,12 @@
 import { useState } from "react";
+import {
+  LuCircle,
+  LuCircleCheck,
+  LuCircleHelp,
+  LuCircleX,
+  LuDiamond,
+  LuTriangleAlert,
+} from "react-icons/lu";
 
 import { api, type Branch, type MergePreview } from "@/lib/api";
 import Modal from "../Modal";
@@ -130,17 +138,28 @@ export default function MergeDialog({
           {preview && (
             <>
               <div className="cg-tags">
-                <Chip tone="ok">◆ {preview.extraction.decisions.length} decisions</Chip>
-                <Chip>● {preview.extraction.facts.length} facts</Chip>
-                <Chip tone="warn">✕ {preview.extraction.dead_ends.length} dead ends</Chip>
-                <Chip>○ {preview.extraction.open_questions.length} open questions</Chip>
+                <Chip tone="ok">
+                  <LuDiamond aria-hidden="true" /> {preview.extraction.decisions.length} decisions
+                </Chip>
+                <Chip>
+                  <LuCircle aria-hidden="true" /> {preview.extraction.facts.length} facts
+                </Chip>
+                <Chip tone="warn">
+                  <LuCircleX aria-hidden="true" /> {preview.extraction.dead_ends.length} dead ends
+                </Chip>
+                <Chip>
+                  <LuCircleHelp aria-hidden="true" /> {preview.extraction.open_questions.length} open
+                  questions
+                </Chip>
                 {preview.conflicts.length > 0 ? (
                   <Chip tone="bad">
-                    ⚠ {preview.conflicts.length} conflict
+                    <LuTriangleAlert aria-hidden="true" /> {preview.conflicts.length} conflict
                     {preview.conflicts.length === 1 ? "" : "s"} to resolve
                   </Chip>
                 ) : (
-                  <Chip tone="ok">✓ no conflicts</Chip>
+                  <Chip tone="ok">
+                    <LuCircleCheck aria-hidden="true" /> no conflicts
+                  </Chip>
                 )}
               </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { LuX } from "react-icons/lu";
 
 /**
  * Shared dialog shell: backdrop click closes, Esc closes, Tab is trapped, focus
@@ -64,7 +65,7 @@ export default function Modal({
           {subtitle && <span className="cg-view-sub">{subtitle}</span>}
           <span className="cg-toolbar-spacer" />
           <button type="button" className="cg-icon-btn" aria-label="Close" onClick={onClose}>
-            ×
+            <LuX aria-hidden="true" />
           </button>
         </header>
 
