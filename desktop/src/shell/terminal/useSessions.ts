@@ -41,7 +41,11 @@ export function useSessions() {
         worktree: Boolean(projectPath),
         scope: scope ?? [],
       });
-      setSessions((current) => [...current, created]);
+      // A poll can land between the POST and this append and already contain the
+      // run; guard so the rail never renders the same session twice.
+      setSessions((current) =>
+        current.some((session) => session.id === created.id) ? current : [...current, created],
+      );
       return created;
     },
     [],

@@ -67,6 +67,16 @@ async function spawnBackend(): Promise<void> {
   backend.stderr?.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000);
   });
+  backend.on("error", (cause: Error) => {
+    // `spawn` emits this asynchronously (e.g. ENOENT when the binary is missing).
+    // Without a handler Node rethrows it, crashing the main process instead of
+    // showing the "Backend failed" screen.
+    setStatus({
+      state: "error",
+      message: `Backend could not start (${cause.message}). ${stderr}`,
+    });
+    backend = null;
+  });
   backend.on("exit", (code) => {
     if (status.state === "ready") {
       setStatus({ state: "error", message: `Backend exited (code ${code}). ${stderr}` });
@@ -168,7 +178,7 @@ function toWorkspace(target: string): Workspace {
   return { path: resolved, name: path.basename(resolved) || resolved, parent: path.dirname(resolved) };
 }
 
-function readWorkspace(): Workspace {
+function readWorkspace(): Workspace | null {
   const override = process.env.CONTEXTGIT_WORKDIR;
   if (override && isDirectory(override)) return toWorkspace(override);
   try {
@@ -177,18 +187,25 @@ function readWorkspace(): Workspace {
   } catch {
     // no saved workspace yet
   }
-  return toWorkspace(repoRoot);
+  // First run: no folder yet. The Code tab prompts the user to choose one
+  // instead of defaulting to the app's own bundle directory.
+  return null;
 }
 
 let workspace: Workspace | null = null;
+let workspaceLoaded = false;
 
-function currentWorkspace(): Workspace {
-  workspace ??= readWorkspace();
+function currentWorkspace(): Workspace | null {
+  if (!workspaceLoaded) {
+    workspace = readWorkspace();
+    workspaceLoaded = true;
+  }
   return workspace;
 }
 
 function setWorkspace(target: string): Workspace {
   workspace = toWorkspace(target);
+  workspaceLoaded = true;
   try {
     fs.mkdirSync(path.dirname(workspaceFile()), { recursive: true });
     fs.writeFileSync(workspaceFile(), `${JSON.stringify({ path: workspace.path }, null, 2)}\n`);
@@ -203,7 +220,7 @@ function showFolderDialog(title: string): Promise<Electron.OpenDialogReturnValue
   const options: Electron.OpenDialogOptions = {
     title,
     buttonLabel: "Use this folder",
-    defaultPath: currentWorkspace().path,
+    defaultPath: currentWorkspace()?.path ?? app.getPath("home"),
     properties: ["openDirectory", "createDirectory"],
   };
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
@@ -242,26 +259,52 @@ const ptys = new PtyManager(
   (id, code) => mainWindow?.webContents.send("ctx:pty-exit", id, code),
 );
 
-/** Only allow a per-run cwd inside the workspace or its managed worktrees. */
-function resolvePtyCwd(requested?: string): string {
-  const workspace = currentWorkspace().path;
+/**
+ * Only allow a per-run cwd inside the workspace or its managed worktrees.
+ * Returns null when no project folder has been chosen yet.
+ */
+function resolvePtyCwd(requested?: string): string | null {
+  const root = currentWorkspace()?.path;
+  if (!root) return null;
   if (requested) {
     const resolved = path.resolve(requested);
-    const worktrees = `${path.join(workspace, ".contextgit", "worktrees")}${path.sep}`;
-    const inside =
-      resolved === path.resolve(workspace) || resolved.startsWith(worktrees);
+    const worktrees = `${path.join(root, ".contextgit", "worktrees")}${path.sep}`;
+    const inside = resolved === path.resolve(root) || resolved.startsWith(worktrees);
     if (inside && isDirectory(resolved)) return resolved;
   }
-  return isDirectory(workspace) ? workspace : repoRoot;
+  return root;
 }
 
 ipcMain.on(
   "ctx:pty-start",
-  (_event, options: { id: string; command: string; cols: number; rows: number; cwd?: string }) => {
+  (
+    _event,
+    options: {
+      id: string;
+      command: string;
+      cols: number;
+      rows: number;
+      cwd?: string;
+      input?: string;
+      env?: Record<string, string>;
+    },
+  ) => {
+    const cwd = resolvePtyCwd(options.cwd);
+    if (!cwd) {
+      // No project folder yet: tell the pane instead of spawning in the app dir.
+      mainWindow?.webContents.send(
+        "ctx:pty-data",
+        options.id,
+        "\r\nChoose a project folder before starting a terminal.\r\n",
+      );
+      mainWindow?.webContents.send("ctx:pty-exit", options.id, 1);
+      return;
+    }
     ptys.start({
       ...options,
-      cwd: resolvePtyCwd(options.cwd),
-      env: { TERM: "xterm-256color" },
+      cwd,
+      // A run's own PORT keeps its dev server off every other run's.
+      env: { TERM: "xterm-256color", ...(options.env ?? {}) },
     });
   },
 );

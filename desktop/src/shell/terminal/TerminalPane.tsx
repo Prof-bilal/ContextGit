@@ -68,14 +68,23 @@ export default function TerminalPane({
   session,
   visible,
   theme,
+  initialInput,
+  taskId,
   onStaged,
+  onStatus,
   onActivate,
   onClose,
 }: {
   session: Session;
   visible: boolean;
   theme: "dark" | "light";
+  /** One line typed into the terminal once it is up (team mode's briefing). */
+  initialInput?: string;
+  /** The team task this run owns, exported so the MCP tools know it. */
+  taskId?: string;
   onStaged: () => void;
+  /** Called when this pane changes the run's status (or checkpoints it). */
+  onStatus?: () => void;
   onActivate: () => void;
   onClose: () => void;
 }) {
@@ -96,6 +105,13 @@ export default function TerminalPane({
   const [stagedCount, setStagedCount] = useState(0);
   const [exited, setExited] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The session object is replaced whenever the backend updates it (status,
+   * auto-checkpoint), but the terminal effect runs once per launch — so read the
+   * latest through a ref instead of the closed-over value.
+   */
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   const command = session.agent ?? "shell";
 
@@ -185,7 +201,44 @@ export default function TerminalPane({
         rows: term.rows,
         // The run's own worktree when it has one, else the workspace folder.
         cwd: session.worktree_path ?? undefined,
+        // Team mode hands the agent its task as the first line it sees.
+        input: initialInput,
+        // Isolation + identity: its own port, and the task the MCP tools default to.
+        env: {
+          ...(session.port ? { PORT: String(session.port) } : {}),
+          CONTEXTGIT_RUN: session.name,
+          ...(taskId ? { CONTEXTGIT_TASK: taskId } : {}),
+        },
       });
+
+      // A live process means a running run: keep the rail's status dot honest.
+      void api
+        .updateSession(sessionRef.current.id, { status: "running" })
+        .then(() => onStatus?.())
+        .catch(() => {
+          // status is best-effort; the terminal still works
+        });
+
+      /** Persist the outcome, and checkpoint staged output when asked to. */
+      const finishRun = async (code: number | undefined) => {
+        const current = sessionRef.current;
+        try {
+          await api.updateSession(current.id, { status: code === 0 ? "done" : "error" });
+          onStatus?.();
+        } catch {
+          // status is best-effort
+        }
+        if (!current.auto_commit) return;
+        try {
+          const staged = await api.staging(current.id);
+          if (staged.length === 0) return;
+          await api.commitStaged(current.id, `checkpoint: ${current.name}`);
+          onStaged();
+          onStatus?.();
+        } catch {
+          // an automatic checkpoint must never break the pane
+        }
+      };
 
       // Coalesce PTY bursts into one write per frame so large redraws do not jank.
       let pending = "";
@@ -201,8 +254,10 @@ export default function TerminalPane({
         pending += data;
         if (!frame) frame = requestAnimationFrame(flush);
       });
-      const offExit = bridge?.onPtyExit((id) => {
-        if (id === ptyId) setExited(true);
+      const offExit = bridge?.onPtyExit((id, code) => {
+        if (id !== ptyId) return;
+        setExited(true);
+        void finishRun(code);
       });
       const input = term.onData((data) => bridge?.ptyWrite(ptyId, data));
       const observer = new ResizeObserver(() => {

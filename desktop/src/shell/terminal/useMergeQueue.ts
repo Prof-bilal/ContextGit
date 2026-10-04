@@ -8,13 +8,15 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */
 export function useMergeQueue() {
   const [queue, setQueue] = useState<MergeQueueEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!HAS_BRIDGE) return;
     try {
       setQueue(await api.mergeQueue());
-    } catch {
-      // ignore; the dock shows an empty queue while the backend is unreachable
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the merge queue");
     }
   }, []);
 
@@ -43,5 +45,5 @@ export function useMergeQueue() {
     return updated;
   }, []);
 
-  return { queue, refresh, enqueue, dequeue, run };
+  return { queue, error, refresh, enqueue, dequeue, run };
 }

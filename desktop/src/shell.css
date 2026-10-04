@@ -1,5 +1,5 @@
 /* ============================================================================
-   ContextGit agent-workspace shell (Phase A mock).
+   ContextGit agent-workspace shell.
    Desktop-only. Scoped to .cg-shell so the landing page and globals.css are
    untouched. Dark-first: --cg-* default to the dark ramp; [data-cg-theme=light]
    remaps them to the warm paper ramp.
@@ -400,6 +400,124 @@
   color: var(--cg-bad);
   background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
 }
+.cg-row-switch {
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: 0.9rem;
+  color: var(--cg-ink-3);
+  opacity: 0.4;
+  transition: opacity 120ms var(--cg-ease);
+}
+.cg-row-wrap:hover .cg-row-switch,
+.cg-row-wrap:focus-within .cg-row-switch {
+  opacity: 1;
+}
+.cg-row-switch:hover {
+  color: var(--cg-ok);
+  background: color-mix(in srgb, var(--cg-ok) 14%, transparent);
+}
+
+/* ---------- team mode (task board, feed, task form) ---------- */
+
+.cg-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.9rem;
+}
+.cg-board-col { display: grid; align-content: start; gap: 0.45rem; min-width: 0; }
+.cg-board-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--cg-ink-3);
+  font: 500 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cg-board-card {
+  display: grid;
+  width: 100%;
+  gap: 0.35rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+  background: var(--cg-surface-2);
+  color: var(--cg-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms var(--cg-ease), background-color 120ms var(--cg-ease);
+}
+.cg-board-card:hover { border-color: var(--cg-line-strong); background: var(--cg-surface-3); }
+.cg-board-card[aria-current="true"] { border-color: var(--cg-signal); }
+.cg-board-card-top { display: flex; align-items: center; gap: 0.35rem; }
+.cg-board-title { font-weight: 600; font-size: 0.82rem; }
+.cg-board-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--cg-ink-3);
+  font-size: 0.68rem;
+}
+.cg-board-role { letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.6rem; }
+.cg-board-scope { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.cg-board-blocked { color: var(--cg-warn); font-size: 0.68rem; }
+.cg-board-col[data-status="done"] .cg-board-card { opacity: 0.7; }
+
+.cg-feed { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
+.cg-feed li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--cg-line);
+  font-size: 0.74rem;
+}
+.cg-feed-kind {
+  color: var(--cg-ink-3);
+  font: 500 0.6rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cg-feed-who { color: var(--cg-ink-2); }
+.cg-feed-body { min-width: 0; color: var(--cg-ink); }
+.cg-feed-time { color: var(--cg-ink-3); font-size: 0.64rem; }
+.cg-feed li[data-kind="handoff"] .cg-feed-kind { color: var(--cg-ok); }
+.cg-feed li[data-kind="system"] .cg-feed-kind { color: var(--cg-signal); }
+.cg-feed li[data-kind="review"] .cg-feed-kind { color: var(--cg-warn); }
+.cg-feed li[data-kind="gate"] .cg-feed-kind { color: var(--cg-signal-hot); }
+
+.cg-board-col[data-status="review"] .cg-board-card { border-color: color-mix(in srgb, var(--cg-warn) 45%, transparent); }
+.cg-gate-command {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink-2);
+  font: 400 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cg-gate-output {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.7rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  background: var(--cg-bg);
+  color: var(--cg-ink-2);
+  font: 400 0.72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.cg-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.cg-form-row > span { display: grid; gap: 0.2rem; }
+textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inherit; }
+.cg-row-flat { width: 100%; }
+.cg-inline-form { display: flex; align-items: center; gap: 0.5rem; max-width: 26rem; }
+.cg-inline-form .cg-text-input { flex: 1 1 auto; }
+.cg-doc h2 { margin: 0 0 0.4rem; font-size: 1rem; }
 
 /* New-run form in the rail */
 .cg-form {
@@ -800,6 +918,12 @@
   padding: 0.6rem;
   display: grid;
   gap: 0.6rem;
+}
+/* Team mode puts a board above the panes: bound the canvas so it cannot
+   squeeze (and overlap) the board. The canvas itself stays mounted either way. */
+.cg-view[data-code-mode="team"] .cg-pane-canvas {
+  height: 40%;
+  min-height: 11rem;
 }
 .cg-pane-canvas[data-layout="single"] {
   grid-template-columns: 1fr;

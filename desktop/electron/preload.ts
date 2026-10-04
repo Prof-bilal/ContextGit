@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld("contextgit", {
     cols: number;
     rows: number;
     cwd?: string;
+    input?: string;
+    env?: Record<string, string>;
   }) => {
     ipcRenderer.send("ctx:pty-start", options);
   },

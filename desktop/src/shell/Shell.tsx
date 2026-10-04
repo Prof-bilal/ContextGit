@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "react-icons/lu";
 
-import { api, type Message, type Session } from "@/lib/api";
+import { api, type Message, type Session, type Task } from "@/lib/api";
 import { CONVERSATIONS, NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
 import { agentLabel } from "./agents";
 import AgentDialog from "./agent/AgentDialog";
@@ -12,7 +12,7 @@ import DiffSheet from "./git/DiffSheet";
 import DeleteBranchDialog from "./git/DeleteBranchDialog";
 import MergeDialog from "./git/MergeDialog";
 import { useRepo } from "./git/useRepo";
-import { AgentMark, Chip, Field, IconButton, StatusIcon } from "./primitives";
+import { AgentMark, Chip, Field, IconButton, MiniSeg, StatusIcon } from "./primitives";
 import { Dock } from "./Dock";
 import ModelPicker from "./ModelPicker";
 import GovernorPanel from "./chat/GovernorPanel";
@@ -25,16 +25,29 @@ import RosterRail from "./rail/RosterRail";
 import { useFleet } from "./terminal/useFleet";
 import { useMergeQueue } from "./terminal/useMergeQueue";
 import { useSessions } from "./terminal/useSessions";
+import PaneCanvas, { type PaneLayout } from "./terminal/PaneCanvas";
+import TaskDetail from "./team/TaskDetail";
+import TaskForm from "./team/TaskForm";
+import TeamMessages from "./team/TeamMessages";
+import TeamRail from "./team/TeamRail";
+import { useTeam } from "./team/useTeam";
 import AgentView from "./views/AgentView";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
 import GitView from "./views/GitView";
+import TeamView from "./views/TeamView";
 import ProjectPicker from "./workspace/ProjectPicker";
 import { useWorkspace } from "./workspace/useWorkspace";
 
 type Theme = "dark" | "light";
 
 const TAB_IDS: TabId[] = ["chat", "code", "agent", "git"];
+
+/** The Code tab's two surfaces: one run at a time, or a task graph. */
+const MODE_OPTIONS = [
+  { value: "single" as const, label: "Single" },
+  { value: "team" as const, label: "Team" },
+];
 
 function initialTab(): TabId {
   const value = new URLSearchParams(window.location.search).get("tab");
@@ -45,11 +58,18 @@ export default function Shell() {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [theme, setTheme] = useState<Theme>("dark");
   const [dockOpen, setDockOpen] = useState(true);
+  // ---- Code tab: Single (one run at a time) or Team (a task graph) ----
+  const [mode, setMode] = useState<"single" | "team">(() => {
+    const stored = window.localStorage.getItem("cg-code-mode");
+    return stored === "team" ? "team" : "single";
+  });
+  const [layout, setLayout] = useState<PaneLayout>("single");
 
   // ---- Code tab: real sessions + terminals ----
   const { sessions, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessions();
-  const fleet = useFleet();
+  const { fleet, error: fleetError } = useFleet();
   const mergeQueue = useMergeQueue();
+  const { board: teamBoard, error: teamError, refresh: refreshTeam, act: teamAct } = useTeam();
   const { workspace, error: workspaceError, choose, pickLocation, create: createWorkspace } = useWorkspace();
   const [projectOpen, setProjectOpen] = useState(false);
   const [openIds, setOpenIds] = useState<string[]>([]);
@@ -58,8 +78,13 @@ export default function Shell() {
   const [summary, setSummary] = useState("");
   const [revision, setRevision] = useState(0);
   const [barError, setBarError] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskForm, setTaskForm] = useState<{ task: Task | null } | null>(null);
+  const [teamBusy, setTeamBusy] = useState(false);
+  /** Session id → the one-line briefing typed into that terminal once it is up. */
+  const [kickoff, setKickoff] = useState<Record<string, string>>({});
 
-  // ---- Chat / Agent / Git tabs: fixtures until wired (Phase B) ----
+  // ---- Chat + Agent tabs read fixtures; Git reads the real repo snapshot ----
   const [conversationName, setConversationName] = useState(CONVERSATIONS[0]?.branch.name ?? "");
   const [agentId, setAgentId] = useState(NAMED_AGENTS[0]?.id ?? "");
   const [agents, setAgents] = useState<NamedAgent[]>(NAMED_AGENTS);
@@ -93,6 +118,7 @@ export default function Shell() {
   // History is scoped to the selected branch, so clicking a branch changes it.
   const branchCommits = branchHead ? commitsOnBranch(commits, branchHead) : commits;
   const activeCommit = commits.find((commit) => commit.id === commitId) ?? branchCommits[0] ?? null;
+  const activeCommitTags = (snapshot?.tags ?? []).filter((tag) => tag.commit_id === activeCommit?.id);
 
   // Keep the branch selection valid; default to the repo's current branch.
   useEffect(() => {
@@ -118,6 +144,18 @@ export default function Shell() {
     setSelectedBranch(name);
     const head = branches.find((branch) => branch.name === name)?.head_commit_id ?? null;
     if (head) setCommitId(head);
+  };
+
+  /** Switch the repo's current branch, then reload so HEAD-derived state follows. */
+  const checkoutBranch = async (name: string) => {
+    try {
+      await api.checkout(name);
+      setBarError(null);
+      chooseBranch(name);
+      await refreshRepo();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not switch branch");
+    }
   };
 
   useEffect(() => {
@@ -148,21 +186,154 @@ export default function Shell() {
 
   const startRun = useCallback(
     async (name: string, agent: string, scope: string[]) => {
-      const created = await create(name, agent, workspace?.path, scope);
+      if (!workspace) {
+        setProjectOpen(true);
+        throw new Error("Choose a project folder first");
+      }
+      const created = await create(name, agent, workspace.path, scope);
       openSession(created);
     },
-    [create, openSession, workspace?.path],
+    [create, openSession, workspace],
   );
 
   const newTerminal = useCallback(async () => {
+    if (!workspace) {
+      setProjectOpen(true);
+      setBarError("Choose a project folder first");
+      return;
+    }
     try {
       const shellCount = sessions.filter((session) => (session.agent ?? "shell") === "shell").length;
-      const created = await create(`shell ${shellCount + 1}`, "shell", workspace?.path);
+      const created = await create(`shell ${shellCount + 1}`, "shell", workspace.path);
       openSession(created);
     } catch (cause) {
       setBarError(cause instanceof Error ? cause.message : "Could not open a terminal");
     }
-  }, [create, openSession, sessions]);
+  }, [create, openSession, sessions, workspace]);
+
+  // ---- Team mode: the task graph, its board feed and its runs ----
+  const teamTasks = teamBoard?.tasks ?? [];
+  const taskTitles = Object.fromEntries(teamTasks.map((task) => [task.id, task.title]));
+  const selectedTask = teamTasks.find((task) => task.id === selectedTaskId) ?? null;
+
+  const changeMode = useCallback((next: "single" | "team") => {
+    setMode(next);
+    window.localStorage.setItem("cg-code-mode", next);
+    setLayout(next === "team" ? "split" : "single");
+  }, []);
+
+  /** The line a freshly started agent reads before its task brief. */
+  const briefingFor = useCallback((task: Task) => {
+    const parts = [
+      `Read .contextgit/team.md and start task "${task.title}"`,
+      task.scope.length > 0 ? `you own ${task.scope.join(", ")}` : "no files claimed yet",
+      task.depends_on.length > 0 ? "your dependencies are done" : "nothing blocks you",
+    ];
+    return `${parts.join(". ")}. Post a note when you finish.`;
+  }, []);
+
+  /** The line an independent verifier reads before it inspects the work. */
+  const verifierBriefingFor = useCallback((task: Task) => {
+    const criteria = task.done_criteria ? `Done criteria: ${task.done_criteria}. ` : "";
+    return (
+      `Read .contextgit/team.md and review task "${task.title}" as an independent verifier. ` +
+      `${criteria}Inspect the diff of this branch against the criteria, then post your ` +
+      "findings as a note. Do not change any files."
+    );
+  }, []);
+
+  // Working tasks and their verifier runs get a terminal, briefed once each.
+  // Only sessions this effect has not opened before are touched, so it never
+  // steals focus from a run the user picked.
+  const openedTeamSessions = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (mode !== "team") return;
+    const entries: Array<{ id: string; briefing: string }> = [];
+    for (const task of teamBoard?.tasks ?? []) {
+      if (task.status === "working" && task.session_id) {
+        entries.push({ id: task.session_id, briefing: briefingFor(task) });
+      }
+      if (task.verifier_session_id) {
+        entries.push({ id: task.verifier_session_id, briefing: verifierBriefingFor(task) });
+      }
+    }
+    const fresh = entries.filter((entry) => !openedTeamSessions.current.has(entry.id));
+    if (fresh.length === 0) return;
+    for (const entry of fresh) openedTeamSessions.current.add(entry.id);
+    setOpenIds((current) => {
+      const next = [...current];
+      for (const entry of fresh) if (!next.includes(entry.id)) next.push(entry.id);
+      return next;
+    });
+    setActiveId(fresh[0].id);
+    setKickoff((current) => {
+      const next = { ...current };
+      for (const entry of fresh) if (!next[entry.id]) next[entry.id] = entry.briefing;
+      return next;
+    });
+  }, [briefingFor, mode, teamBoard, verifierBriefingFor]);
+
+  const openTaskTerminal = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find((entry) => entry.id === sessionId);
+      if (session) openSession(session);
+    },
+    [openSession, sessions],
+  );
+
+  const launchTeam = useCallback(async () => {
+    setTeamBusy(true);
+    try {
+      await teamAct(() => api.launchTeam());
+      setBarError(null);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not launch the team");
+    } finally {
+      setTeamBusy(false);
+    }
+  }, [teamAct]);
+
+  const mergeTeam = useCallback(async () => {
+    setTeamBusy(true);
+    try {
+      await api.mergeTeam();
+      setBarError(null);
+      await refresh();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not queue the finished runs");
+    } finally {
+      setTeamBusy(false);
+    }
+  }, [refresh]);
+
+  /** Session id → the team task it belongs to, so the MCP tools know the run. */
+  const taskIds = Object.fromEntries(
+    teamTasks.flatMap((task) => [
+      ...(task.session_id ? [[task.session_id, task.id] as const] : []),
+      ...(task.verifier_session_id ? [[task.verifier_session_id, task.id] as const] : []),
+    ]),
+  );
+
+  const selectTask = useCallback((task: Task) => setSelectedTaskId(task.id), []);
+
+  const createTeam = useCallback(
+    async (name: string) => {
+      if (!workspace) {
+        setProjectOpen(true);
+        return;
+      }
+      setTeamBusy(true);
+      try {
+        await teamAct(() => api.createTeam({ name, projectPath: workspace.path }));
+        setBarError(null);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not create the team");
+      } finally {
+        setTeamBusy(false);
+      }
+    },
+    [teamAct, workspace],
+  );
 
   const closeTerminal = useCallback((session: Session) => {
     // The pane owns its PTY and kills it on unmount; just drop it from the layout.
@@ -325,7 +496,15 @@ export default function Shell() {
           />
         );
       case "code":
-        return (
+        return mode === "team" ? (
+          <TeamRail
+            tasks={teamTasks}
+            sessions={sessions}
+            selectedId={selectedTaskId}
+            onSelect={selectTask}
+            onNew={() => setTaskForm({ task: null })}
+          />
+        ) : (
           <AgentRail
             sessions={sessions}
             fleet={fleet}
@@ -355,6 +534,7 @@ export default function Shell() {
             currentBranch={snapshot?.current_branch ?? ""}
             selectedBranch={selectedBranch}
             onSelectBranch={chooseBranch}
+            onCheckout={(name) => void checkoutBranch(name)}
             onDelete={(name) => setBranchToDelete(name)}
             filter={filter}
             onFilter={setFilter}
@@ -397,6 +577,7 @@ export default function Shell() {
             selectedId={activeCommit?.id ?? null}
             onSelect={(commit) => setCommitId(commit.id)}
             filter={filter}
+            tags={snapshot?.tags ?? []}
             loading={repoLoading}
             onRefresh={() => void refreshRepo()}
           />
@@ -450,18 +631,40 @@ export default function Shell() {
                 message → <LuCornerUpLeft aria-hidden="true" /> blame.
               </p>
             </section>
-            <div className="cg-dock-actions">
-              <button type="button" className="cg-btn">
-                Tag as known-good
-              </button>
-              <button type="button" className="cg-btn" data-variant="primary">
-                Merge into…
-              </button>
-            </div>
           </>
         );
       }
       case "code":
+        if (mode === "team") {
+          return selectedTask ? (
+            <>
+              <TaskDetail
+                task={selectedTask}
+                titles={taskTitles}
+                session={
+                  selectedTask.session_id
+                    ? sessions.find((entry) => entry.id === selectedTask.session_id) ?? null
+                    : null
+                }
+                verifier={
+                  selectedTask.verifier_session_id
+                    ? sessions.find((entry) => entry.id === selectedTask.verifier_session_id) ??
+                      null
+                    : null
+                }
+                onChanged={() => void refreshTeam()}
+                onEdit={() => setTaskForm({ task: selectedTask })}
+                onOpenTerminal={openTaskTerminal}
+              />
+              <div className="cg-dock-group">
+                <span className="cg-kicker">Board feed</span>
+                <TeamMessages messages={teamBoard?.messages ?? []} titles={taskTitles} />
+              </div>
+            </>
+          ) : (
+            <p className="cg-empty-note">Select a task to inspect it.</p>
+          );
+        }
         return activeSession ? (
           <>
             <div className="cg-fields">
@@ -619,6 +822,11 @@ export default function Shell() {
                   : "root commit"}
               </Field>
               <Field label="Messages">{activeCommit.messages.length}</Field>
+              <Field label="Tags">
+                {activeCommitTags.length > 0
+                  ? activeCommitTags.map((tag) => tag.name).join(", ")
+                  : "—"}
+              </Field>
             </div>
             <div className="cg-dock-actions">
               <button
@@ -689,6 +897,43 @@ export default function Shell() {
       // shows branch / head / budget.
       return null;
     }
+    if (tab === "code" && mode === "team") {
+      return (
+        <footer className="cg-bottombar">
+          <span className="cg-bb-info">
+            <strong>{teamBoard?.team.name ?? "Team"}</strong>
+            <Chip>{teamTasks.length} tasks</Chip>
+            <span className="cg-view-sub">
+              {teamTasks.filter((task) => task.status === "working").length} working ·{" "}
+              {teamTasks.filter((task) => task.status === "review").length} in review ·{" "}
+              {teamTasks.filter((task) => task.status === "blocked").length} blocked
+            </span>
+          </span>
+          <span className="cg-bb-actions cg-bb-end">
+            <button type="button" className="cg-btn" onClick={() => setTaskForm({ task: null })}>
+              New task
+            </button>
+            <button
+              type="button"
+              className="cg-btn"
+              data-variant="primary"
+              disabled={teamBusy || teamTasks.length === 0}
+              onClick={() => void launchTeam()}
+            >
+              {teamBusy ? "Working…" : "Launch team"}
+            </button>
+            <button
+              type="button"
+              className="cg-btn"
+              disabled={teamBusy || !teamTasks.some((task) => task.status === "done")}
+              onClick={() => void mergeTeam()}
+            >
+              Merge done
+            </button>
+          </span>
+        </footer>
+      );
+    }
     // Code
     return (
       <footer className="cg-bottombar" aria-label="Commit staged messages">
@@ -727,9 +972,18 @@ export default function Shell() {
   };
 
   const dockTitle =
-    tab === "code" ? "Run" : tab === "chat" ? "Conversation" : tab === "agent" ? "Agent" : "Commit";
+    tab === "code"
+      ? mode === "team"
+        ? "Task"
+        : "Run"
+      : tab === "chat"
+        ? "Conversation"
+        : tab === "agent"
+          ? "Agent"
+          : "Commit";
 
-  const notice = sessionsError ?? barError ?? repoError ?? workspaceError;
+  const notice =
+    sessionsError ?? barError ?? repoError ?? workspaceError ?? fleetError ?? teamError ?? mergeQueue.error;
 
   return (
     <div className="cg-shell" data-cg-theme={theme}>
@@ -739,6 +993,9 @@ export default function Shell() {
           <small>WORKSPACE</small>
         </span>
         <TopNav tabs={tabs} active={tab} onChange={setTab} />
+        {tab === "code" && (
+          <MiniSeg value={mode} options={MODE_OPTIONS} onChange={changeMode} label="Code mode" />
+        )}
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint">
           <LuCommand aria-hidden="true" />K
@@ -776,19 +1033,49 @@ export default function Shell() {
           aria-labelledby={`cg-tab-${tab}`}
         >
           {/* Code stays mounted (hidden) so live terminals survive tab switches. */}
-          <div className="cg-view" data-active={tab === "code"}>
-            <CodeView
+          <div className="cg-view" data-active={tab === "code"} data-code-mode={mode}>
+            {mode === "team" ? (
+              <TeamView
+                tasks={teamTasks}
+                sessions={sessions}
+                layout={layout}
+                onLayout={setLayout}
+                selectedId={selectedTaskId}
+                teamName={teamBoard?.team.name ?? null}
+                busy={teamBusy}
+                workspaceName={workspace?.name ?? null}
+                onSelectTask={selectTask}
+                onNewTask={() => setTaskForm({ task: null })}
+                onLaunch={() => void launchTeam()}
+                onMerge={() => void mergeTeam()}
+                onCreateTeam={(name) => void createTeam(name)}
+                onChooseProject={() => setProjectOpen(true)}
+              />
+            ) : (
+              <CodeView
+                sessions={sessions}
+                fleet={fleet}
+                openIds={openIds}
+                layout={layout}
+                onLayout={setLayout}
+                workspace={workspace}
+                onNewTerminal={() => void newTerminal()}
+                onChooseProject={() => setProjectOpen(true)}
+              />
+            )}
+            {/* One canvas for both modes: switching must never restart an agent. */}
+            <PaneCanvas
               sessions={sessions}
-              fleet={fleet}
               openIds={openIds}
               activeId={activeId}
+              layout={layout}
               theme={theme}
-              workspace={workspace}
+              kickoff={kickoff}
+              taskIds={taskIds}
               onSelect={openSession}
               onClose={closeTerminal}
-              onNewTerminal={() => void newTerminal()}
               onStaged={() => setRevision((value) => value + 1)}
-              onChooseProject={() => setProjectOpen(true)}
+              onStatus={() => void refresh()}
             />
           </div>
           {tab !== "code" && (
@@ -808,6 +1095,15 @@ export default function Shell() {
 
       {pickerOpen && (
         <ModelPicker selection={model} onSelect={setModel} onClose={() => setPickerOpen(false)} />
+      )}
+
+      {taskForm && (
+        <TaskForm
+          task={taskForm.task}
+          tasks={teamTasks}
+          onSaved={() => void refreshTeam()}
+          onClose={() => setTaskForm(null)}
+        />
       )}
 
       {projectOpen && (

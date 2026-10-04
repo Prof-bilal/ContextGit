@@ -29,6 +29,12 @@ export interface PtyStartOptions {
   cols: number;
   rows: number;
   env: Record<string, string>;
+  /**
+   * One line typed into the terminal once it is up (team mode's briefing).
+   * Sent on the first output, with a timeout fallback so a silent TUI still
+   * receives it.
+   */
+  input?: string;
 }
 
 export class PtyManager {
@@ -55,6 +61,23 @@ export class PtyManager {
       env: { ...process.env, ...options.env } as Record<string, string>,
     });
     pty.onData((data) => this._onData(options.id, data));
+    if (options.input && options.input.trim()) {
+      const payload = `${options.input.trim()}\r`;
+      let sent = false;
+      const send = () => {
+        if (sent) return;
+        sent = true;
+        try {
+          pty.write(payload);
+        } catch {
+          // the process already exited
+        }
+      };
+      // The first output means the TUI has painted; the timer covers the case
+      // where the agent starts silently.
+      pty.onData(() => send());
+      setTimeout(send, 1500);
+    }
     pty.onExit(({ exitCode }) => {
       this._ptys.delete(options.id);
       this._onExit(options.id, exitCode);

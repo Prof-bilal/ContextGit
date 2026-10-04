@@ -40,7 +40,11 @@ test.beforeAll(async () => {
   // Runs get real git worktrees, so the workspace must be a throwaway git repo
   // (not the ContextGit checkout itself).
   const workdir = path.join(root, ".playwright-workdir");
+  // The backend repo persists between runs; without clearing it, seeded commits
+  // accumulate and every "seeded commit N" assertion matches duplicates.
+  const contextgitRepo = path.join(root, ".playwright-contextgit-desktop");
   fs.rmSync(workdir, { recursive: true, force: true });
+  fs.rmSync(contextgitRepo, { recursive: true, force: true });
   fs.mkdirSync(workdir, { recursive: true });
   const git = (...args: string[]) => spawnSync("git", args, { cwd: workdir });
   git("init", "-q", "-b", "main");
@@ -55,11 +59,18 @@ test.beforeAll(async () => {
     args: [path.join(root, "desktop"), "--no-sandbox"],
     env: {
       ...process.env,
-      CONTEXTGIT_REPO: path.join(root, ".playwright-contextgit-desktop"),
+      CONTEXTGIT_REPO: contextgitRepo,
       CONTEXTGIT_PORT: "8757",
       CONTEXTGIT_WORKDIR: workdir,
     },
   });
+
+  // The app's userData persists between runs (the Code tab remembers Single/Team,
+  // the theme, …). Clear it so a failed run cannot change how the next one starts.
+  const page = await app.firstWindow();
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+  await page.locator(".cg-shell").waitFor({ timeout: 30_000 });
 });
 
 test.afterAll(async () => {
@@ -791,4 +802,103 @@ test("typing into a terminal reaches the PTY", async () => {
   await expect(pane.locator(".xterm-accessibility-tree")).toContainText("CTX_TYPED_42", {
     timeout: 15_000,
   });
+});
+
+test("team mode: a dependent task waits, then starts when its dependency is done", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  // The Code-mode switch (the pane-layout switch is also a mini segmented control).
+  const modeSwitch = page.getByRole("tablist", { name: "Code mode" });
+
+  // Switch the Code tab from Single to Team.
+  await modeSwitch.getByRole("tab", { name: "Team" }).click();
+
+  // A team is the mission every task hangs off.
+  await expect(page.getByRole("heading", { name: "Start a team" })).toBeVisible();
+  const teamName = `e2e team ${Date.now()}`;
+  await page.getByLabel("Team name").fill(teamName);
+  await page.getByRole("button", { name: "Create team" }).click();
+  // Wait for the team to exist before seeding tasks into it.
+  await expect(page.locator(".cg-view-toolbar")).toContainText(teamName, { timeout: 10_000 });
+
+  // Two tasks, the second depending on the first (seeded through the API, as
+  // the other tests seed commits).
+  const ids = await page.evaluate(async () => {
+    const base = window.contextgit!.apiBase;
+    const post = async (path: string, body: unknown) => {
+      const response = await fetch(base + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, body: await response.text() };
+    };
+    const api = await post("/api/v1/team/tasks", {
+      title: "e2e api",
+      agent: "shell",
+      role: "backend",
+      // Unique to this test: team mode refuses a scope an existing run claims,
+      // and the shared app already has runs claiming src/api/**.
+      scope: ["team-e2e/api/**"],
+      // A gate the test controls, so completion has a verdict to record.
+      gate_command: "echo gate-ok",
+    });
+    if (api.status !== 201) throw new Error(`task api -> ${api.status} ${api.body}`);
+    const web = await post("/api/v1/team/tasks", {
+      title: "e2e web",
+      agent: "shell",
+      role: "frontend",
+      scope: ["team-e2e/web/**"],
+      depends_on: [JSON.parse(api.body).id],
+    });
+    if (web.status !== 201) throw new Error(`task web -> ${web.status} ${web.body}`);
+    return { api: JSON.parse(api.body).id as string, web: JSON.parse(web.body).id as string };
+  });
+
+  const board = page.locator(".cg-board");
+  // Match on the card's title text: the run's status icon (and the web card's
+  // "waiting on …" line) both contribute text, so neither a prefix nor a plain
+  // substring match is unambiguous once the runs exist.
+  const apiCard = board
+    .locator(".cg-board-card")
+    .filter({ has: page.getByText("e2e api", { exact: true }) });
+  const webCard = board
+    .locator(".cg-board-card")
+    .filter({ has: page.getByText("e2e web", { exact: true }) });
+  await expect(apiCard).toBeVisible({ timeout: 10_000 });
+  await expect(webCard).toContainText("waiting on e2e api");
+
+  // Launch: only the ready task starts, and it gets a real terminal.
+  await page.getByRole("button", { name: "Launch team" }).first().click();
+  await expect(page.locator(".cg-pane", { hasText: "e2e api" })).toBeVisible({ timeout: 20_000 });
+  await expect(webCard).toContainText("waiting on", { timeout: 10_000 });
+
+  // Completing runs the gate; passing lands the task in review, not done.
+  await page.evaluate(
+    (id) => fetch(`${window.contextgit!.apiBase}/api/v1/team/tasks/${id}/complete`, { method: "POST" }),
+    ids.api,
+  );
+  await expect(apiCard).toContainText("gate pass", { timeout: 20_000 });
+  await expect(webCard).toContainText("waiting on", { timeout: 10_000 });
+  await expect(page.locator(".cg-pane", { hasText: "e2e web" })).toHaveCount(0);
+
+  // The inspector carries the review verdict; approving starts the dependent.
+  await apiCard.click();
+  const dock = page.locator(".cg-dock");
+  await expect(dock).toContainText("Independent review");
+  await expect(dock.getByRole("button", { name: "View output" })).toBeEnabled();
+  await dock.getByRole("button", { name: "Approve" }).click();
+  await expect(page.locator(".cg-pane", { hasText: "e2e web" })).toBeVisible({ timeout: 20_000 });
+
+  // The board file both agents read names both tasks.
+  const workdir = path.join(path.resolve(__dirname, ".."), ".playwright-workdir");
+  const boardFile = fs.readFileSync(path.join(workdir, ".contextgit", "team.md"), "utf8");
+  expect(boardFile).toContain("e2e api");
+  expect(boardFile).toContain("e2e web");
+  expect(boardFile).toContain("### Done");
+
+  // Leave the app on Single so nothing downstream inherits Team mode.
+  await modeSwitch.getByRole("tab", { name: "Single" }).click();
+  await expect(page.getByRole("button", { name: "New terminal" })).toBeVisible();
 });

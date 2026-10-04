@@ -109,6 +109,8 @@ export interface Session {
   base_commit: string | null;
   task: string | null;
   scope: string[];
+  /** A private local port for this run's dev server. */
+  port: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -186,6 +188,95 @@ export interface MergeQueueEntry {
   updated_at: string;
 }
 
+// ---------- team mode ----------
+
+export type TaskStatus = "todo" | "blocked" | "working" | "review" | "done" | "failed";
+export type TeamMessageKind =
+  | "update"
+  | "question"
+  | "answer"
+  | "handoff"
+  | "contract"
+  | "review"
+  | "gate"
+  | "system";
+
+/** One mission: a named set of tasks over a project folder. */
+export interface Team {
+  id: string;
+  name: string;
+  project_path: string;
+  base_ref: string | null;
+  /** The team's default quality gate command (detected or authored). */
+  gate_command: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One unit of team work, owned by one run and bounded by a file scope. */
+export interface Task {
+  id: string;
+  team_id: string;
+  title: string;
+  brief: string;
+  done_criteria: string;
+  role: string;
+  status: TaskStatus;
+  agent: string | null;
+  session_id: string | null;
+  scope: string[];
+  contract: string | null;
+  position: number;
+  /** Derived: the tasks this one waits on, and the ones still unfinished. */
+  depends_on: string[];
+  blocked_by: string[];
+  /** Quality gate: the project command run in this task's worktree. */
+  gate_command: string | null;
+  gate_status: "pass" | "fail" | null;
+  gate_exit_code: number | null;
+  gate_output: string | null;
+  gate_ran_at: string | null;
+  /** Independent review: a read-only run that inspects the diff. */
+  verifier_session_id: string | null;
+  review_note: string | null;
+  /** Derived: the committed context size of this task's branch. */
+  tokens: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One line on the team board feed. */
+export interface TeamMessage {
+  id: number;
+  team_id: string;
+  task_id: string | null;
+  from_task_id: string | null;
+  kind: TeamMessageKind;
+  body: string;
+  created_at: string;
+}
+
+/** The board the Team view renders. */
+export interface TeamBoard {
+  team: Team;
+  tasks: Task[];
+  messages: TeamMessage[];
+  current_branch: string;
+}
+
+/** Fields accepted when creating or editing a task. */
+export interface TaskInput {
+  title: string;
+  brief?: string;
+  done_criteria?: string;
+  role?: string;
+  agent?: string | null;
+  scope?: string[];
+  contract?: string | null;
+  depends_on?: string[];
+  gate_command?: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
@@ -218,6 +309,11 @@ export const api = {
     }),
   deleteBranch: (name: string) =>
     request<void>(`/api/v1/branches?name=${encodeURIComponent(name)}`, { method: "DELETE" }),
+  checkout: (ref: string) =>
+    request<{ ref: string; current_branch: string }>("/api/v1/checkout", {
+      method: "POST",
+      body: JSON.stringify({ ref }),
+    }),
   mergePreview: (source: string, into: string) =>
     request<MergePreview>("/api/v1/merge/preview", {
       method: "POST",
@@ -322,6 +418,62 @@ export const api = {
     request<CommitResponse>(`/api/v1/sessions/${id}/commit`, {
       method: "POST",
       body: JSON.stringify({ summary, model }),
+    }),
+  // ---------- team mode (a task graph over parallel runs) ----------
+  team: () => request<TeamBoard | null>("/api/v1/team"),
+  createTeam: (input: { name: string; projectPath: string; baseRef?: string }) =>
+    request<TeamBoard>("/api/v1/team", {
+      method: "POST",
+      body: JSON.stringify({
+        name: input.name,
+        project_path: input.projectPath,
+        base_ref: input.baseRef,
+      }),
+    }),
+  createTask: (input: TaskInput) =>
+    request<Task>("/api/v1/team/tasks", { method: "POST", body: JSON.stringify(input) }),
+  updateTask: (id: string, patch: Partial<TaskInput> & { status?: TaskStatus }) =>
+    request<Task>(`/api/v1/team/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteTask: (id: string) =>
+    request<void>(`/api/v1/team/tasks/${id}`, { method: "DELETE" }),
+  launchTeam: () => request<Task[]>("/api/v1/team/launch", { method: "POST" }),
+  startTask: (id: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/start`, { method: "POST" }),
+  completeTask: (id: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/complete`, { method: "POST" }),
+  teamMessages: (limit = 50) =>
+    request<TeamMessage[]>(`/api/v1/team/messages?limit=${limit}`),
+  postTeamMessage: (input: { body: string; kind?: TeamMessageKind; taskId?: string }) =>
+    request<TeamMessage>("/api/v1/team/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        body: input.body,
+        kind: input.kind ?? "update",
+        task_id: input.taskId,
+      }),
+    }),
+  mergeTeam: () => request<MergeQueueEntry[]>("/api/v1/team/merge", { method: "POST" }),
+  setTeamGate: (gateCommand: string | null) =>
+    request<Team>("/api/v1/team", {
+      method: "PATCH",
+      body: JSON.stringify({ gate_command: gateCommand }),
+    }),
+  runTaskGate: (id: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/gate`, { method: "POST" }),
+  approveTask: (id: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/approve`, { method: "POST" }),
+  rejectTask: (id: string, note: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  verifyTask: (id: string, agent?: string) =>
+    request<Task>(`/api/v1/team/tasks/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ agent }),
     }),
 };
 

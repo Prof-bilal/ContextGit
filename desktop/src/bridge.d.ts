@@ -10,6 +10,8 @@ export interface ContextGitBridge {
     cols: number;
     rows: number;
     cwd?: string;
+    input?: string;
+    env?: Record<string, string>;
   }) => void;
   ptyWrite: (id: string, data: string) => void;
   ptyResize: (id: string, cols: number, rows: number) => void;

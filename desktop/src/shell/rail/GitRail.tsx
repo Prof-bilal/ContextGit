@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { LuX } from "react-icons/lu";
+import { LuArrowRightLeft, LuX } from "react-icons/lu";
 
 import type { Branch, Commit } from "@/lib/api";
 import { commitsOnBranch } from "../git/branchCommits";
@@ -24,6 +24,7 @@ export default function GitRail({
   currentBranch,
   selectedBranch,
   onSelectBranch,
+  onCheckout,
   onDelete,
   filter,
   onFilter,
@@ -33,6 +34,7 @@ export default function GitRail({
   currentBranch: string;
   selectedBranch: string;
   onSelectBranch: (branch: string) => void;
+  onCheckout: (branch: string) => void;
   onDelete: (branch: string) => void;
   filter: CommitFilter;
   onFilter: (filter: CommitFilter) => void;
@@ -84,15 +86,26 @@ export default function GitRail({
           {branch.name === currentBranch && <Chip>current</Chip>}
         </button>
         {branch.name !== currentBranch && (
-          <button
-            type="button"
-            className="cg-icon-btn cg-row-delete"
-            aria-label={`Delete branch ${branch.name}`}
-            title="Delete branch (commits are kept)"
-            onClick={() => onDelete(branch.name)}
-          >
-            <LuX aria-hidden="true" />
-          </button>
+          <>
+            <button
+              type="button"
+              className="cg-icon-btn cg-row-switch"
+              aria-label={`Switch to branch ${branch.name}`}
+              title="Switch to this branch (checkout)"
+              onClick={() => onCheckout(branch.name)}
+            >
+              <LuArrowRightLeft aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="cg-icon-btn cg-row-delete"
+              aria-label={`Delete branch ${branch.name}`}
+              title="Delete branch (commits are kept)"
+              onClick={() => onDelete(branch.name)}
+            >
+              <LuX aria-hidden="true" />
+            </button>
+          </>
         )}
       </div>
     );

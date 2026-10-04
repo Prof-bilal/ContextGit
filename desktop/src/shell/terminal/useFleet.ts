@@ -12,13 +12,15 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
  */
 export function useFleet() {
   const [fleet, setFleet] = useState<FleetEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!HAS_BRIDGE) return;
     try {
       setFleet(await api.fleet());
-    } catch {
-      // the rail simply shows no code state while the backend is unreachable
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load run state");
     }
   }, []);
 
@@ -28,5 +30,5 @@ export function useFleet() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  return fleet;
+  return { fleet, error };
 }

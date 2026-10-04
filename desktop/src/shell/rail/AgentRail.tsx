@@ -56,12 +56,14 @@ export default function AgentRail({
   const [error, setError] = useState<string | null>(null);
   const [scopeText, setScopeText] = useState("");
   const [claimConflicts, setClaimConflicts] = useState<string[]>([]);
+  const [scopeError, setScopeError] = useState<string | null>(null);
 
   // Warn as you type when the claimed files overlap another run's scope.
   useEffect(() => {
     const scope = parseScope(scopeText);
     if (scope.length === 0) {
       setClaimConflicts([]);
+      setScopeError(null);
       return;
     }
     let alive = true;
@@ -69,10 +71,17 @@ export default function AgentRail({
       void api
         .checkClaims(scope)
         .then((result) => {
-          if (alive) setClaimConflicts(result.conflicts);
+          if (alive) {
+            setClaimConflicts(result.conflicts);
+            setScopeError(null);
+          }
         })
-        .catch(() => {
-          if (alive) setClaimConflicts([]);
+        .catch((cause: unknown) => {
+          // Don't let a failed check read as "no overlap": say so instead.
+          if (alive) {
+            setClaimConflicts([]);
+            setScopeError(cause instanceof Error ? cause.message : "Could not check file claims");
+          }
         });
     }, 300);
     return () => {
@@ -173,6 +182,11 @@ export default function AgentRail({
           {conflictNames.length > 0 && (
             <p className="cg-form-warn" role="status">
               Overlaps {conflictNames.join(", ")} — they claim the same files.
+            </p>
+          )}
+          {scopeError && (
+            <p className="cg-form-warn" role="alert">
+              {scopeError}
             </p>
           )}
           <p>Gets its own branch, terminal and worktree; nothing commits until you do.</p>

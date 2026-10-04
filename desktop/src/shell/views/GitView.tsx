@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import type { IconType } from "react-icons";
 import { LuCircle, LuCircleDot, LuGitMerge, LuPencilLine } from "react-icons/lu";
 
-import type { Branch, Commit } from "@/lib/api";
+import type { Branch, Commit, RepoSnapshot } from "@/lib/api";
 import { Chip, MiniSeg } from "../primitives";
 import type { CommitFilter } from "../rail/GitRail";
 
@@ -39,6 +39,7 @@ export default function GitView({
   selectedId,
   onSelect,
   filter,
+  tags,
   loading,
   onRefresh,
 }: {
@@ -50,6 +51,7 @@ export default function GitView({
   selectedId: string | null;
   onSelect: (commit: Commit) => void;
   filter: CommitFilter;
+  tags: RepoSnapshot["tags"];
   loading: boolean;
   onRefresh: () => void;
 }) {
@@ -68,6 +70,7 @@ export default function GitView({
         <span className="cg-view-sub">
           {visible.length} commit{visible.length === 1 ? "" : "s"}
         </span>
+        {tags.length > 0 && <Chip>{tags.length} tag{tags.length === 1 ? "" : "s"}</Chip>}
         <span className="cg-toolbar-spacer" />
         <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>
           Refresh
