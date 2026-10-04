@@ -213,6 +213,29 @@ def test_compare_and_domain_error_mapping(tmp_path: Path) -> None:
     assert missing.status_code == 404
 
 
+def test_branch_budget_and_blame(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    repo.commit([Message(role="user", content="shared design")], model="test")
+    repo.commit([Message(role="assistant", content="the answer")], model="test")
+    client = TestClient(create_app(repo=repo, provider=FakeProvider()))
+
+    budget = client.get("/api/v1/branches/main/budget")
+    assert budget.status_code == 200
+    assert budget.json()["messages"] == 2
+    assert budget.json()["used"] > 0
+    assert budget.json()["head"] == repo.log()[0].id
+
+    blame = client.get("/api/v1/branches/main/blame").json()
+    assert [entry["role"] for entry in blame] == ["user", "assistant"]
+    assert [entry["content"] for entry in blame] == ["shared design", "the answer"]
+    # Oldest message belongs to the older commit.
+    assert blame[0]["commit_id"] == repo.log()[1].id
+    assert blame[1]["commit_id"] == repo.log()[0].id
+
+    missing = client.get("/api/v1/branches/nope/budget")
+    assert missing.status_code == 404
+
+
 def test_delete_branch_keeps_commits_and_refuses_current(tmp_path: Path) -> None:
     repo = seeded_repo(tmp_path / "repo")
     client = TestClient(create_app(repo=repo, provider=FakeProvider()))

@@ -68,3 +68,5 @@ npm run test:e2e
 | `files/team-mode-concept.md` | Team mode, round 2: making the idea strong |
 | `files/team-mode-architecture.md` | Team mode, round 3: the architecture |
 | `files/team-mode-mcp.md` | Team mode: the MCP channel (tools and setup) |
+| `files/chat-research-landscape.md` | Chat/research: the research types, prior art and lead-scraping guardrails |
+| `files/chat-providers.md` | Chat/research: the provider layer, add-a-provider flow and catalog |

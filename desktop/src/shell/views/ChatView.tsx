@@ -1,31 +1,62 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LuCornerUpLeft } from "react-icons/lu";
 
 import {
-  COUNCIL_ANSWERS,
+  api,
+  streamCouncil,
+  streamChat,
+  streamImages,
+  streamResearch,
+  type BlameEntry,
+  type CouncilEvent,
+  type ImageEvent,
+  type ProviderCapability,
+  type ProviderInfo,
+  type ResearchEvent,
+} from "@/lib/api";
+
+import {
   DEFAULT_CONTROLS,
   PROMPT_VERSIONS,
-  RESEARCH_REPORT,
-  RESEARCH_SOURCES,
-  RESEARCH_STEPS,
-  blameFor,
   type ChatMode,
   type ComposerControls,
-  type CouncilAnswer,
+  type ResearchMode,
 } from "../../mock/chat";
 import type { Conversation } from "../../mock/fixtures";
-import { findModel, findProvider, type ModelSelection } from "../providers";
+import { brandFor, type ModelSelection } from "../providers";
 import { AgentMark, Chip } from "../primitives";
-import BlameSheet from "../chat/BlameSheet";
-import ComposerModes from "../chat/ComposerModes";
-import CouncilCard from "../chat/CouncilCard";
+import BlameSheet, { type BlameView } from "../chat/BlameSheet";
+import ComposerModes, { type CouncilCandidate } from "../chat/ComposerModes";
+import ConnectProviderCard from "../chat/ConnectProviderCard";
+import { isReady } from "../chat/providerStatus";
+import CouncilCard, { type CouncilMemberView } from "../chat/CouncilCard";
 import ImageLab, { type ImageTile } from "../chat/ImageLab";
-import ResearchRun, { type ResearchSource, type StepState } from "../chat/ResearchRun";
+import ResearchRun, {
+  type ResearchResultPayload,
+  type ResearchSource,
+  type StepState,
+} from "../chat/ResearchRun";
 
 type Entry =
   | { kind: "message"; role: "user" | "assistant"; content: string }
-  | { kind: "council"; providers: string[]; answers: CouncilAnswer[]; kept: string | null }
-  | { kind: "research"; steps: StepState[]; sources: ResearchSource[]; report: string; done: boolean }
+  | {
+      kind: "council";
+      prompt: string;
+      members: CouncilMemberView[];
+      answers: string[];
+      errors: Array<string | null>;
+      kept: number | null;
+    }
+  | {
+      kind: "research";
+      mode: ResearchMode;
+      steps: StepState[];
+      sources: ResearchSource[];
+      report: string;
+      result: ResearchResultPayload | null;
+      error: string | null;
+      done: boolean;
+    }
   | {
       kind: "image";
       versions: Array<{ version: number; text: string; note: string }>;
@@ -34,24 +65,92 @@ type Entry =
       aspect: string;
     };
 
-const MOCK_REPLY =
-  "Short answer: in-process with an LRU while you run a single node — Redis only earns its " +
-  "place once there are several instances to coordinate. One node means one clock, so the " +
-  "bucket refill window can't disagree with itself the way it did in that 50ms skew incident.";
-
 const IMAGE_PLACEHOLDER = PROMPT_VERSIONS[1].text;
+
+/** Depth is the user's dial; these are the explicit budgets behind it. */
+const RESEARCH_BUDGETS: Record<
+  ComposerControls["depth"],
+  { breadth: number; depth: number; maxPages: number }
+> = {
+  quick: { breadth: 2, depth: 1, maxPages: 3 },
+  standard: { breadth: 3, depth: 2, maxPages: 6 },
+  deep: { breadth: 4, depth: 3, maxPages: 10 },
+};
 
 export default function ChatView({
   conversation,
   selection,
+  providers,
+  branch,
+  commitId,
   onPickModel,
+  onAddProvider,
+  onCommitted,
+  readyChatCount,
+  readyImageCount,
+  readySearchCount,
+  offlineOk,
+  onUseOffline,
 }: {
   conversation: Conversation;
   selection: ModelSelection;
+  providers: ProviderInfo[];
+  /** The real repo branch the turn is committed to. */
+  branch: string;
+  /** The real commit the context is built from (null → the branch head). */
+  commitId: string | null;
   onPickModel: () => void;
+  onAddProvider: (capability: ProviderCapability, initialId?: string) => void;
+  /** Called after a turn is committed, so the inspector can refresh. */
+  onCommitted?: () => void;
+  /** How many usable providers exist per capability (mock and bare rows excluded). */
+  readyChatCount: number;
+  readyImageCount: number;
+  readySearchCount: number;
+  /** The user chose to run against the offline mock for this session. */
+  offlineOk: boolean;
+  onUseOffline: () => void;
 }) {
-  const provider = findProvider(selection.providerId);
-  const model = findModel(selection);
+  const provider = providers.find((entry) => entry.id === selection.providerId);
+  const brand = brandFor(selection.providerId, provider?.label ?? "");
+  const modelLabel = selection.modelId;
+
+  const chatProviders = useMemo(
+    () =>
+      providers.filter(
+        (entry) => entry.capability === "chat" && (isReady(entry) || entry.kind === "mock"),
+      ),
+    [providers],
+  );
+  const imageProviders = useMemo(
+    () =>
+      providers.filter(
+        (entry) => entry.capability === "image" && (isReady(entry) || entry.kind === "mock"),
+      ),
+    [providers],
+  );
+  const defaultSearch = useMemo(
+    () =>
+      providers.find(
+        (entry) => entry.capability === "search" && (isReady(entry) || entry.kind === "mock"),
+      ) ?? null,
+    [providers],
+  );
+
+  const councilCandidates = useMemo<CouncilCandidate[]>(
+    () =>
+      chatProviders.flatMap((entry) => {
+        const models =
+          entry.models.length > 0 ? entry.models : entry.default_model ? [entry.default_model] : [];
+        return models.map((model) => ({
+          key: `${entry.id}:${model}`,
+          providerId: entry.id,
+          modelId: model,
+          label: entry.label,
+        }));
+      }),
+    [chatProviders],
+  );
 
   const [entries, setEntries] = useState<Entry[]>(() =>
     conversation.messages.map((message) => ({
@@ -66,18 +165,15 @@ export default function ChatView({
   const [running, setRunning] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [streamed, setStreamed] = useState("");
-  const [blameIndex, setBlameIndex] = useState<number | null>(null);
+  const [blame, setBlame] = useState<BlameView | null>(null);
 
   const logRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const timers = useRef<number[]>([]);
   const accumulated = useRef("");
-  const seedRef = useRef(1000);
+  const abortRef = useRef<AbortController | null>(null);
+  const blameCache = useRef<BlameEntry[] | null>(null);
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach((timer) => window.clearTimeout(timer));
-  }, []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -91,86 +187,232 @@ export default function ChatView({
     if (log) log.scrollTop = log.scrollHeight;
   }, [entries, thinking, streamed]);
 
-  const later = (fn: () => void, ms: number) => {
-    timers.current.push(window.setTimeout(fn, ms));
-  };
-
   const patchControls = (patch: Partial<ComposerControls>) =>
     setControls((current) => ({ ...current, ...patch }));
 
   const pushUser = (text: string) =>
     setEntries((current) => [...current, { kind: "message", role: "user", content: text }]);
 
-  // ---- Chat: one model, streaming reply -------------------------------------------------
-  const runChat = (text: string) => {
-    pushUser(text);
-    setThinking(true);
-    setStreamed("");
-    accumulated.current = "";
-    const words = MOCK_REPLY.split(" ");
-    later(() => {
-      setThinking(false);
-      words.forEach((word, index) => {
-        later(() => {
-          accumulated.current = accumulated.current ? `${accumulated.current} ${word}` : word;
-          setStreamed(accumulated.current);
-          if (index === words.length - 1) {
-            later(() => {
-              const final = accumulated.current;
-              accumulated.current = "";
-              setStreamed("");
-              setEntries((current) => [...current, { kind: "message", role: "assistant", content: final }]);
-            }, 250);
-          }
-        }, index * 42);
-      });
-    }, 950);
-  };
+  // Seed sensible council and image defaults once the registry loads.
+  useEffect(() => {
+    setControls((current) =>
+      current.council.length >= 2 || councilCandidates.length === 0
+        ? current
+        : {
+            ...current,
+            council: councilCandidates
+              .slice(0, Math.min(3, councilCandidates.length))
+              .map((candidate) => candidate.key),
+          },
+    );
+  }, [councilCandidates]);
 
-  // ---- Council: same prompt, several models --------------------------------------------
-  const runCouncil = (text: string) => {
-    const providers = controls.council;
-    pushUser(text);
-    setRunning(true);
-    setEntries((current) => [...current, { kind: "council", providers, answers: [], kept: null }]);
-    const councilIndex = entries.length + 1;
+  useEffect(() => {
+    // Prefer a connected cloud image provider; the offline mock beats a dead local SD.
+    const fallback =
+      imageProviders.find((entry) => isReady(entry) && entry.kind !== "local") ??
+      imageProviders.find((entry) => isReady(entry)) ??
+      imageProviders.find((entry) => entry.kind === "mock") ??
+      imageProviders[0];
+    if (!fallback) return;
+    setControls((current) =>
+      current.imageProvider
+        ? current
+        : {
+            ...current,
+            imageProvider: fallback.id,
+            imageModel: fallback.models[0] ?? fallback.default_model ?? "",
+          },
+    );
+  }, [imageProviders]);
 
-    providers.forEach((providerId, order) => {
-      later(() => {
-        const canned = COUNCIL_ANSWERS.find((answer) => answer.providerId === providerId);
-        setEntries((current) =>
-          current.map((entry, position) =>
-            position === councilIndex && entry.kind === "council"
-              ? {
-                  ...entry,
-                  answers: [
-                    ...entry.answers,
-                    canned ?? {
-                      providerId,
-                      modelId: "default",
-                      stance: "answer",
-                      text: "In-process while you run one node; put the bucket behind an interface so a later swap to Redis stays a one-file change.",
-                    },
-                  ],
-                }
-              : entry,
-          ),
-        );
-        if (order === providers.length - 1) setRunning(false);
-      }, 600 + order * 500);
+  const openBlame = async (index: number) => {
+    const entry = entries[index];
+    if (!entry || entry.kind !== "message") return;
+    if (blameCache.current === null) {
+      try {
+        blameCache.current = await api.branchBlame(branch);
+      } catch {
+        blameCache.current = [];
+      }
+    }
+    const match =
+      blameCache.current.find(
+        (item) => item.role === entry.role && item.content === entry.content,
+      ) ?? null;
+    setBlame({
+      claim: entry.content,
+      commitId: match?.commit_id ?? "",
+      kind: match?.kind ?? "",
+      model: match?.model ?? "",
+      author: match?.author ?? null,
+      summary: match?.summary ?? null,
+      createdAt: match?.created_at ?? "",
+      role: entry.role,
+      branch,
+      sample: match === null,
     });
   };
 
-  const keepCouncil = (entryIndex: number, providerId: string) => {
-    setEntries((current) =>
-      current.map((entry, position) =>
-        position === entryIndex && entry.kind === "council" ? { ...entry, kept: providerId } : entry,
-      ),
-    );
+  // ---- Chat: one model, streamed from the backend and committed as context --------------
+  const runChat = async (text: string) => {
+    pushUser(text);
+    setThinking(true);
+    setStreamed("");
+    setRunning(true);
+    accumulated.current = "";
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const { answer } = await streamChat(
+        {
+          prompt: text,
+          branch,
+          commitId,
+          model: selection.modelId,
+          provider: selection.providerId,
+        },
+        (chunk) => {
+          accumulated.current += chunk;
+          setStreamed(accumulated.current);
+        },
+        controller.signal,
+      );
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: answer },
+      ]);
+      onCommitted?.();
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Chat failed";
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: `⚠ ${detail}` },
+      ]);
+    } finally {
+      accumulated.current = "";
+      setStreamed("");
+      setThinking(false);
+      setRunning(false);
+      abortRef.current = null;
+    }
   };
 
-  // ---- Research: visible steps, then a cited report -------------------------------------
-  const runResearch = (text: string) => {
+  // ---- Council: same prompt to several providers, streamed in parallel -----------------
+  const runCouncil = async (text: string) => {
+    const members: CouncilMemberView[] = controls.council
+      .map((key) => councilCandidates.find((candidate) => candidate.key === key))
+      .filter((candidate): candidate is CouncilCandidate => candidate !== undefined)
+      .map((candidate) => ({
+        key: candidate.key,
+        providerId: candidate.providerId,
+        modelId: candidate.modelId,
+        label: candidate.label,
+      }));
+    if (members.length < 2) return;
+    pushUser(text);
+    setRunning(true);
+    const councilIndex = entries.length + 1;
+    setEntries((current) => [
+      ...current,
+      {
+        kind: "council",
+        prompt: text,
+        members,
+        answers: members.map(() => ""),
+        errors: members.map(() => null),
+        kept: null,
+      },
+    ]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      await streamCouncil(
+        {
+          prompt: text,
+          branch,
+          commitId,
+          members: members.map((member) => ({
+            provider: member.providerId,
+            model: member.modelId,
+          })),
+        },
+        (event: CouncilEvent) => {
+          if (event.type === "done") return;
+          const index = typeof event.index === "number" ? event.index : null;
+          if (index === null) return;
+          setEntries((current) =>
+            current.map((entry, position) => {
+              if (position !== councilIndex || entry.kind !== "council") return entry;
+              if (event.type === "token") {
+                const answers = [...entry.answers];
+                answers[index] = `${answers[index] ?? ""}${event.text}`;
+                return { ...entry, answers };
+              }
+              if (event.type === "member_done") {
+                const answers = [...entry.answers];
+                answers[index] = event.answer;
+                return { ...entry, answers };
+              }
+              if (event.type === "error") {
+                const errors = [...entry.errors];
+                errors[index] = event.error;
+                return { ...entry, errors };
+              }
+              return entry;
+            }),
+          );
+        },
+        controller.signal,
+      );
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Council failed";
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: `⚠ ${detail}` },
+      ]);
+    } finally {
+      setRunning(false);
+      abortRef.current = null;
+    }
+  };
+
+  const keepCouncil = async (entryIndex: number, memberIndex: number) => {
+    const entry = entries[entryIndex];
+    if (!entry || entry.kind !== "council") return;
+    const member = entry.members[memberIndex];
+    const answer = entry.answers[memberIndex];
+    if (!member || !answer) return;
+    setEntries((current) =>
+      current.map((item, position) =>
+        position === entryIndex && item.kind === "council"
+          ? { ...item, kept: memberIndex }
+          : item,
+      ),
+    );
+    try {
+      await api.commit({
+        messages: [
+          { role: "user", content: entry.prompt },
+          { role: "assistant", content: answer },
+        ],
+        model: member.modelId,
+        summary: `council: kept ${member.label}`,
+        branch,
+      });
+      onCommitted?.();
+    } catch (cause) {
+      const detail =
+        cause instanceof Error ? cause.message : "Could not record the council decision";
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: `⚠ ${detail}` },
+      ]);
+    }
+  };
+
+  // ---- Research: a real loop, streamed as visible steps, then a cited artifact ----------
+  const runResearch = async (text: string) => {
     pushUser(text);
     setRunning(true);
     const researchIndex = entries.length + 1;
@@ -178,68 +420,116 @@ export default function ChatView({
       ...current,
       {
         kind: "research",
-        steps: RESEARCH_STEPS.map((step) => ({ ...step, status: "pending" as const })),
+        mode: controls.researchMode,
+        steps: [],
         sources: [],
         report: "",
+        result: null,
+        error: null,
         done: false,
       },
     ]);
-
-    RESEARCH_STEPS.forEach((step, order) => {
-      later(() => {
-        setEntries((current) =>
-          current.map((entry, position) =>
-            position === researchIndex && entry.kind === "research"
-              ? {
+    const budget = RESEARCH_BUDGETS[controls.depth];
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      await streamResearch(
+        {
+          mode: controls.researchMode,
+          prompt: text,
+          provider: selection.providerId || undefined,
+          model: selection.modelId || undefined,
+          searchProvider: defaultSearch?.id,
+          branch,
+          commitId,
+          breadth: budget.breadth,
+          depth: budget.depth,
+          maxPages: budget.maxPages,
+        },
+        (event: ResearchEvent) => {
+          setEntries((current) =>
+            current.map((entry, position) => {
+              if (position !== researchIndex || entry.kind !== "research") return entry;
+              if (event.type === "step") {
+                const next = {
+                  id: event.id,
+                  label: event.label,
+                  detail: event.detail,
+                  status: event.status,
+                };
+                const at = entry.steps.findIndex((step) => step.id === event.id);
+                const steps =
+                  at >= 0
+                    ? entry.steps.map((step, index) => (index === at ? next : step))
+                    : [...entry.steps, next];
+                return { ...entry, steps };
+              }
+              if (event.type === "source") {
+                return {
                   ...entry,
-                  steps: entry.steps.map((item, stepIndex) =>
-                    stepIndex === order
-                      ? { ...item, status: "active" as const }
-                      : { ...item, status: stepIndex < order ? ("done" as const) : item.status },
-                  ),
-                  sources: RESEARCH_SOURCES.slice(0, Math.min(RESEARCH_SOURCES.length, (order + 1) * 2)),
-                }
-              : entry,
-          ),
-        );
-      }, 500 + order * 800);
-    });
-
-    later(() => {
+                  sources: [
+                    ...entry.sources,
+                    { id: event.id, title: event.title, host: event.host },
+                  ],
+                };
+              }
+              if (event.type === "report") {
+                return { ...entry, report: entry.report + event.text };
+              }
+              if (event.type === "result") {
+                return { ...entry, result: event as unknown as ResearchResultPayload };
+              }
+              if (event.type === "error") {
+                return { ...entry, error: event.error };
+              }
+              return entry;
+            }),
+          );
+        },
+        controller.signal,
+      );
       setEntries((current) =>
         current.map((entry, position) =>
           position === researchIndex && entry.kind === "research"
-            ? {
-                ...entry,
-                steps: entry.steps.map((item) => ({ ...item, status: "done" as const })),
-                sources: RESEARCH_SOURCES,
-                report: RESEARCH_REPORT,
-                done: true,
-              }
+            ? { ...entry, done: true }
             : entry,
         ),
       );
+      onCommitted?.();
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Research failed";
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: `⚠ ${detail}` },
+      ]);
+    } finally {
       setRunning(false);
-    }, 500 + RESEARCH_STEPS.length * 800);
+      abortRef.current = null;
+    }
   };
 
-  // ---- Image: the prompt is the versioned artifact --------------------------------------
-  const runImage = (text: string) => {
-    seedRef.current += 17;
-    const tiles: ImageTile[] = Array.from({ length: 4 }, (_, index) => ({
-      seed: seedRef.current + index,
-      model: controls.imageModel,
-    }));
+  // ---- Image: the prompt is the versioned artifact; tiles are real renders --------------
+  const runImage = async (text: string) => {
+    const providerId = controls.imageProvider || imageProviders[0]?.id || "mock-image";
+    const activeProvider =
+      imageProviders.find((entry) => entry.id === providerId) ?? imageProviders[0];
+    const modelId =
+      controls.imageModel || activeProvider?.models[0] || activeProvider?.default_model || "";
+    const last = entries[entries.length - 1];
+    const reuse = last?.kind === "image" && last.model === modelId;
+    const imageIndex = reuse ? entries.length - 1 : entries.length;
+    setRunning(true);
     setEntries((current) => {
-      const last = current[current.length - 1];
-      if (last?.kind === "image" && last.model === controls.imageModel) {
-        const nextVersion = last.versions.length + 1;
+      if (reuse && last?.kind === "image") {
         return [
           ...current.slice(0, -1),
           {
             ...last,
-            versions: [...last.versions, { version: nextVersion, text, note: "edited prompt" }],
-            tiles,
+            versions: [
+              ...last.versions,
+              { version: last.versions.length + 1, text, note: "edited prompt" },
+            ],
+            tiles: [],
             aspect: controls.aspect,
           },
         ];
@@ -249,27 +539,116 @@ export default function ChatView({
         {
           kind: "image",
           versions: [{ version: 1, text, note: "initial prompt" }],
-          tiles,
-          model: controls.imageModel,
+          tiles: [],
+          model: modelId,
           aspect: controls.aspect,
         },
       ];
     });
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      await streamImages(
+        {
+          prompt: text,
+          provider: providerId,
+          model: modelId,
+          aspect: controls.aspect,
+          count: 4,
+          branch,
+          commitId,
+        },
+        (event: ImageEvent) => {
+          if (event.type !== "image") return;
+          setEntries((current) =>
+            current.map((entry, position) =>
+              position === imageIndex && entry.kind === "image"
+                ? {
+                    ...entry,
+                    tiles: [
+                      ...entry.tiles,
+                      { seed: event.seed, model: event.model, src: event.data_url ?? event.url },
+                    ],
+                  }
+                : entry,
+            ),
+          );
+        },
+        controller.signal,
+      );
+      onCommitted?.();
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Image generation failed";
+      setEntries((current) => [
+        ...current,
+        { kind: "message", role: "assistant", content: `⚠ ${detail}` },
+      ]);
+    } finally {
+      setRunning(false);
+      abortRef.current = null;
+    }
   };
+
+  // The prompt shown when a mode has no usable provider (mock/bare rows excluded).
+  const gate: { capability: ProviderCapability; title: string; message: string } | null = (() => {
+    if (mode === "chat" && readyChatCount === 0) {
+      return {
+        capability: "chat",
+        title: "Connect a model to chat",
+        message:
+          "Add an API key for a model provider (Agnes AI, OpenRouter, Groq, Anthropic, OpenAI…) to start. ContextGit talks straight to your provider and keeps the key on this machine.",
+      };
+    }
+    if (mode === "council" && readyChatCount < 2) {
+      return {
+        capability: "chat",
+        title: "Connect two models for a council",
+        message:
+          "A council asks the same prompt of several models. Add at least two connected providers (or a second model) with keys.",
+      };
+    }
+    if (mode === "image" && readyImageCount === 0) {
+      return {
+        capability: "image",
+        title: "Connect an image provider",
+        message:
+          "Add an OpenAI Images key, or enable a local Stable Diffusion server, to render prompts.",
+      };
+    }
+    if (mode === "research" && (readyChatCount === 0 || readySearchCount === 0)) {
+      return readyChatCount === 0
+        ? {
+            capability: "chat",
+            title: "Connect a model and a search key",
+            message:
+              "Research needs a model to plan and write, and a search backend (Tavily) to find sources.",
+          }
+        : {
+            capability: "search",
+            title: "Connect a search backend",
+            message:
+              "Research needs a search key (Tavily) to find and cite real sources. Add it to run research.",
+          };
+    }
+    return null;
+  })();
+  const blocked = !offlineOk && gate !== null;
 
   const canSend =
     draft.trim().length > 0 &&
     !running &&
-    (mode !== "council" || controls.council.length >= 2);
+    !blocked &&
+    (mode !== "council" || controls.council.length >= 2) &&
+    (mode !== "chat" || (Boolean(provider) && selection.modelId !== ""));
 
   const send = () => {
     const text = draft.trim();
     if (!text || !canSend) return;
     setDraft("");
-    if (mode === "chat") runChat(text);
-    else if (mode === "council") runCouncil(text);
-    else if (mode === "research") runResearch(text);
-    else runImage(text);
+    if (mode === "chat") void runChat(text);
+    else if (mode === "council") void runCouncil(text);
+    else if (mode === "research") void runResearch(text);
+    else void runImage(text);
   };
 
   const placeholder =
@@ -279,11 +658,11 @@ export default function ChatView({
         ? `Ask the same question of ${controls.council.length} models…`
         : mode === "research"
           ? "What should it research?"
-          : `Ask ${model?.label ?? "the model"}…`;
+          : `Ask ${modelLabel || "the model"}…`;
 
   const label =
     mode === "chat"
-      ? `New message on ${conversation.branch.name}`
+      ? `New message on ${branch || conversation.branch.name}`
       : mode === "council"
         ? "Council run"
         : mode === "research"
@@ -292,19 +671,19 @@ export default function ChatView({
 
   const footNote =
     mode === "chat"
-      ? `Replying with ${provider?.label ?? "—"} · ${model?.label ?? "choose a model"}`
+      ? `Replying with ${provider?.label ?? "—"} · ${modelLabel || "choose a model"}`
       : mode === "council"
         ? `${controls.council.length} models · one decision recorded`
         : mode === "research"
-          ? `${controls.depth} depth · every step commits`
-          : "no image endpoint is wired in the mock";
+          ? `${controls.researchMode} · ${controls.depth} depth · every step commits`
+          : `${controls.imageModel || "choose an image model"} · ${controls.aspect}`;
 
   return (
     <div className="cg-chat">
       <div className="cg-view-toolbar">
-        <h1>{conversation.branch.name}</h1>
-        <Chip>{conversation.branch.head_commit_id.slice(0, 7)}</Chip>
-        <Chip tone="warn">sample data</Chip>
+        <h1>{branch || conversation.branch.name}</h1>
+        {commitId && <Chip>{commitId.slice(0, 7)}</Chip>}
+        <Chip tone="ok">live</Chip>
         <span className="cg-toolbar-spacer" />
         <button
           type="button"
@@ -313,18 +692,37 @@ export default function ChatView({
           aria-haspopup="dialog"
           title="Change provider and model"
         >
-          {provider && <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />}
+          <AgentMark agent={brand.hue} icon={brand.icon} label={brand.monogram} />
           <span className="cg-model-btn-copy">
-            <span className="cg-model-btn-model">{model?.label ?? "Choose a model"}</span>
-            <span className="cg-model-btn-provider">{provider?.label ?? "—"}</span>
+            <span className="cg-model-btn-model">
+              {modelLabel || "Choose a model"}
+            </span>
+            <span className="cg-model-btn-provider">{provider?.label ?? "Add a provider"}</span>
           </span>
           <span className="cg-model-btn-caret" aria-hidden="true">
             ⌄
           </span>
         </button>
+        <button
+          type="button"
+          className="cg-chip cg-chip-btn"
+          onClick={() => onAddProvider("chat")}
+        >
+          Add provider
+        </button>
       </div>
 
       <div className="cg-chat-log" ref={logRef} aria-live="polite">
+        {blocked && gate && (
+          <ConnectProviderCard
+            capability={gate.capability}
+            title={gate.title}
+            message={gate.message}
+            providers={providers}
+            onAddProvider={onAddProvider}
+            onUseOffline={onUseOffline}
+          />
+        )}
         {entries.map((entry, index) => {
           if (entry.kind === "message") {
             return (
@@ -334,7 +732,7 @@ export default function ChatView({
                 <button
                   type="button"
                   className="cg-blame-btn"
-                  onClick={() => setBlameIndex(index)}
+                  onClick={() => void openBlame(index)}
                   title="Where did this come from?"
                 >
                   <LuCornerUpLeft aria-hidden="true" /> blame
@@ -346,10 +744,11 @@ export default function ChatView({
             return (
               <CouncilCard
                 key={index}
-                providers={entry.providers}
+                members={entry.members}
                 answers={entry.answers}
+                errors={entry.errors}
                 kept={entry.kept}
-                onKeep={(providerId) => keepCouncil(index, providerId)}
+                onKeep={(memberIndex) => void keepCouncil(index, memberIndex)}
               />
             );
           }
@@ -357,9 +756,12 @@ export default function ChatView({
             return (
               <ResearchRun
                 key={index}
+                mode={entry.mode}
                 steps={entry.steps}
                 sources={entry.sources}
                 report={entry.report}
+                result={entry.result}
+                error={entry.error}
                 done={entry.done}
               />
             );
@@ -384,7 +786,7 @@ export default function ChatView({
                 <i />
                 <i />
               </span>
-              Thinking… ({model?.label ?? "model"})
+              Thinking… ({modelLabel || "model"})
             </span>
           </div>
         )}
@@ -413,6 +815,8 @@ export default function ChatView({
             onMode={setMode}
             controls={controls}
             onControls={patchControls}
+            councilCandidates={councilCandidates}
+            imageProviders={imageProviders}
           />
           <label className="cg-kicker" htmlFor="cg-chat-prompt">
             {label}
@@ -459,12 +863,7 @@ export default function ChatView({
         </div>
       </form>
 
-      {blameIndex !== null && entries[blameIndex]?.kind === "message" && (
-        <BlameSheet
-          record={blameFor(blameIndex, (entries[blameIndex] as { content: string }).content)}
-          onClose={() => setBlameIndex(null)}
-        />
-      )}
+      {blame && <BlameSheet view={blame} onClose={() => setBlame(null)} />}
     </div>
   );
 }

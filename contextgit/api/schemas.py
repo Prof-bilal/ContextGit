@@ -4,7 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from contextgit.core.models import Branch, Commit, Message, Tag
+from contextgit.core.models import (
+    AuthStyle,
+    Branch,
+    Commit,
+    Message,
+    ProviderCapability,
+    ProviderKind,
+    Tag,
+)
 from contextgit.merge.models import Diff, MergePreview
 
 
@@ -44,9 +52,90 @@ class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
     branch: str | None = None
     commit_id: str | None = None
-    model: str = "gpt-4o-mini"
+    model: str | None = None
+    # When set, the request resolves this provider from the registry; otherwise
+    # the server's default provider is used.
+    provider: str | None = None
     session_id: str | None = None
     auto_commit: bool | None = None
+
+
+class CouncilMember(BaseModel):
+    """One model in a council: a provider id plus the model to ask."""
+
+    provider: str = Field(min_length=1)
+    model: str | None = None
+
+
+class CouncilRequest(BaseModel):
+    """The same prompt sent to several providers at once."""
+
+    prompt: str = Field(min_length=1)
+    members: list[CouncilMember] = Field(min_length=2, max_length=5)
+    branch: str | None = None
+    commit_id: str | None = None
+    session_id: str | None = None
+    auto_commit: bool | None = None
+
+
+class ImageRequest(BaseModel):
+    """Render a prompt with an image provider; the prompt is the versioned artifact."""
+
+    prompt: str = Field(min_length=1)
+    provider: str = "mock-image"
+    model: str | None = None
+    aspect: str = "16:9"
+    count: int = Field(default=4, ge=1, le=8)
+    branch: str | None = None
+    commit_id: str | None = None
+
+
+class ResearchRequest(BaseModel):
+    """One research run: deep, competitive, lead, or a verification pass."""
+
+    mode: Literal["deep", "competitive", "lead", "verify"] = "deep"
+    prompt: str = Field(min_length=1)
+    provider: str | None = None
+    model: str | None = None
+    search_provider: str = "mock-search"
+    branch: str | None = None
+    commit_id: str | None = None
+    breadth: int = Field(default=3, ge=1, le=6)
+    depth: int = Field(default=2, ge=1, le=4)
+    max_pages: int = Field(default=6, ge=1, le=20)
+    session_id: str | None = None
+    auto_commit: bool | None = None
+
+
+class ProviderUpsertRequest(BaseModel):
+    """Add or enable one provider (a built-in by id, or a custom endpoint)."""
+
+    id: str | None = None
+    label: str | None = None
+    vendor: str | None = None
+    kind: ProviderKind | None = None
+    capability: ProviderCapability | None = None
+    base_url: str | None = None
+    auth_style: AuthStyle | None = None
+    api_key: str | None = None
+    default_model: str | None = None
+    models: list[str] = Field(default_factory=list)
+
+
+class ProviderTestResult(BaseModel):
+    """The verdict of one tiny completion against a provider."""
+
+    ok: bool
+    latency_ms: int
+    model: str | None = None
+    error: str | None = None
+
+
+class ProviderModelsResult(BaseModel):
+    """The model catalog for a provider, and whether it came from the wire."""
+
+    models: list[str]
+    source: Literal["live", "static"]
 
 
 class CompareRequest(BaseModel):

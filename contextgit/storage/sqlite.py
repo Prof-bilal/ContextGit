@@ -20,12 +20,16 @@ from contextgit.core.errors import (
     TeamNotFound,
 )
 from contextgit.core.models import (
+    AuthStyle,
     Branch,
     Commit,
     CommitKind,
     MergeQueueEntry,
     MergeStatus,
     Message,
+    ProviderCapability,
+    ProviderKind,
+    ProviderRecord,
     Role,
     Session,
     SessionKind,
@@ -720,6 +724,71 @@ class SqliteStorage:
                     event.created_at.isoformat(),
                 ),
             )
+
+    # ---------- providers (locally stored LLM endpoints) ----------
+
+    @staticmethod
+    def _row_to_provider(row: sqlite3.Row) -> ProviderRecord:
+        return ProviderRecord(
+            id=row["id"],
+            label=row["label"],
+            vendor=row["vendor"],
+            kind=cast("ProviderKind", row["kind"]),
+            capability=cast("ProviderCapability", row["capability"]),
+            base_url=row["base_url"],
+            auth_style=cast("AuthStyle", row["auth_style"]),
+            api_key=row["api_key"],
+            default_model=row["default_model"],
+            models=json.loads(row["models_json"]) if row["models_json"] else [],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def upsert_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or replace a provider row; `api_key=None` clears a stored key."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO providers"
+                " (id, label, vendor, kind, capability, base_url, auth_style, api_key,"
+                " default_model, models_json, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET label = excluded.label,"
+                " vendor = excluded.vendor, kind = excluded.kind,"
+                " capability = excluded.capability, base_url = excluded.base_url,"
+                " auth_style = excluded.auth_style, api_key = excluded.api_key,"
+                " default_model = excluded.default_model, models_json = excluded.models_json,"
+                " updated_at = excluded.updated_at",
+                (
+                    record.id,
+                    record.label,
+                    record.vendor,
+                    record.kind,
+                    record.capability,
+                    record.base_url,
+                    record.auth_style,
+                    record.api_key,
+                    record.default_model,
+                    json.dumps(record.models),
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                ),
+            )
+        return self.get_provider_row(record.id)  # type: ignore[return-value]
+
+    def get_provider_row(self, provider_id: str) -> ProviderRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM providers WHERE id = ?", (provider_id,)
+        ).fetchone()
+        return self._row_to_provider(row) if row is not None else None
+
+    def list_provider_rows(self) -> list[ProviderRecord]:
+        rows = self._conn.execute("SELECT * FROM providers ORDER BY id").fetchall()
+        return [self._row_to_provider(row) for row in rows]
+
+    def delete_provider_row(self, provider_id: str) -> bool:
+        with self._conn:
+            cur = self._conn.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
+        return cur.rowcount > 0
 
     # ---------- repo state (HEAD) ----------
 

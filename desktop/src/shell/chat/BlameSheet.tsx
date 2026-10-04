@@ -1,19 +1,31 @@
 import { useEffect, useRef } from "react";
 import { LuX } from "react-icons/lu";
 
-import type { BlameRecord } from "../../mock/chat";
 import { Field } from "../primitives";
 
+/** Provenance for one message. `sample` means it is not part of this branch. */
+export interface BlameView {
+  claim: string;
+  commitId: string;
+  kind: string;
+  model: string;
+  author: string | null;
+  summary: string | null;
+  createdAt: string;
+  role: string;
+  branch: string;
+  sample: boolean;
+}
+
 /**
- * Provenance for one claim: which turn, session, branch and agent introduced it,
- * and what it replaced. Same modal mechanics as the model picker (focus trap,
- * Esc, backdrop click, focus restored on close).
+ * Provenance for one claim: the commit that introduced it on this branch.
+ * Same modal mechanics as the model picker (focus trap, Esc, backdrop click).
  */
 export default function BlameSheet({
-  record,
+  view,
   onClose,
 }: {
-  record: BlameRecord;
+  view: BlameView;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -65,30 +77,26 @@ export default function BlameSheet({
         </header>
 
         <div className="cg-blame-body">
-          <blockquote className="cg-blame-claim">{record.claim}</blockquote>
-          <div className="cg-fields">
-            <Field label="Turn">#{record.turn} of this chat</Field>
-            <Field label="Session">{record.session}</Field>
-            <Field label="Agent">{record.agent}</Field>
-            <Field label="Branch">{record.branch}</Field>
-            <Field label="Commit">
-              <span className="cg-mono">{record.commitId.slice(0, 7)}</span>
-            </Field>
-            <Field label="Replaced">
-              {record.replaced ?? <span className="cg-empty-note">nothing — this introduced it</span>}
-            </Field>
-          </div>
-          <div className="cg-dock-actions">
-            <button type="button" className="cg-btn">
-              View diff
-            </button>
-            <button type="button" className="cg-btn" data-variant="primary">
-              Jump to commit
-            </button>
-          </div>
-          <p className="cg-empty-note">
-            Cross-session provenance: this claim was introduced in another run and inherited here.
-          </p>
+          <blockquote className="cg-blame-claim">{view.claim}</blockquote>
+          {view.sample ? (
+            <p className="cg-empty-note">
+              This message is not part of the branch&apos;s committed history (it is sample
+              transcript shown for context).
+            </p>
+          ) : (
+            <div className="cg-fields">
+              <Field label="Commit">
+                <span className="cg-mono">{view.commitId.slice(0, 7)}</span>
+              </Field>
+              <Field label="Kind">{view.kind}</Field>
+              <Field label="Role">{view.role}</Field>
+              <Field label="Model">{view.model}</Field>
+              <Field label="Author">{view.author ?? "—"}</Field>
+              <Field label="Summary">{view.summary ?? "—"}</Field>
+              <Field label="Branch">{view.branch}</Field>
+              <Field label="Created">{view.createdAt.slice(0, 19).replace("T", " ")}</Field>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -61,9 +61,52 @@ class Tag(BaseModel):
     label: str | None = None
 
 
+class BlameEntry(BaseModel):
+    """Provenance for one context message: the commit that introduced it."""
+
+    index: int
+    role: Role
+    content: str
+    commit_id: str
+    kind: CommitKind
+    model: str
+    summary: str | None = None
+    author: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 SessionKind = Literal["chat", "terminal"]
 SessionStatus = Literal["idle", "running", "done", "error"]
 MergeStatus = Literal["queued", "merged", "blocked", "failed"]
+
+# How a provider expects its key: Bearer header, x-api-key, Azure's api-key,
+# a `?key=` query param, or no auth at all (local servers).
+ProviderKind = Literal["cloud", "gateway", "local", "mock"]
+AuthStyle = Literal["bearer", "x-api-key", "api-key", "query", "none"]
+# What a provider is for: chat completions, web search, or image generation.
+ProviderCapability = Literal["chat", "search", "image"]
+
+
+class ProviderRecord(BaseModel):
+    """A user-configured provider, stored locally (never leaves the machine).
+
+    Built-in providers come from `contextgit.llm.spec`; a row here either
+    overrides a built-in (e.g. supplies its key) or adds a custom endpoint.
+    `api_key` lives only in storage and is redacted before it crosses the API.
+    """
+
+    id: str
+    label: str
+    vendor: str = ""
+    kind: ProviderKind = "cloud"
+    capability: ProviderCapability = "chat"
+    base_url: str
+    auth_style: AuthStyle = "bearer"
+    api_key: str | None = None
+    default_model: str | None = None
+    models: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class Session(BaseModel):

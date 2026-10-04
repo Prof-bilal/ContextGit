@@ -1,0 +1,6 @@
+Extract the durable, independently checkable claims from this conversation
+context — the decisions and the factual assertions someone could verify against
+an outside source. Ignore pleasantries, questions, and vague statements.
+
+Return ONLY JSON, no prose:
+{"claims": ["<claim>", "<claim>"]}

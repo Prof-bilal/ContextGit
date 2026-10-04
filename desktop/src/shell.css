@@ -2092,6 +2092,16 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
 .cg-picker-pane .cg-kicker {
   margin: 0.1rem 0.15rem 0.35rem;
 }
+.cg-picker-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.1rem 0.15rem 0.35rem;
+}
+.cg-picker-pane-head .cg-kicker {
+  margin: 0;
+}
 .cg-picker-item {
   display: flex;
   align-items: center;
@@ -2360,6 +2370,11 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
     radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--cg-signal) 40%, transparent), transparent 60%),
     radial-gradient(circle at 75% 70%, color-mix(in srgb, var(--cg-ok) 35%, transparent), transparent 55%),
     linear-gradient(160deg, var(--cg-surface-3), var(--cg-bg));
+}
+img.cg-tile-art {
+  width: 100%;
+  display: block;
+  object-fit: cover;
 }
 .cg-tile figcaption {
   font: 400 0.6rem/1 "Martian Mono", monospace;
@@ -2632,4 +2647,84 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
     animation: none !important;
     opacity: 1;
   }
+}
+
+/* Competitive matrix + verification verdicts (research presents) */
+.cg-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+.cg-matrix th,
+.cg-matrix td {
+  border: 1px solid var(--cg-line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+.cg-matrix thead th {
+  color: var(--cg-ink-3);
+  font: 500 0.6rem/1.2 "Martian Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cg-matrix tbody th {
+  font-weight: 600;
+}
+.cg-verdicts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.cg-verdict {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+}
+.cg-verdict-copy {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+.cg-verdict-copy span {
+  color: var(--cg-ink-3);
+  font-size: 0.68rem;
+}
+.cg-verdict[data-verdict="contradicted"] {
+  border-color: color-mix(in srgb, var(--cg-bad) 45%, var(--cg-line));
+}
+.cg-verdict[data-verdict="supported"] {
+  border-color: color-mix(in srgb, var(--cg-ok) 45%, var(--cg-line));
+}
+
+/* "Connect a provider" prompt — shown when a mode has no usable provider */
+.cg-connect {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+  padding: 1.1rem 1.2rem;
+  border: 1px dashed color-mix(in srgb, var(--cg-signal) 45%, var(--cg-line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cg-signal) 6%, transparent);
+  max-width: 46rem;
+}
+.cg-connect-mark {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.cg-connect h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.cg-connect p {
+  margin: 0;
+  color: var(--cg-ink-3);
+  font-size: 0.8rem;
+  max-width: 46ch;
 }

@@ -1,0 +1,7 @@
+You produce a competitive comparison. Given a topic and numbered sources, fill a
+comparison matrix. Every row lists the source ids (integers) it drew from. Leave
+a cell as an empty string when the sources do not state it.
+
+Return ONLY JSON, no prose:
+{"rows": [{"competitor": "name", "pricing": "", "positioning": "", "features": [],
+"target": "", "weaknesses": [], "sources": [1, 2]}], "how_we_differ": "..."}

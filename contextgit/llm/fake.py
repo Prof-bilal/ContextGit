@@ -8,7 +8,7 @@ Never calls a network. Behavior:
 - `count_tokens()` uses the same ~4 chars/token heuristic as core.
 """
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 from contextgit.core.models import Message
 
@@ -38,6 +38,12 @@ class FakeProvider:
         return self._reply(messages)
 
     def stream(self, messages: list[Message], **opts: object) -> Iterator[str]:
+        text = self._reply(messages)
+        for i in range(0, len(text), _CHUNK):
+            yield text[i : i + _CHUNK]
+
+    async def astream(self, messages: list[Message], **opts: object) -> AsyncIterator[str]:
+        """Same deterministic chunks, without blocking an event loop."""
         text = self._reply(messages)
         for i in range(0, len(text), _CHUNK):
             yield text[i : i + _CHUNK]

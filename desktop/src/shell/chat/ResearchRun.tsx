@@ -1,4 +1,8 @@
+import type { ResearchMode } from "../../mock/chat";
 import { Chip } from "../primitives";
+import ComparisonTable, { type ComparisonRowData } from "./ComparisonTable";
+import LeadList, { type LeadSignalData } from "./LeadList";
+import VerdictList, { type VerdictData } from "./VerdictList";
 
 export interface StepState {
   id: string;
@@ -13,22 +17,47 @@ export interface ResearchSource {
   host: string;
 }
 
-/** Deep research: the run is a visible process, then a cited report. */
+/** A structured result for the non-deep modes. */
+export interface ResearchResultPayload {
+  mode: string;
+  rows?: ComparisonRowData[];
+  how_we_differ?: string;
+  name?: string;
+  website?: string;
+  description?: string;
+  signals?: LeadSignalData[];
+  verdicts?: VerdictData[];
+}
+
+const MODE_LABEL: Record<ResearchMode, string> = {
+  deep: "Deep research",
+  competitive: "Competitive research",
+  lead: "Lead research",
+  verify: "Verification pass",
+};
+
+/** A research run: a visible process, then a cited artifact. */
 export default function ResearchRun({
+  mode,
   steps,
   sources,
   report,
+  result,
+  error,
   done,
 }: {
+  mode: ResearchMode;
   steps: StepState[];
   sources: ResearchSource[];
   report: string;
+  result: ResearchResultPayload | null;
+  error: string | null;
   done: boolean;
 }) {
   return (
-    <section className="cg-block cg-research" aria-label="Deep research run">
+    <section className="cg-block cg-research" aria-label={MODE_LABEL[mode]}>
       <header className="cg-block-head">
-        <span className="cg-kicker">Deep research</span>
+        <span className="cg-kicker">{MODE_LABEL[mode]}</span>
         <span className="cg-view-sub">{done ? "complete" : "running…"}</span>
         {done && <Chip tone="ok">{sources.length} sources cited</Chip>}
       </header>
@@ -53,7 +82,32 @@ export default function ResearchRun({
         </div>
       )}
 
-      {done && <p className="cg-research-report">{report}</p>}
+      {error && <p className="cg-pane-error">{error}</p>}
+
+      {result?.mode === "competitive" && (
+        <ComparisonTable rows={result.rows ?? []} howWeDiffer={result.how_we_differ} />
+      )}
+      {result?.mode === "lead" && (
+        <LeadList
+          name={result.name ?? ""}
+          website={result.website}
+          description={result.description}
+          signals={result.signals ?? []}
+        />
+      )}
+      {result?.mode === "verify" && <VerdictList verdicts={result.verdicts ?? []} />}
+
+      {!result && report && <p className="cg-research-report">{report}</p>}
+      {!result && !report && !error && !done && (
+        <span className="cg-thinking">
+          <span className="cg-thinking-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          researching…
+        </span>
+      )}
     </section>
   );
 }

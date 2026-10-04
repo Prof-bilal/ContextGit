@@ -83,3 +83,11 @@ class WorkInProgressLimit(ContextGitError):
 
 class GateNotConfigured(ContextGitError):
     """No quality gate is configured or detectable for this project."""
+
+
+class ProviderNotFound(ContextGitError):
+    """The referenced LLM provider is neither built in nor configured."""
+
+
+class ProviderConfigError(ContextGitError):
+    """A provider is misconfigured (missing key, unsupported base URL, …)."""

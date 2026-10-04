@@ -1,9 +1,10 @@
 /**
- * Provider + model catalog for the workspace, branded the way users know them
- * (Claude, ChatGPT, Codex, Gemini, Grok…) rather than by vendor.
+ * Branding metadata for the workspace's providers.
  *
- * UI-side for now: the Chat tab is still fixture-backed, so picking here sets the
- * model the chat will use once that tab is wired to /api/v1/chat/stream.
+ * The live provider catalog now comes from the backend registry
+ * (`GET /api/v1/providers`); this file only supplies the visual identity
+ * (brand hue, monogram, icon) the picker draws, plus the fixed provider list
+ * the still-fixture council composer toggles between.
  *
  * `hue` reuses the existing per-agent colour tokens in shell.css, so the picker
  * adds no new palette entries.
@@ -130,17 +131,41 @@ export const PROVIDERS: ProviderInfo[] = [
   },
 ];
 
+/** The picker's selection: a backend provider id plus a model id. */
 export interface ModelSelection {
   providerId: string;
   modelId: string;
 }
 
-export const DEFAULT_MODEL: ModelSelection = { providerId: "claude", modelId: "sonnet-4.6" };
-
-export function findProvider(providerId: string): ProviderInfo | undefined {
-  return PROVIDERS.find((provider) => provider.id === providerId);
+/** Visual identity for a backend provider, reusing the existing agent hues. */
+export interface ProviderBrand {
+  hue: string;
+  monogram: string;
+  icon: string;
 }
 
-export function findModel(selection: ModelSelection): ModelInfo | undefined {
-  return findProvider(selection.providerId)?.models.find((model) => model.id === selection.modelId);
+const BRANDS: Record<string, ProviderBrand> = {
+  anthropic: { hue: "claude", monogram: "C", icon: "claude" },
+  claude: { hue: "claude", monogram: "C", icon: "claude" },
+  openai: { hue: "codex", monogram: "O", icon: "codex" },
+  chatgpt: { hue: "codex", monogram: "O", icon: "codex" },
+  codex: { hue: "aider", monogram: "X", icon: "codex" },
+  gemini: { hue: "gemini", monogram: "G", icon: "gemini" },
+  xai: { hue: "shell", monogram: "K", icon: "shell" },
+  grok: { hue: "shell", monogram: "K", icon: "shell" },
+  groq: { hue: "opencode", monogram: "Q", icon: "opencode" },
+  openrouter: { hue: "opencode", monogram: "R", icon: "opencode" },
+  ollama: { hue: "ollama", monogram: "L", icon: "ollama" },
+  mock: { hue: "opencode", monogram: "M", icon: "opencode" },
+};
+
+/** Branding for a provider id, falling back to its initial and a neutral hue. */
+export function brandFor(providerId: string, label: string): ProviderBrand {
+  return (
+    BRANDS[providerId] ?? {
+      hue: "codex",
+      monogram: (label.charAt(0) || "?").toUpperCase(),
+      icon: providerId,
+    }
+  );
 }

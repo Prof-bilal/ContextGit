@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "react-icons/lu";
 
-import { api, type Message, type Session, type Task } from "@/lib/api";
+import {
+  api,
+  type BranchBudget,
+  type Message,
+  type ProviderCapability,
+  type Session,
+  type Task,
+} from "@/lib/api";
 import { CONVERSATIONS, NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
 import { agentLabel } from "./agents";
 import AgentDialog from "./agent/AgentDialog";
@@ -15,8 +22,11 @@ import { useRepo } from "./git/useRepo";
 import { AgentMark, Chip, Field, IconButton, MiniSeg, StatusIcon } from "./primitives";
 import { Dock } from "./Dock";
 import ModelPicker from "./ModelPicker";
+import AddProviderDialog from "./chat/AddProviderDialog";
 import GovernorPanel from "./chat/GovernorPanel";
-import { DEFAULT_MODEL, findModel, findProvider, type ModelSelection } from "./providers";
+import { isReady } from "./chat/providerStatus";
+import { useProviders } from "./chat/useProviders";
+import { brandFor, type ModelSelection } from "./providers";
 import TopNav, { type TabDef, type TabId } from "./TopNav";
 import AgentRail from "./rail/AgentRail";
 import ChatRail from "./rail/ChatRail";
@@ -99,8 +109,34 @@ export default function Shell() {
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepo();
-  const [model, setModel] = useState<ModelSelection>(DEFAULT_MODEL);
+  const {
+    providers,
+    error: providersError,
+    add: addProvider,
+    remove: removeProvider,
+    test: testProvider,
+    fetchModels: fetchProviderModels,
+  } = useProviders();
+  const [model, setModel] = useState<ModelSelection>({ providerId: "", modelId: "" });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [providerDialog, setProviderDialog] = useState<{
+    capability?: ProviderCapability;
+    initialId?: string;
+  } | null>(null);
+  const [offlineOk, setOfflineOk] = useState(false);
+  const [budget, setBudget] = useState<BranchBudget | null>(null);
+  const [budgetTick, setBudgetTick] = useState(0);
+
+  // Usable providers per capability (real keys / enabled local servers; not mocks).
+  const readyChatCount = providers.filter((p) => p.capability === "chat" && isReady(p)).length;
+  const readyImageCount = providers.filter((p) => p.capability === "image" && isReady(p)).length;
+  const readySearchCount = providers.filter((p) => p.capability === "search" && isReady(p)).length;
+
+  const openProviderDialog = useCallback(
+    (capability?: ProviderCapability, initialId?: string) =>
+      setProviderDialog({ capability, initialId }),
+    [],
+  );
 
   const activeSession = sessions.find((session) => session.id === activeId) ?? null;
   const activeConversation =
@@ -139,6 +175,58 @@ export default function Shell() {
       current && snapshot.commits.some((commit) => commit.id === current) ? current : head,
     );
   }, [snapshot, selectedBranch]);
+
+  // Pick a working default once the registry loads: prefer a configured,
+  // non-mock provider; fall back to the offline mock; never leave a stale pick.
+  useEffect(() => {
+    if (providers.length === 0) return;
+    setModel((current) => {
+      const ready = providers.filter(
+        (provider) =>
+          provider.capability === "chat" && isReady(provider) && provider.models.length > 0,
+      );
+      const mocks = providers.filter(
+        (provider) =>
+          provider.capability === "chat" &&
+          provider.kind === "mock" &&
+          provider.models.length > 0,
+      );
+      // A connected provider wins; the mock is only the offline fallback.
+      const pick = ready.find((provider) => provider.kind !== "local") ?? ready[0] ?? mocks[0];
+      if (!pick) return current;
+      if (pick.id === current.providerId && pick.models.includes(current.modelId)) return current;
+      const preferred =
+        pick.default_model && pick.models.includes(pick.default_model)
+          ? pick.default_model
+          : pick.models[0];
+      return { providerId: pick.id, modelId: preferred };
+    });
+  }, [providers]);
+
+  // Real context size of the chat branch (refresh after each committed turn).
+  useEffect(() => {
+    const branchName = snapshot?.current_branch;
+    if (!branchName) return;
+    let alive = true;
+    void api
+      .branchBudget(branchName)
+      .then((value) => {
+        if (alive) setBudget(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [snapshot?.current_branch, budgetTick]);
+
+  // Ask for a key the first time the Chat tab opens with nothing connected.
+  const promptedForProvider = useRef(false);
+  useEffect(() => {
+    if (promptedForProvider.current || tab !== "chat") return;
+    if (providers.length === 0) return;
+    promptedForProvider.current = true;
+    if (readyChatCount === 0) openProviderDialog("chat");
+  }, [tab, providers.length, readyChatCount, openProviderDialog]);
 
   const chooseBranch = (name: string) => {
     setSelectedBranch(name);
@@ -550,7 +638,20 @@ export default function Shell() {
           <ChatView
             conversation={activeConversation}
             selection={model}
+            providers={providers}
+            branch={snapshot?.current_branch ?? ""}
+            commitId={
+              branches.find((branch) => branch.name === snapshot?.current_branch)
+                ?.head_commit_id ?? null
+            }
             onPickModel={() => setPickerOpen(true)}
+            onAddProvider={openProviderDialog}
+            onCommitted={() => setBudgetTick((value) => value + 1)}
+            readyChatCount={readyChatCount}
+            readyImageCount={readyImageCount}
+            readySearchCount={readySearchCount}
+            offlineOk={offlineOk}
+            onUseOffline={() => setOfflineOk(true)}
           />
         );
       case "agent":
@@ -590,10 +691,20 @@ export default function Shell() {
   const dock = () => {
     switch (tab) {
       case "chat": {
-        const chatProvider = findProvider(model.providerId);
-        const chatModel = findModel(model);
-        const chatBudget = 20_000;
-        const used = activeConversation.tokens;
+        const chatProvider = providers.find((provider) => provider.id === model.providerId);
+        const chatBrand = brandFor(model.providerId, chatProvider?.label ?? "");
+        const chatBranch = snapshot?.current_branch ?? "";
+        const chatHead =
+          branches.find((branch) => branch.name === chatBranch)?.head_commit_id ?? null;
+        const governorCommits = (chatHead ? commitsOnBranch(commits, chatHead) : [])
+          .slice(0, 6)
+          .map((commit) => ({
+            id: commit.id,
+            kind: commit.kind,
+            summary: commit.summary,
+            model: commit.model,
+            tokens: commit.token_count,
+          }));
         return (
           <>
             <button
@@ -603,32 +714,35 @@ export default function Shell() {
               aria-haspopup="dialog"
               title="Change provider and model"
             >
-              {chatProvider && (
-                <AgentMark
-                  agent={chatProvider.hue}
-                  icon={chatProvider.id}
-                  label={chatProvider.monogram}
-                />
-              )}
+              <AgentMark
+                agent={chatBrand.hue}
+                icon={chatBrand.icon}
+                label={chatBrand.monogram}
+              />
               <span className="cg-model-card-copy">
-                <strong>{chatModel?.label ?? "Choose a model"}</strong>
-                <span>{chatProvider?.vendor ?? "—"}</span>
+                <strong>{model.modelId || "Choose a model"}</strong>
+                <span>{chatProvider?.label ?? "Add a provider"}</span>
               </span>
               <span className="cg-model-card-action">Change</span>
             </button>
             <div className="cg-fields">
-              <Field label="Branch">{activeConversation.branch.name}</Field>
-              <Field label="Head">{activeConversation.branch.head_commit_id.slice(0, 7)}</Field>
-              <Field label="Messages">{activeConversation.messages.length}</Field>
+              <Field label="Branch">{chatBranch || "—"}</Field>
+              <Field label="Head">{(budget?.head ?? chatHead ?? "").slice(0, 7) || "—"}</Field>
+              <Field label="Messages">{budget?.messages ?? 0}</Field>
             </div>
-            <GovernorPanel used={used} budget={chatBudget} />
+            <GovernorPanel
+              used={budget?.used ?? 0}
+              budget={20_000}
+              messages={budget?.messages ?? 0}
+              commits={governorCommits}
+            />
             <section className="cg-prov" aria-label="Provenance">
               <header className="cg-block-head">
                 <span className="cg-kicker">Provenance</span>
               </header>
               <p className="cg-empty-note">
-                Claims here trace to <strong>2 sessions</strong> and <strong>2 agents</strong>. Hover a
-                message → <LuCornerUpLeft aria-hidden="true" /> blame.
+                Hover a message → <LuCornerUpLeft aria-hidden="true" /> blame shows the commit that
+                introduced it on this branch.
               </p>
             </section>
           </>
@@ -983,7 +1097,14 @@ export default function Shell() {
           : "Commit";
 
   const notice =
-    sessionsError ?? barError ?? repoError ?? workspaceError ?? fleetError ?? teamError ?? mergeQueue.error;
+    sessionsError ??
+    barError ??
+    repoError ??
+    workspaceError ??
+    fleetError ??
+    teamError ??
+    mergeQueue.error ??
+    providersError;
 
   return (
     <div className="cg-shell" data-cg-theme={theme}>
@@ -1094,7 +1215,27 @@ export default function Shell() {
       {bottomBar()}
 
       {pickerOpen && (
-        <ModelPicker selection={model} onSelect={setModel} onClose={() => setPickerOpen(false)} />
+        <ModelPicker
+          providers={providers}
+          selection={model}
+          onSelect={setModel}
+          onAddProvider={() => openProviderDialog("chat")}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {providerDialog && (
+        <AddProviderDialog
+          providers={providers}
+          initialId={providerDialog.initialId}
+          capability={providerDialog.capability}
+          add={addProvider}
+          remove={removeProvider}
+          test={testProvider}
+          fetchModels={fetchProviderModels}
+          onSaved={() => undefined}
+          onClose={() => setProviderDialog(null)}
+        />
       )}
 
       {taskForm && (

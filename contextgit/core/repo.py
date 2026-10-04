@@ -32,11 +32,13 @@ from contextgit.core.errors import (
     WorkInProgressLimit,
 )
 from contextgit.core.models import (
+    BlameEntry,
     Branch,
     Commit,
     CommitKind,
     MergeQueueEntry,
     Message,
+    ProviderRecord,
     Session,
     Tag,
     Task,
@@ -207,6 +209,38 @@ class Repo:
         for commit in chain:
             messages.extend(commit.messages)
         return messages
+
+    def blame(self, branch: str | None = None) -> list[BlameEntry]:
+        """Provenance for every context message on a branch, in context order."""
+        head = self._storage.get_branch(branch or self._storage.get_current_branch())
+        chain = list(self._walk(head.head_commit_id))
+        chain.reverse()  # oldest first, same order as build_context
+        entries: list[BlameEntry] = []
+        for commit in chain:
+            for message in commit.messages:
+                entries.append(
+                    BlameEntry(
+                        index=len(entries),
+                        role=message.role,
+                        content=message.content,
+                        commit_id=commit.id,
+                        kind=commit.kind,
+                        model=commit.model,
+                        summary=commit.summary,
+                        author=commit.author,
+                        created_at=commit.created_at,
+                    )
+                )
+        return entries
+
+    def branch_metrics(self, branch: str | None = None) -> dict[str, object]:
+        """Real context size for the governor: head, token estimate, message count."""
+        head = self._storage.get_branch(branch or self._storage.get_current_branch())
+        return {
+            "head": head.head_commit_id,
+            "used": self.count_tokens(head.head_commit_id, ""),
+            "messages": len(self.build_context(head.head_commit_id)),
+        }
 
     # ---------- diff and merge ----------
 
@@ -1480,6 +1514,24 @@ class Repo:
             return True
         except BranchNotFound:
             return False
+
+    # ---------- providers (locally stored LLM endpoints) ----------
+
+    def list_providers(self) -> list[ProviderRecord]:
+        """Every user-configured provider row (built-ins live in llm/spec.py)."""
+        return self._storage.list_provider_rows()
+
+    def get_provider(self, provider_id: str) -> ProviderRecord | None:
+        """One stored provider row, or None when only the built-in is defined."""
+        return self._storage.get_provider_row(provider_id)
+
+    def save_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or update a provider row (used by the add-a-provider flow)."""
+        return self._storage.upsert_provider(record)
+
+    def delete_provider(self, provider_id: str) -> bool:
+        """Remove a stored provider row; a built-in reverts to unconfigured."""
+        return self._storage.delete_provider_row(provider_id)
 
     @staticmethod
     def _check_ref_name(name: str) -> None:

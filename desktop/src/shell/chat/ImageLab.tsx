@@ -2,13 +2,15 @@ import type { PromptVersion } from "../../mock/chat";
 import { Chip } from "../primitives";
 
 export interface ImageTile {
-  seed: number;
+  seed: number | null;
   model: string;
+  /** A data URL or remote URL returned by the image provider. */
+  src?: string | null;
 }
 
 /**
- * Image lab: the *prompt* is the versioned artifact, tiles are the output.
- * No image provider is wired here — the tiles are placeholders.
+ * Image lab: the *prompt* is the versioned artifact, tiles are the output the
+ * image provider actually rendered.
  */
 export default function ImageLab({
   versions,
@@ -52,16 +54,22 @@ export default function ImageLab({
       </ol>
 
       <div className="cg-tiles" data-count={tiles.length}>
-        {tiles.map((tile) => (
-          <figure key={tile.seed} className="cg-tile">
-            <div className="cg-tile-art" aria-hidden="true" />
-            <figcaption>seed {tile.seed}</figcaption>
+        {tiles.map((tile, index) => (
+          <figure key={`${tile.model}-${tile.seed ?? index}-${index}`} className="cg-tile">
+            {tile.src ? (
+              <img className="cg-tile-art" src={tile.src} alt="" />
+            ) : (
+              <div className="cg-tile-art" data-empty="true" aria-hidden="true" />
+            )}
+            <figcaption>
+              {tile.seed !== null ? `seed ${tile.seed}` : tile.model}
+            </figcaption>
           </figure>
         ))}
       </div>
 
       <p className="cg-empty-note">
-        Placeholder tiles — the mock calls no image model. The prompt history is the real artifact.
+        The prompt history is the artifact; tiles are what the image provider actually rendered.
       </p>
     </section>
   );

@@ -85,6 +85,62 @@ export interface CompareResult {
   diff: Diff;
 }
 
+// ---------- providers (the add-a-provider flow) ----------
+
+export type ProviderKind = "cloud" | "gateway" | "local" | "mock";
+export type ProviderCapability = "chat" | "search" | "image";
+export type AuthStyle = "bearer" | "x-api-key" | "api-key" | "query" | "none";
+
+/** One provider as the API reports it — never carries the key. */
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  vendor: string;
+  kind: ProviderKind;
+  capability: ProviderCapability;
+  base_url: string;
+  auth: AuthStyle;
+  default_model: string | null;
+  docs_url: string | null;
+  models: string[];
+  models_endpoint: boolean;
+  requires_key: boolean;
+  openai_shaped: boolean;
+  templated: boolean;
+  is_builtin: boolean;
+  has_key: boolean;
+  configured: boolean;
+  /** True once the user stored a row for this provider (key, or enabling a local server). */
+  user_configured: boolean;
+  key_hint: string | null;
+}
+
+/** Fields accepted when adding or enabling a provider. */
+export interface ProviderInput {
+  id?: string;
+  label?: string;
+  vendor?: string;
+  kind?: ProviderKind;
+  capability?: ProviderCapability;
+  base_url?: string;
+  auth_style?: AuthStyle;
+  api_key?: string;
+  default_model?: string;
+  models?: string[];
+}
+
+export interface ProviderTestResult {
+  ok: boolean;
+  latency_ms: number;
+  model: string | null;
+  error: string | null;
+}
+
+export interface ProviderModelsResult {
+  models: string[];
+  source: "live" | "static";
+}
+
 // Electron preload injects the backend port; the web build falls back to env/default.
 const bridge = typeof window !== "undefined"
   ? (window as { contextgit?: { apiBase?: string } }).contextgit
@@ -294,8 +350,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Real context size of a branch, for the inspector. */
+export interface BranchBudget {
+  head: string;
+  used: number;
+  messages: number;
+}
+
+/** Provenance for one context message: the commit that introduced it. */
+export interface BlameEntry {
+  index: number;
+  role: Role;
+  content: string;
+  commit_id: string;
+  kind: CommitKind;
+  model: string;
+  summary: string | null;
+  author: string | null;
+  created_at: string;
+}
+
 export const api = {
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
+  branchBudget: (name: string) =>
+    request<BranchBudget>(`/api/v1/branches/${encodeURIComponent(name)}/budget`),
+  branchBlame: (name: string) =>
+    request<BlameEntry[]>(`/api/v1/branches/${encodeURIComponent(name)}/blame`),
   commits: (branch: string) =>
     request<CommitResponse[]>(`/api/v1/commits?branch=${encodeURIComponent(branch)}`),
   context: (commitId: string) =>
@@ -328,6 +408,38 @@ export const api = {
     request<CompareResult>("/api/v1/compare", {
       method: "POST",
       body: JSON.stringify({ prompt, branch_a: branchA, branch_b: branchB, model }),
+    }),
+  commit: (input: {
+    messages: Message[];
+    model?: string;
+    summary?: string;
+    branch?: string;
+  }) =>
+    request<CommitResponse>("/api/v1/commits", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: input.messages,
+        model: input.model ?? "none",
+        summary: input.summary,
+        branch: input.branch,
+      }),
+    }),
+  // ---------- providers (the add-a-provider flow) ----------
+  providers: () => request<ProviderInfo[]>("/api/v1/providers"),
+  addProvider: (input: ProviderInput) =>
+    request<ProviderInfo>("/api/v1/providers", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  deleteProvider: (id: string) =>
+    request<void>(`/api/v1/providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testProvider: (id: string) =>
+    request<ProviderTestResult>(`/api/v1/providers/${encodeURIComponent(id)}/test`, {
+      method: "POST",
+    }),
+  fetchProviderModels: (id: string) =>
+    request<ProviderModelsResult>(`/api/v1/providers/${encodeURIComponent(id)}/models`, {
+      method: "POST",
     }),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
@@ -477,50 +589,243 @@ export const api = {
     }),
 };
 
-export async function streamChat(
-  input: { prompt: string; branch: string; commitId: string; model: string },
-  onToken: (text: string) => void,
+/** One parsed server-sent event from a streaming route. */
+export interface SseMessage {
+  event: string;
+  data: unknown;
+}
+
+/**
+ * POST a JSON body and dispatch every SSE event it returns. Shared by the chat,
+ * council, image and research streams so the framing lives in one place.
+ */
+export async function readSse(
+  path: string,
+  body: unknown,
+  onMessage: (message: SseMessage) => void,
   signal?: AbortSignal,
-): Promise<{ answer: string; commitId: string }> {
-  const response = await fetch(`${base}/api/v1/chat/stream`, {
+): Promise<void> {
+  const response = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({
-      prompt: input.prompt,
-      branch: input.branch,
-      commit_id: input.commitId,
-      model: input.model,
-    }),
+    body: JSON.stringify(body),
     signal,
   });
-  if (!response.ok || !response.body) throw new Error(`Chat request failed (${response.status})`);
+  if (!response.ok || !response.body) throw new Error(`Request failed (${response.status})`);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let answer = "";
-  let commitId = "";
   let done = false;
   while (!done) {
     const chunk = await reader.read();
     done = chunk.done;
     buffer += decoder.decode(chunk.value, { stream: !done });
-    const events = buffer.split("\n\n");
-    buffer = events.pop() ?? "";
-    for (const event of events) {
-      const eventName = event.split("\n").find((line) => line.startsWith("event: "))?.slice(7);
-      const dataLine = event.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
-      if (!dataLine) continue;
-      const data = JSON.parse(dataLine) as { text?: string; error?: string; commit_id?: string };
-      if (eventName === "token" && data.text) {
-        answer += data.text;
-        onToken(data.text);
-      } else if (eventName === "done") {
-        commitId = data.commit_id ?? "";
-      } else if (eventName === "error") {
-        throw new Error(data.error ?? "Chat stream failed");
-      }
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const eventName =
+        block.split("\n").find((line) => line.startsWith("event: "))?.slice(7) ?? "message";
+      const dataLine = block.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+      if (dataLine === undefined) continue;
+      onMessage({ event: eventName, data: JSON.parse(dataLine) as unknown });
     }
   }
-  if (!commitId) throw new Error("Chat ended without a commit id");
+}
+
+export async function streamChat(
+  input: {
+    prompt: string;
+    branch: string;
+    commitId: string | null;
+    model: string;
+    provider?: string;
+  },
+  onToken: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<{ answer: string; commitId: string | null }> {
+  let answer = "";
+  let commitId: string | null = null;
+  let sawDone = false;
+  await readSse(
+    "/api/v1/chat/stream",
+    {
+      prompt: input.prompt,
+      branch: input.branch,
+      commit_id: input.commitId,
+      model: input.model,
+      provider: input.provider,
+    },
+    (message) => {
+      const data = message.data as { text?: string; error?: string; commit_id?: string | null };
+      if (message.event === "token" && data.text) {
+        answer += data.text;
+        onToken(data.text);
+      } else if (message.event === "done") {
+        sawDone = true;
+        commitId = data.commit_id ?? null;
+      } else if (message.event === "error") {
+        throw new Error(data.error ?? "Chat stream failed");
+      }
+    },
+    signal,
+  );
+  if (!sawDone) throw new Error("Chat ended without a done event");
   return { answer, commitId };
+}
+
+/** One member of a council run: a provider id plus the model to ask. */
+export interface CouncilMember {
+  provider: string;
+  model?: string;
+}
+
+export type CouncilEvent =
+  | { type: "member"; index: number; provider: string; model: string; label: string }
+  | { type: "token"; index: number; text: string }
+  | { type: "member_done"; index: number; answer: string }
+  | { type: "error"; index?: number; error: string }
+  | { type: "done"; commit_id: string | null; branch: string };
+
+/** Ask several providers the same prompt, in parallel. */
+export async function streamCouncil(
+  input: {
+    prompt: string;
+    members: CouncilMember[];
+    branch: string;
+    commitId: string | null;
+  },
+  onEvent: (event: CouncilEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let sawDone = false;
+  await readSse(
+    "/api/v1/council/stream",
+    {
+      prompt: input.prompt,
+      members: input.members,
+      branch: input.branch,
+      commit_id: input.commitId,
+    },
+    (message) => {
+      if (message.event === "done") sawDone = true;
+      onEvent({ type: message.event, ...(message.data as object) } as CouncilEvent);
+    },
+    signal,
+  );
+  if (!sawDone) throw new Error("Council ended without a done event");
+}
+
+/** One image returned by an image provider. */
+export interface RenderedImage {
+  index: number;
+  url: string | null;
+  data_url: string | null;
+  seed: number | null;
+  model: string;
+  revised_prompt: string | null;
+}
+
+export type ImageEvent =
+  | { type: "step"; label: string; detail: string }
+  | ({ type: "image" } & RenderedImage)
+  | { type: "done"; commit_id: string; branch: string; tiles: number }
+  | { type: "error"; error: string };
+
+export interface ResearchSourceInfo {
+  id: number;
+  title: string;
+  url: string;
+  host: string;
+  fetched_at: string;
+}
+
+export interface ResearchStepPayload {
+  id: string;
+  label: string;
+  detail: string;
+  status: "pending" | "active" | "done";
+}
+
+export type ResearchEvent =
+  | ({ type: "step" } & ResearchStepPayload)
+  | ({ type: "source" } & ResearchSourceInfo)
+  | { type: "report"; text: string }
+  | { type: "result"; mode: string } & Record<string, unknown>
+  | { type: "done"; commit_id: string; branch: string; run_id: string }
+  | { type: "error"; error: string };
+
+/** Run a research pass; steps, sources and the report stream as they happen. */
+export async function streamResearch(
+  input: {
+    mode: "deep" | "competitive" | "lead" | "verify";
+    prompt: string;
+    provider?: string;
+    model?: string;
+    searchProvider?: string;
+    branch: string;
+    commitId: string | null;
+    breadth: number;
+    depth: number;
+    maxPages: number;
+  },
+  onEvent: (event: ResearchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let sawDone = false;
+  await readSse(
+    "/api/v1/research/stream",
+    {
+      mode: input.mode,
+      prompt: input.prompt,
+      provider: input.provider,
+      model: input.model,
+      search_provider: input.searchProvider,
+      branch: input.branch,
+      commit_id: input.commitId,
+      breadth: input.breadth,
+      depth: input.depth,
+      max_pages: input.maxPages,
+    },
+    (message) => {
+      if (message.event === "done") sawDone = true;
+      onEvent({ type: message.event, ...(message.data as object) } as ResearchEvent);
+    },
+    signal,
+  );
+  if (!sawDone) throw new Error("Research ended without a done event");
+}
+
+/** Render a prompt with an image provider; each tile arrives as it is ready. */
+export async function streamImages(
+  input: {
+    prompt: string;
+    provider: string;
+    model: string;
+    aspect: string;
+    count: number;
+    branch: string;
+    commitId: string | null;
+  },
+  onEvent: (event: ImageEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let sawDone = false;
+  await readSse(
+    "/api/v1/images/stream",
+    {
+      prompt: input.prompt,
+      provider: input.provider,
+      model: input.model,
+      aspect: input.aspect,
+      count: input.count,
+      branch: input.branch,
+      commit_id: input.commitId,
+    },
+    (message) => {
+      if (message.event === "done") sawDone = true;
+      onEvent({ type: message.event, ...(message.data as object) } as ImageEvent);
+    },
+    signal,
+  );
+  if (!sawDone) throw new Error("Image run ended without a done event");
 }

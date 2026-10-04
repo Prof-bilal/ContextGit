@@ -1,21 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuCornerDownLeft } from "react-icons/lu";
+import { LuCornerDownLeft, LuPlus } from "react-icons/lu";
 
+import type { ProviderInfo } from "@/lib/api";
 import { AgentMark, Chip } from "./primitives";
-import { PROVIDERS, type ModelSelection } from "./providers";
+import { brandFor, type ModelSelection } from "./providers";
 
 /**
- * Provider + model picker. A command-palette style dialog: providers on the
- * left, that provider's models on the right, one search box driving both.
- * Traps focus while open and returns it to the trigger on close.
+ * Provider + model picker, driven by the backend registry. Providers on the
+ * left, that provider's models on the right. A command-palette style dialog;
+ * traps focus while open and returns it to the trigger on close.
  */
 export default function ModelPicker({
+  providers,
   selection,
   onSelect,
+  onAddProvider,
   onClose,
 }: {
+  providers: ProviderInfo[];
   selection: ModelSelection;
   onSelect: (next: ModelSelection) => void;
+  onAddProvider: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -32,24 +37,29 @@ export default function ModelPicker({
   }, []);
 
   const needle = query.trim().toLowerCase();
-  const providers = useMemo(
+  const chatProviders = useMemo(
+    () => providers.filter((provider) => provider.capability === "chat"),
+    [providers],
+  );
+  const visible = useMemo(
     () =>
-      PROVIDERS.filter(
+      chatProviders.filter(
         (provider) =>
           !needle ||
           provider.label.toLowerCase().includes(needle) ||
-          provider.models.some((model) => model.label.toLowerCase().includes(needle)),
+          provider.vendor.toLowerCase().includes(needle) ||
+          provider.models.some((model) => model.toLowerCase().includes(needle)),
       ),
-    [needle],
+    [chatProviders, needle],
   );
   const activeProvider = useMemo(
-    () => providers.find((provider) => provider.id === activeProviderId) ?? providers[0],
-    [providers, activeProviderId],
+    () => visible.find((provider) => provider.id === activeProviderId) ?? visible[0],
+    [visible, activeProviderId],
   );
   const models = useMemo(
     () =>
       (activeProvider?.models ?? []).filter(
-        (model) => !needle || model.label.toLowerCase().includes(needle) || model.id.includes(needle),
+        (model) => !needle || model.toLowerCase().includes(needle),
       ),
     [activeProvider, needle],
   );
@@ -70,7 +80,6 @@ export default function ModelPicker({
       return;
     }
     if (event.key === "Tab") {
-      // Keep focus inside the dialog.
       const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       );
@@ -97,7 +106,7 @@ export default function ModelPicker({
     }
     if (event.key === "Enter" && activeProvider && models[cursor]) {
       event.preventDefault();
-      choose(activeProvider.id, models[cursor].id);
+      choose(activeProvider.id, models[cursor]);
     }
   };
 
@@ -128,55 +137,72 @@ export default function ModelPicker({
 
         <div className="cg-picker-body">
           <div className="cg-picker-pane" aria-label="Providers">
-            <p className="cg-kicker">Providers</p>
-            {providers.map((provider) => (
+            <div className="cg-picker-pane-head">
+              <p className="cg-kicker">Providers</p>
               <button
-                key={provider.id}
                 type="button"
-                className="cg-picker-item"
-                aria-current={provider.id === activeProvider?.id}
+                className="cg-chip cg-chip-btn"
                 onClick={() => {
-                  setActiveProviderId(provider.id);
-                  searchRef.current?.focus();
+                  onClose();
+                  onAddProvider();
                 }}
               >
-                <AgentMark agent={provider.hue} icon={provider.id} label={provider.monogram} />
-                <span className="cg-picker-item-copy">
-                  <span className="cg-picker-item-title">{provider.label}</span>
-                  <span className="cg-picker-item-meta">
-                    {provider.vendor} · {provider.models.length} model
-                    {provider.models.length === 1 ? "" : "s"}
-                  </span>
-                </span>
-                {provider.kind === "local" && <Chip>local</Chip>}
+                <LuPlus aria-hidden="true" /> Add
               </button>
-            ))}
-            {providers.length === 0 && <p className="cg-empty-note">No providers match.</p>}
+            </div>
+            {visible.map((provider) => {
+              const brand = brandFor(provider.id, provider.label);
+              return (
+                <button
+                  key={provider.id}
+                  type="button"
+                  className="cg-picker-item"
+                  aria-current={provider.id === activeProvider?.id}
+                  onClick={() => {
+                    setActiveProviderId(provider.id);
+                    searchRef.current?.focus();
+                  }}
+                >
+                  <AgentMark agent={brand.hue} icon={brand.icon} label={brand.monogram} />
+                  <span className="cg-picker-item-copy">
+                    <span className="cg-picker-item-title">{provider.label}</span>
+                    <span className="cg-picker-item-meta">
+                      {provider.vendor || "custom"} · {provider.models.length} model
+                      {provider.models.length === 1 ? "" : "s"}
+                      {provider.key_hint ? ` · key ${provider.key_hint}` : ""}
+                    </span>
+                  </span>
+                  {provider.kind === "local" && <Chip>local</Chip>}
+                  {provider.kind === "mock" && <Chip>offline</Chip>}
+                  {!provider.configured && <Chip tone="warn">needs key</Chip>}
+                </button>
+              );
+            })}
+            {visible.length === 0 && <p className="cg-empty-note">No providers match.</p>}
           </div>
 
           <div className="cg-picker-pane" aria-label="Models">
             <p className="cg-kicker">{activeProvider ? activeProvider.label : "Models"}</p>
             {models.map((model, index) => (
               <button
-                key={model.id}
+                key={model}
                 type="button"
                 className="cg-picker-item"
                 aria-current={index === cursor}
                 onMouseEnter={() => setCursor(index)}
-                onClick={() => activeProvider && choose(activeProvider.id, model.id)}
+                onClick={() => activeProvider && choose(activeProvider.id, model)}
               >
                 <span className="cg-picker-item-copy">
-                  <span className="cg-picker-item-title">{model.label}</span>
-                  <span className="cg-picker-item-meta">
-                    <span className="cg-mono">{model.id}</span>
-                    {model.context ? ` · ${model.context}` : ""}
-                  </span>
+                  <span className="cg-picker-item-title cg-mono">{model}</span>
                 </span>
-                {model.note && <Chip>{model.note}</Chip>}
               </button>
             ))}
             {models.length === 0 && (
-              <p className="cg-empty-note">No models match “{query.trim()}”.</p>
+              <p className="cg-empty-note">
+                {activeProvider
+                  ? `No models listed for ${activeProvider.label}. Fetch them with “Add provider”.`
+                  : "Choose a provider."}
+              </p>
             )}
           </div>
         </div>
@@ -196,7 +222,7 @@ export default function ModelPicker({
           </span>
           <span className="cg-toolbar-spacer" />
           <span className="cg-view-sub">
-            Current: {PROVIDERS.find((p) => p.id === selection.providerId)?.label ?? "—"}
+            Current: {chatProviders.find((p) => p.id === selection.providerId)?.label ?? "—"}
           </span>
         </footer>
       </div>
