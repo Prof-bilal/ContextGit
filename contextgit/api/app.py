@@ -32,20 +32,35 @@ from contextgit.api.schemas import (
     SessionRequest,
     SessionUpdateRequest,
     StageRequest,
+    TaskCreateRequest,
+    TaskRejectRequest,
+    TaskUpdateRequest,
+    TaskVerifyRequest,
+    TeamCreateRequest,
+    TeamGateRequest,
+    TeamMessageRequest,
 )
 from contextgit.core.errors import (
     BranchNotFound,
     CommitNotFound,
     ContextGitError,
+    GateNotConfigured,
     InvalidMergeResolution,
     InvalidRefName,
     MergeConflict,
     MergeQueueEntryNotFound,
     RepoAlreadyExists,
     RepoNotFound,
+    ScopeConflict,
     SessionNotFound,
     StagingEmpty,
     StaleMergePreview,
+    TaskCycleError,
+    TaskDependencyError,
+    TaskNotFound,
+    TaskNotReviewable,
+    TeamNotFound,
+    WorkInProgressLimit,
 )
 from contextgit.core.models import Message
 from contextgit.core.repo import Repo
@@ -102,12 +117,28 @@ def create_app(
                 MergeQueueEntryNotFound,
                 RepoNotFound,
                 SessionNotFound,
+                TaskNotFound,
+                TeamNotFound,
             ),
         ):
             status = 404
-        elif isinstance(exc, (MergeConflict, StaleMergePreview, RepoAlreadyExists, StagingEmpty)):
+        elif isinstance(
+            exc,
+            (
+                MergeConflict,
+                StaleMergePreview,
+                RepoAlreadyExists,
+                ScopeConflict,
+                StagingEmpty,
+                TaskDependencyError,
+                TaskNotReviewable,
+                WorkInProgressLimit,
+            ),
+        ):
             status = 409
-        elif isinstance(exc, (InvalidRefName, InvalidMergeResolution)):
+        elif isinstance(
+            exc, (GateNotConfigured, InvalidRefName, InvalidMergeResolution, TaskCycleError)
+        ):
             status = 422
         else:
             status = 400
@@ -291,6 +322,143 @@ def create_app(
     def check_claims(body: ClaimCheckRequest, current: Repo = repo_dep) -> dict[str, object]:
         conflicts = current.claim_conflicts(body.scope, exclude_session_id=body.session_id)
         return ClaimCheckResult(conflicts=conflicts).model_dump(mode="json")
+
+    # ---------- team mode (a task graph over parallel runs) ----------
+
+    @app.get("/api/v1/team")
+    def get_team(current: Repo = repo_dep) -> dict[str, object] | None:
+        """The current board, or null when no team exists yet."""
+        board = current.team_board()
+        return board.model_dump(mode="json") if board else None
+
+    @app.post("/api/v1/team", status_code=201)
+    def create_team(body: TeamCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        team = current.create_team(
+            body.name, project_path=body.project_path, base_ref=body.base_ref
+        )
+        if body.gate_command is not None:
+            team = current.set_team_gate(team.id, body.gate_command)
+        board = current.team_board(team.id)
+        if board is None:  # pragma: no cover - just created, cannot be missing
+            raise TeamNotFound("team disappeared right after creation")
+        return board.model_dump(mode="json")
+
+    @app.patch("/api/v1/team")
+    def set_team_gate(body: TeamGateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        """Set the team's default quality gate command."""
+        team = current.current_team()
+        if team is None:
+            raise TeamNotFound("no team yet")
+        return current.set_team_gate(team.id, body.gate_command).model_dump(mode="json")
+
+    @app.post("/api/v1/team/tasks", status_code=201)
+    def create_task(body: TaskCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        team = current.current_team()
+        if team is None:
+            raise TeamNotFound("create a team first")
+        task = current.create_task(
+            team.id,
+            title=body.title,
+            brief=body.brief,
+            done_criteria=body.done_criteria,
+            role=body.role,
+            agent=body.agent,
+            scope=body.scope,
+            contract=body.contract,
+            depends_on=body.depends_on,
+            gate_command=body.gate_command,
+        )
+        return task.model_dump(mode="json")
+
+    @app.patch("/api/v1/team/tasks/{task_id}")
+    def update_task(
+        task_id: str, body: TaskUpdateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        task = current.update_task(
+            task_id,
+            title=body.title,
+            brief=body.brief,
+            done_criteria=body.done_criteria,
+            role=body.role,
+            agent=body.agent,
+            scope=body.scope,
+            contract=body.contract,
+            status=body.status,
+            gate_command=body.gate_command,
+        )
+        if body.depends_on is not None:
+            task = current.set_task_deps(task_id, body.depends_on)
+        return task.model_dump(mode="json")
+
+    @app.delete("/api/v1/team/tasks/{task_id}", status_code=204)
+    def delete_task(task_id: str, current: Repo = repo_dep) -> None:
+        current.delete_task(task_id)
+
+    @app.post("/api/v1/team/launch")
+    def launch_team(current: Repo = repo_dep) -> list[dict[str, object]]:
+        """Start every ready task; blocked tasks stay blocked."""
+        return [task.model_dump(mode="json") for task in current.launch_team()]
+
+    @app.post("/api/v1/team/tasks/{task_id}/start")
+    def start_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return current.start_task(task_id).model_dump(mode="json")
+
+    @app.post("/api/v1/team/tasks/{task_id}/complete")
+    def complete_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Mark a task done and auto-start the dependents it unblocks."""
+        return current.complete_task(task_id).model_dump(mode="json")
+
+    @app.get("/api/v1/team/messages")
+    def team_messages(limit: int = 50, current: Repo = repo_dep) -> list[dict[str, object]]:
+        team = current.current_team()
+        if team is None:
+            raise TeamNotFound("no team yet")
+        return [m.model_dump(mode="json") for m in current.team_messages(team.id, limit=limit)]
+
+    @app.post("/api/v1/team/messages", status_code=201)
+    def post_team_message(
+        body: TeamMessageRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        team = current.current_team()
+        if team is None:
+            raise TeamNotFound("no team yet")
+        message = current.post_message(
+            team.id,
+            body.body,
+            kind=body.kind,
+            task_id=body.task_id,
+            from_task_id=body.from_task_id,
+        )
+        return message.model_dump(mode="json")
+
+    @app.post("/api/v1/team/merge")
+    def merge_team(current: Repo = repo_dep) -> list[dict[str, object]]:
+        """Queue every done task, in dependency order, for the merge queue."""
+        return [entry.model_dump(mode="json") for entry in current.queue_done_tasks()]
+
+    @app.post("/api/v1/team/tasks/{task_id}/gate")
+    def run_task_gate(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Run the project's quality gate in this task's worktree."""
+        return current.run_task_gate(task_id).model_dump(mode="json")
+
+    @app.post("/api/v1/team/tasks/{task_id}/approve")
+    def approve_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Accept reviewed work: done, then unblock and start dependents."""
+        return current.approve_task(task_id).model_dump(mode="json")
+
+    @app.post("/api/v1/team/tasks/{task_id}/reject")
+    def reject_task(
+        task_id: str, body: TaskRejectRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        """Send reviewed work back with the changes the implementer must make."""
+        return current.reject_task(task_id, body.note).model_dump(mode="json")
+
+    @app.post("/api/v1/team/tasks/{task_id}/verify")
+    def verify_task(
+        task_id: str, body: TaskVerifyRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        """Start a read-only run that reviews this task's diff."""
+        return current.verify_task(task_id, agent=body.agent).model_dump(mode="json")
 
     @app.get("/api/v1/merge-queue")
     def merge_queue(current: Repo = repo_dep) -> list[dict[str, object]]:

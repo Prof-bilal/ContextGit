@@ -35,8 +35,42 @@ that history a mergeable artefact alongside your code.
   branch *and* its reasoning on the context branch.
 - **Desktop workbench** — Electron app with Chat / Code / Agent / Git tabs, live
   terminals (xterm + node-pty) per run.
-- **Team mode** — missions, tasks, roles, dependencies and a verifier agent;
-  research and architecture in [`files/team-mode-*.md`](files).
+- **Team mode** — a mission split into tasks with roles, file scopes and
+  dependencies; one run + worktree per task, dependency gating, and enforced
+  ownership (two tasks can never claim the same files).
+- **Quality gate + review** — finishing a task runs the project's own test/lint
+  command in that run's worktree (auto-detected, overridable per team and per
+  task). Green lands the task in `review`; red sends it back with the output as
+  feedback. Only approved work merges.
+- **Independent verifier** — one click starts a read-only review run: a different
+  agent CLI, its own worktree branched from the implementer's, no file claims.
+- **MCP channel** — `contextgit-mcp` exposes the board as MCP tools, so an agent
+  can ask who owns a file or post an update mid-task; `.mcp.json` is written for
+  the project on launch. The board *file* (`.contextgit/team.md` plus the managed
+  `AGENTS.md` block) works with every CLI, MCP or not.
+- **Run isolation** — a private local `PORT` per run and a work-in-progress cap.
+
+## Team mode (Single | Team)
+
+The Code tab has two modes. **Single** is one agent, one terminal, one branch.
+**Team** is a mission:
+
+1. Add a task per run — title, role, agent, the files it owns, what it depends on.
+2. **Launch team** creates a branch, worktree and terminal per *ready* task and
+   briefs the agent from the board. Tasks with unmet dependencies show `blocked`.
+3. Finishing a task runs its **gate** in that worktree. Green → `review`.
+4. An **independent verifier run** inspects the diff (different agent, read-only,
+   no claims); you approve or request changes.
+5. Approving marks it `done`, starts whatever it unblocked, and its branch can
+   enter the **merge queue** — code and conversation together.
+
+Two tasks that claim the same files are refused before anything is created, so
+"no file conflicts" is structural, not a convention.
+
+Design and research: [`files/team-mode-landscape.md`](files/team-mode-landscape.md),
+[`files/team-mode-concept.md`](files/team-mode-concept.md),
+[`files/team-mode-architecture.md`](files/team-mode-architecture.md),
+[`files/team-mode-mcp.md`](files/team-mode-mcp.md).
 
 ## Architecture
 
@@ -57,9 +91,11 @@ React / Electron renderer  ──HTTP/SSE──▶  FastAPI (thin)  ──▶  c
 | Path | What |
 |---|---|
 | `contextgit/` | Python package: core, storage, merge engine, LLM adapters, API, CLI, `gitops/` |
+| `contextgit/verify/` | Quality gate: project command detection + a bounded command runner |
+| `contextgit/mcp/` | Team tools over MCP (stdio server + the project's `.mcp.json`) |
 | `desktop/` | Electron workbench (renderer + main process + PTY manager) |
 | `app/`, `components/`, `lib/` | Next.js landing page (marketing only) |
-| `tests/` | pytest suite (core, storage, merge, API, CLI, gitops) |
+| `tests/` | pytest suite (core, storage, merge, API, CLI, gitops, team, verify, MCP) |
 | `e2e/` | Playwright desktop end-to-end tests |
 | `files/` | Design docs, data model, roadmap, team-mode research |
 | `landing/` | Early static prototype (not wired to anything) |
@@ -71,10 +107,11 @@ React / Electron renderer  ──HTTP/SSE──▶  FastAPI (thin)  ──▶  c
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"    # drop ",mcp" to skip the optional MCP server
 
 uvicorn contextgit.api.main:app --reload --port 8756   # or: ctx-api
 ctx --help                                             # CLI
+contextgit-mcp --help                                  # team tools over MCP (stdio)
 ```
 
 ### Desktop app
@@ -107,6 +144,7 @@ npx playwright test              # desktop e2e (build desktop first)
 
 See [`files/README.md`](files/README.md) for the full doc index and
 [`files/AGENTS.md`](files/AGENTS.md) for contribution rules.
+Community expectations are in [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 

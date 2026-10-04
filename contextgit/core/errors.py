@@ -51,3 +51,35 @@ class StagingEmpty(ContextGitError):
 
 class MergeQueueEntryNotFound(ContextGitError):
     """The referenced merge-queue entry does not exist."""
+
+
+class TeamNotFound(ContextGitError):
+    """No team exists for the current project."""
+
+
+class TaskNotFound(ContextGitError):
+    """The referenced team task does not exist."""
+
+
+class TaskCycleError(ContextGitError):
+    """Task dependencies form a cycle, so no order can start them."""
+
+
+class TaskDependencyError(ContextGitError):
+    """A task cannot start or finish while its dependencies are unresolved."""
+
+
+class ScopeConflict(ContextGitError):
+    """Two team tasks claim the same files, so the second cannot start."""
+
+
+class TaskNotReviewable(ContextGitError):
+    """A review verdict was given for a task that is not waiting on review."""
+
+
+class WorkInProgressLimit(ContextGitError):
+    """Too many runs are active at once; finish one before starting another."""
+
+
+class GateNotConfigured(ContextGitError):
+    """No quality gate is configured or detectable for this project."""

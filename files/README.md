@@ -48,3 +48,23 @@ npm run build --prefix desktop
 npm run test:e2e:install
 npm run test:e2e
 ```
+
+## Docs
+
+| Doc | What |
+|---|---|
+| `files/AGENTS.md` | Contribution rules for agents working in this repo |
+| `files/architecture.md` | System architecture |
+| `files/backend.md` | Backend contract (core library) |
+| `files/data-model.md` | Commits, branches, sessions, team tables |
+| `files/merge-engine.md` | Semantic merge and conflict handling |
+| `files/frontend.md` | UI architecture |
+| `files/desktop.md` | Desktop app (Electron) architecture and commands |
+| `files/testing.md` | Test strategy and how to run the suites |
+| `files/codestyle.md` | Style and review rules |
+| `files/roadmap.md` | What is planned and what shipped |
+| `files/plan.md` | The original build plan |
+| `files/team-mode-landscape.md` | Team mode, round 1: prior art and the gap |
+| `files/team-mode-concept.md` | Team mode, round 2: making the idea strong |
+| `files/team-mode-architecture.md` | Team mode, round 3: the architecture |
+| `files/team-mode-mcp.md` | Team mode: the MCP channel (tools and setup) |

@@ -9,13 +9,15 @@ import json
 import sqlite3
 from importlib import resources
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from contextgit.core.errors import (
     BranchNotFound,
     CommitNotFound,
     MergeQueueEntryNotFound,
     SessionNotFound,
+    TaskNotFound,
+    TeamNotFound,
 )
 from contextgit.core.models import (
     Branch,
@@ -29,6 +31,12 @@ from contextgit.core.models import (
     SessionKind,
     SessionStatus,
     Tag,
+    Task,
+    TaskStatus,
+    Team,
+    TeamEvent,
+    TeamMessage,
+    TeamMessageKind,
 )
 
 _MIGRATIONS_DIR = "migrations"
@@ -214,6 +222,7 @@ class SqliteStorage:
             base_commit=row["base_commit"],
             task=row["task"],
             scope=json.loads(row["scope"]) if row["scope"] else [],
+            port=row["port"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -223,8 +232,8 @@ class SqliteStorage:
             self._conn.execute(
                 "INSERT INTO sessions"
                 " (id, name, kind, branch, status, agent, auto_commit, worktree_path,"
-                " git_branch, base_ref, base_commit, task, scope, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " git_branch, base_ref, base_commit, task, scope, port, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.name,
@@ -239,6 +248,7 @@ class SqliteStorage:
                     session.base_commit,
                     session.task,
                     json.dumps(session.scope),
+                    session.port,
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
@@ -260,7 +270,7 @@ class SqliteStorage:
             cur = self._conn.execute(
                 "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
                 " auto_commit = ?, worktree_path = ?, git_branch = ?, base_ref = ?,"
-                " base_commit = ?, task = ?, scope = ?, updated_at = ? WHERE id = ?",
+                " base_commit = ?, task = ?, scope = ?, port = ?, updated_at = ? WHERE id = ?",
                 (
                     session.name,
                     session.branch,
@@ -273,6 +283,7 @@ class SqliteStorage:
                     session.base_commit,
                     session.task,
                     json.dumps(session.scope),
+                    session.port,
                     session.updated_at.isoformat(),
                     session.id,
                 ),
@@ -436,6 +447,279 @@ class SqliteStorage:
             cur = self._conn.execute("DELETE FROM merge_queue WHERE id = ?", (entry_id,))
             if cur.rowcount == 0:
                 raise MergeQueueEntryNotFound(f"merge queue entry {entry_id} not found")
+
+    # ---------- team mode (missions, tasks, deps, board feed) ----------
+
+    @staticmethod
+    def _row_to_team(row: sqlite3.Row) -> Team:
+        return Team(
+            id=row["id"],
+            name=row["name"],
+            project_path=row["project_path"],
+            base_ref=row["base_ref"],
+            gate_command=row["gate_command"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_team(self, team: Team) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO teams"
+                " (id, name, project_path, base_ref, gate_command, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    team.id,
+                    team.name,
+                    team.project_path,
+                    team.base_ref,
+                    team.gate_command,
+                    team.created_at.isoformat(),
+                    team.updated_at.isoformat(),
+                ),
+            )
+
+    def get_team(self, team_id: str) -> Team:
+        row = self._conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if row is None:
+            raise TeamNotFound(f"team '{team_id[:12]}' not found")
+        return self._row_to_team(row)
+
+    def list_teams(self) -> list[Team]:
+        rows = self._conn.execute("SELECT * FROM teams ORDER BY created_at").fetchall()
+        return [self._row_to_team(row) for row in rows]
+
+    def update_team(self, team: Team) -> None:
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE teams SET name = ?, project_path = ?, base_ref = ?, gate_command = ?,"
+                " updated_at = ? WHERE id = ?",
+                (
+                    team.name,
+                    team.project_path,
+                    team.base_ref,
+                    team.gate_command,
+                    team.updated_at.isoformat(),
+                    team.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise TeamNotFound(f"team '{team.id[:12]}' not found")
+
+    def delete_team(self, team_id: str) -> None:
+        with self._conn:
+            cur = self._conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+            if cur.rowcount == 0:
+                raise TeamNotFound(f"team '{team_id[:12]}' not found")
+
+    @staticmethod
+    def _row_to_task(row: sqlite3.Row) -> Task:
+        # depends_on / blocked_by / tokens are derived in Repo, not stored.
+        return Task(
+            id=row["id"],
+            team_id=row["team_id"],
+            title=row["title"],
+            brief=row["brief"],
+            done_criteria=row["done_criteria"],
+            role=row["role"],
+            status=cast("TaskStatus", row["status"]),
+            agent=row["agent"],
+            session_id=row["session_id"],
+            scope=json.loads(row["scope"]) if row["scope"] else [],
+            contract=row["contract"],
+            position=int(row["position"]),
+            gate_command=row["gate_command"],
+            gate_status=cast("Literal['pass', 'fail'] | None", row["gate_status"]),
+            gate_exit_code=row["gate_exit_code"],
+            gate_output=row["gate_output"],
+            gate_ran_at=row["gate_ran_at"],
+            verifier_session_id=row["verifier_session_id"],
+            review_note=row["review_note"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_task(self, task: Task) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO tasks"
+                " (id, team_id, title, brief, done_criteria, role, status, agent, session_id,"
+                " scope, contract, position, gate_command, gate_status, gate_exit_code,"
+                " gate_output, gate_ran_at, verifier_session_id, review_note, created_at,"
+                " updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task.id,
+                    task.team_id,
+                    task.title,
+                    task.brief,
+                    task.done_criteria,
+                    task.role,
+                    task.status,
+                    task.agent,
+                    task.session_id,
+                    json.dumps(task.scope),
+                    task.contract,
+                    task.position,
+                    task.gate_command,
+                    task.gate_status,
+                    task.gate_exit_code,
+                    task.gate_output,
+                    task.gate_ran_at.isoformat() if task.gate_ran_at else None,
+                    task.verifier_session_id,
+                    task.review_note,
+                    task.created_at.isoformat(),
+                    task.updated_at.isoformat(),
+                ),
+            )
+
+    def get_task(self, task_id: str) -> Task:
+        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"task '{task_id[:12]}' not found")
+        return self._row_to_task(row)
+
+    def list_tasks(self, team_id: str) -> list[Task]:
+        rows = self._conn.execute(
+            "SELECT * FROM tasks WHERE team_id = ? ORDER BY position, created_at", (team_id,)
+        ).fetchall()
+        return [self._row_to_task(row) for row in rows]
+
+    def update_task(self, task: Task) -> None:
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE tasks SET title = ?, brief = ?, done_criteria = ?, role = ?, status = ?,"
+                " agent = ?, session_id = ?, scope = ?, contract = ?, position = ?,"
+                " gate_command = ?, gate_status = ?, gate_exit_code = ?, gate_output = ?,"
+                " gate_ran_at = ?, verifier_session_id = ?, review_note = ?, updated_at = ?"
+                " WHERE id = ?",
+                (
+                    task.title,
+                    task.brief,
+                    task.done_criteria,
+                    task.role,
+                    task.status,
+                    task.agent,
+                    task.session_id,
+                    json.dumps(task.scope),
+                    task.contract,
+                    task.position,
+                    task.gate_command,
+                    task.gate_status,
+                    task.gate_exit_code,
+                    task.gate_output,
+                    task.gate_ran_at.isoformat() if task.gate_ran_at else None,
+                    task.verifier_session_id,
+                    task.review_note,
+                    task.updated_at.isoformat(),
+                    task.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise TaskNotFound(f"task '{task.id[:12]}' not found")
+
+    def delete_task(self, task_id: str) -> None:
+        with self._conn:
+            cur = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            if cur.rowcount == 0:
+                raise TaskNotFound(f"task '{task_id[:12]}' not found")
+
+    def next_task_position(self, team_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM tasks WHERE team_id = ?", (team_id,)
+        ).fetchone()
+        return int(row[0])
+
+    def add_task_dep(self, task_id: str, depends_on_task_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO task_deps (task_id, depends_on_task_id) VALUES (?, ?)",
+                (task_id, depends_on_task_id),
+            )
+
+    def remove_task_dep(self, task_id: str, depends_on_task_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM task_deps WHERE task_id = ? AND depends_on_task_id = ?",
+                (task_id, depends_on_task_id),
+            )
+
+    def task_deps(self, team_id: str) -> dict[str, list[str]]:
+        """Every task's dependency ids for one team, keyed by task id."""
+        rows = self._conn.execute(
+            "SELECT d.task_id, d.depends_on_task_id FROM task_deps d"
+            " JOIN tasks t ON t.id = d.task_id WHERE t.team_id = ?"
+            " ORDER BY d.task_id, d.depends_on_task_id",
+            (team_id,),
+        ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(str(row["task_id"]), []).append(str(row["depends_on_task_id"]))
+        return result
+
+    def tasks_depending_on(self, task_id: str) -> list[str]:
+        """Task ids that directly depend on `task_id`."""
+        rows = self._conn.execute(
+            "SELECT task_id FROM task_deps WHERE depends_on_task_id = ? ORDER BY task_id",
+            (task_id,),
+        ).fetchall()
+        return [str(row["task_id"]) for row in rows]
+
+    @staticmethod
+    def _row_to_team_message(row: sqlite3.Row) -> TeamMessage:
+        return TeamMessage(
+            id=int(row["id"]),
+            team_id=row["team_id"],
+            task_id=row["task_id"],
+            from_task_id=row["from_task_id"],
+            kind=cast("TeamMessageKind", row["kind"]),
+            body=row["body"],
+            created_at=row["created_at"],
+        )
+
+    def insert_team_message(self, message: TeamMessage) -> TeamMessage:
+        with self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO team_messages (team_id, task_id, from_task_id, kind, body,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    message.team_id,
+                    message.task_id,
+                    message.from_task_id,
+                    message.kind,
+                    message.body,
+                    message.created_at.isoformat(),
+                ),
+            )
+        return self.get_team_message(int(cur.lastrowid or 0))
+
+    def get_team_message(self, message_id: int) -> TeamMessage:
+        row = self._conn.execute(
+            "SELECT * FROM team_messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            raise TaskNotFound(f"team message {message_id} not found")
+        return self._row_to_team_message(row)
+
+    def list_team_messages(self, team_id: str, limit: int | None = None) -> list[TeamMessage]:
+        sql = "SELECT * FROM team_messages WHERE team_id = ? ORDER BY id"
+        rows = self._conn.execute(sql, (team_id,)).fetchall()
+        messages = [self._row_to_team_message(row) for row in rows]
+        return messages[-limit:] if limit is not None else messages
+
+    def insert_team_event(self, event: TeamEvent) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO team_events (team_id, kind, task_id, payload, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    event.team_id,
+                    event.kind,
+                    event.task_id,
+                    json.dumps(event.payload),
+                    event.created_at.isoformat(),
+                ),
+            )
 
     # ---------- repo state (HEAD) ----------
 

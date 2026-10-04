@@ -5,6 +5,7 @@ else touches storage. Commits are immutable; branches and HEAD are pointers.
 Deleting a branch never deletes commits.
 """
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal, cast
@@ -14,13 +15,21 @@ from contextgit.core import hashing
 from contextgit.core.errors import (
     BranchNotFound,
     CommitNotFound,
+    GateNotConfigured,
     InvalidMergeResolution,
     InvalidRefName,
     MergeConflict,
     RepoAlreadyExists,
     RepoNotFound,
+    ScopeConflict,
+    SessionNotFound,
     StagingEmpty,
     StaleMergePreview,
+    TaskCycleError,
+    TaskDependencyError,
+    TaskNotReviewable,
+    TeamNotFound,
+    WorkInProgressLimit,
 )
 from contextgit.core.models import (
     Branch,
@@ -30,7 +39,21 @@ from contextgit.core.models import (
     Message,
     Session,
     Tag,
+    Task,
+    Team,
+    TeamBoard,
+    TeamEvent,
+    TeamMessage,
+    TeamMessageKind,
     utcnow,
+)
+from contextgit.core.team import (
+    STATUS_ORDER,
+    TEAM_MESSAGE_KINDS,
+    blocked_by,
+    dependents,
+    topological_order,
+    validate_graph,
 )
 from contextgit.gitops import (
     DirtyWorktree,
@@ -44,15 +67,24 @@ from contextgit.gitops.globs import any_overlap
 from contextgit.gitops.integrate import IntegrationConflict, integrate
 from contextgit.gitops.repo import Git
 from contextgit.gitops.status import FleetEntry, WorkspaceStatus, workspace_status
+from contextgit.gitops.team import team_document, write_team_board
 from contextgit.llm.base import LLMProvider
+from contextgit.mcp.config import ensure_mcp_config
 from contextgit.merge.engine import common_ancestor, messages_since
 from contextgit.merge.engine import diff as build_diff
 from contextgit.merge.models import CrossRunConflict, Diff, MergePreview, PairedMerge
 from contextgit.merge.semantic import extract_semantics
 from contextgit.storage.sqlite import SqliteStorage
+from contextgit.verify import detect_gate, run_command
 
 _DB_NAME = "contextgit.db"
 _ROOT_PARENT = "a3f9c21"
+# How many runs a team may have in flight at once unless overridden.
+_DEFAULT_MAX_ACTIVE = 5
+# Port the first run gets; each further run takes the next one.
+_DEFAULT_PORT_BASE = 4000
+# Verifier preference when the caller does not name one (never the implementer).
+_VERIFIER_AGENTS = ("claude", "codex", "gemini", "opencode", "aider")
 
 
 class Repo:
@@ -400,6 +432,8 @@ class Repo:
         session.git_branch = f"ctx/{session.branch}"
         session.base_ref = base_ref or "head"
         session.base_commit = manager.git.rev_parse(base)
+        # A private local port, so two runs' dev servers cannot collide.
+        session.port = self._next_port()
 
     @staticmethod
     def _resolve_base(git: Git, base_ref: str | None) -> str:
@@ -555,6 +589,586 @@ class Repo:
             if session.worktree_path
         ]
         write_context_block(project_path, context_document(runs, digest))
+
+    # ---------- team mode (a task graph over parallel runs) ----------
+
+    def current_team(self) -> Team | None:
+        """The team for this repository — the most recently created one, if any."""
+        teams = self._storage.list_teams()
+        return teams[-1] if teams else None
+
+    def create_team(self, name: str, *, project_path: str, base_ref: str | None = None) -> Team:
+        """Create the mission every task hangs off. One team per repository."""
+        project = Path(project_path)
+        resolved = base_ref
+        if not resolved and project.is_dir():
+            git = Git(project)
+            if git.is_repo():
+                resolved = git.current_branch()
+        team = Team(
+            id=uuid4().hex,
+            name=name,
+            project_path=str(project),
+            base_ref=resolved,
+            # A project that already declares a test command gets it for free.
+            gate_command=detect_gate(project),
+        )
+        self._storage.insert_team(team)
+        self._record(team.id, "team_created", None, {"name": name, "base_ref": resolved})
+        self.sync_team_board(team.id)
+        return team
+
+    def get_team(self, team_id: str) -> Team:
+        return self._storage.get_team(team_id)
+
+    def set_team_gate(self, team_id: str, command: str | None) -> Team:
+        """Set (or clear, with an empty string) the team's default gate command."""
+        team = self._storage.get_team(team_id)
+        team.gate_command = command or None
+        team.updated_at = utcnow()
+        self._storage.update_team(team)
+        self.sync_team_board(team_id)
+        return team
+
+    def team_board(self, team_id: str | None = None) -> TeamBoard | None:
+        """The board the UI renders: team, task graph and message feed."""
+        team = self._storage.get_team(team_id) if team_id else self.current_team()
+        if team is None:
+            return None
+        return TeamBoard(
+            team=team,
+            tasks=self.list_tasks(team.id),
+            messages=self._storage.list_team_messages(team.id, limit=50),
+            current_branch=self.current_branch(),
+        )
+
+    def _fill_tasks(self, tasks: list[Task], deps: dict[str, list[str]]) -> list[Task]:
+        """Attach the derived fields (never stored on the row): deps + context size."""
+        status = {task.id: task.status for task in tasks}
+        for task in tasks:
+            task.depends_on = list(deps.get(task.id, []))
+            task.blocked_by = [dep for dep in task.depends_on if status.get(dep) != "done"]
+            task.tokens = self._task_tokens(task)
+        return tasks
+
+    def _load_tasks(self, team_id: str) -> tuple[list[Task], dict[str, list[str]]]:
+        deps = self._storage.task_deps(team_id)
+        return self._fill_tasks(self._storage.list_tasks(team_id), deps), deps
+
+    def _task_tokens(self, task: Task) -> int:
+        """Committed context size of a task's run, plus what it has staged.
+
+        A deliberately rough proxy (4 chars ~ 1 token for staged text): a PTY
+        agent's live token usage is not observable, so we count what we own.
+        """
+        session_id = task.session_id or task.verifier_session_id
+        if not session_id:
+            return 0
+        try:
+            session = self._storage.get_session(session_id)
+        except SessionNotFound:
+            return 0
+        try:
+            total = sum(commit.token_count for commit in self.log(session.branch))
+        except BranchNotFound:
+            total = 0
+        return total + sum(
+            len(message.content) // 4 for message in self._storage.staged_messages(session.id)
+        )
+
+    def _gate_command_for(self, task: Task, team: Team, worktree: str | None) -> str | None:
+        """Task override, then the team default, then whatever the project declares."""
+        if task.gate_command:
+            return task.gate_command
+        if team.gate_command:
+            return team.gate_command
+        return detect_gate(worktree or team.project_path)
+
+    def _max_active(self) -> int:
+        raw = os.getenv("CONTEXTGIT_MAX_ACTIVE")
+        try:
+            return max(1, int(raw)) if raw else _DEFAULT_MAX_ACTIVE
+        except ValueError:
+            return _DEFAULT_MAX_ACTIVE
+
+    def _active_count(self, team_id: str) -> int:
+        return sum(1 for task in self._storage.list_tasks(team_id) if task.status == "working")
+
+    def _next_port(self) -> int:
+        """The next free run port; monotonic, so two runs never share one."""
+        raw = os.getenv("CONTEXTGIT_PORT_BASE")
+        try:
+            base = int(raw) if raw else _DEFAULT_PORT_BASE
+        except ValueError:
+            base = _DEFAULT_PORT_BASE
+        used = [session.port for session in self._storage.list_sessions() if session.port]
+        return max(used, default=base) + 1
+
+    def list_tasks(self, team_id: str) -> list[Task]:
+        """Every task in the team, with `depends_on` / `blocked_by` filled in."""
+        return self._load_tasks(team_id)[0]
+
+    def get_task(self, task_id: str) -> Task:
+        task = self._storage.get_task(task_id)
+        for candidate in self.list_tasks(task.team_id):
+            if candidate.id == task_id:
+                return candidate
+        return task
+
+    def create_task(
+        self,
+        team_id: str,
+        *,
+        title: str,
+        brief: str = "",
+        done_criteria: str = "",
+        role: str = "implementer",
+        agent: str | None = None,
+        scope: list[str] | None = None,
+        contract: str | None = None,
+        depends_on: list[str] | None = None,
+        gate_command: str | None = None,
+    ) -> Task:
+        """Add one task to the graph. A contract file is added to its claims."""
+        self._storage.get_team(team_id)
+        globs = list(scope or [])
+        if contract and contract not in globs:
+            globs.append(contract)
+        for dep in depends_on or []:
+            if self._storage.get_task(dep).team_id != team_id:
+                raise InvalidRefName("a task can only depend on a task in the same team")
+        task = Task(
+            id=uuid4().hex,
+            team_id=team_id,
+            title=title,
+            brief=brief,
+            done_criteria=done_criteria,
+            role=role,
+            agent=agent,
+            scope=globs,
+            contract=contract or None,
+            gate_command=gate_command or None,
+            position=self._storage.next_task_position(team_id),
+        )
+        self._storage.insert_task(task)
+        for dep in depends_on or []:
+            self._storage.add_task_dep(task.id, dep)
+        tasks, deps = self._load_tasks(team_id)
+        try:
+            validate_graph([item.id for item in tasks], deps)
+        except TaskCycleError:
+            self._storage.delete_task(task.id)
+            raise
+        self._record(team_id, "task_created", task.id, {"title": title})
+        self.sync_team_board(team_id)
+        return self.get_task(task.id)
+
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        brief: str | None = None,
+        done_criteria: str | None = None,
+        role: str | None = None,
+        agent: str | None = None,
+        scope: list[str] | None = None,
+        contract: str | None = None,
+        status: str | None = None,
+        gate_command: str | None = None,
+    ) -> Task:
+        """Edit a task's fields. Use `set_task_deps` for its dependency edges."""
+        task = self._storage.get_task(task_id)
+        if title is not None:
+            task.title = title
+        if brief is not None:
+            task.brief = brief
+        if done_criteria is not None:
+            task.done_criteria = done_criteria
+        if role is not None:
+            task.role = role
+        if agent is not None:
+            task.agent = agent
+        if gate_command is not None:
+            task.gate_command = gate_command or None
+        if scope is not None:
+            task.scope = list(scope)
+        if contract is not None:
+            task.contract = contract or None
+        if contract and contract not in task.scope:
+            task.scope.append(contract)
+        if status is not None:
+            if status not in STATUS_ORDER:
+                raise InvalidRefName(f"unknown task status: {status!r}")
+            task.status = status
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self.sync_team_board(task.team_id)
+        return self.get_task(task_id)
+
+    def set_task_deps(self, task_id: str, depends_on: list[str]) -> Task:
+        """Replace a task's dependencies (validated: same team, no cycles)."""
+        task = self._storage.get_task(task_id)
+        tasks, deps = self._load_tasks(task.team_id)
+        cleaned: list[str] = []
+        for dep in depends_on:
+            if self._storage.get_task(dep).team_id != task.team_id:
+                raise InvalidRefName("a task can only depend on a task in the same team")
+            if dep not in cleaned:
+                cleaned.append(dep)
+        prospective = {key: list(value) for key, value in deps.items()}
+        prospective[task_id] = cleaned
+        validate_graph([item.id for item in tasks], prospective)
+        for existing in deps.get(task_id, []):
+            self._storage.remove_task_dep(task_id, existing)
+        for dep in cleaned:
+            self._storage.add_task_dep(task_id, dep)
+        self.sync_team_board(task.team_id)
+        return self.get_task(task_id)
+
+    def delete_task(self, task_id: str) -> None:
+        task = self._storage.get_task(task_id)
+        self._storage.delete_task(task_id)
+        self._record(task.team_id, "task_deleted", None, {"title": task.title})
+        self.sync_team_board(task.team_id)
+
+    def post_message(
+        self,
+        team_id: str,
+        body: str,
+        *,
+        kind: str = "update",
+        task_id: str | None = None,
+        from_task_id: str | None = None,
+    ) -> TeamMessage:
+        """Append a line to the board feed, then rewrite the board file."""
+        self._storage.get_team(team_id)
+        if kind not in TEAM_MESSAGE_KINDS:
+            raise InvalidRefName(f"unknown message kind: {kind!r}")
+        message = TeamMessage(
+            id=0,
+            team_id=team_id,
+            task_id=task_id,
+            from_task_id=from_task_id,
+            kind=cast("TeamMessageKind", kind),
+            body=body,
+        )
+        stored = self._storage.insert_team_message(message)
+        self.sync_team_board(team_id)
+        return stored
+
+    def team_messages(self, team_id: str, *, limit: int | None = 50) -> list[TeamMessage]:
+        return self._storage.list_team_messages(team_id, limit=limit)
+
+    def sync_team_board(self, team_id: str) -> None:
+        """Rewrite `.contextgit/team.md` and the managed AGENTS.md team block."""
+        team = self._storage.get_team(team_id)
+        write_team_board(
+            team.project_path,
+            team_document(
+                team,
+                self.list_tasks(team_id),
+                self._storage.list_team_messages(team_id, limit=12),
+            ),
+        )
+
+    def _record(
+        self, team_id: str, kind: str, task_id: str | None, payload: dict[str, object]
+    ) -> None:
+        self._storage.insert_team_event(
+            TeamEvent(id=0, team_id=team_id, kind=kind, task_id=task_id, payload=payload)
+        )
+
+    def _set_task_status(self, task_id: str, status: str) -> Task:
+        if status not in STATUS_ORDER:
+            raise InvalidRefName(f"unknown task status: {status!r}")
+        task = self._storage.get_task(task_id)
+        task.status = status
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        return task
+
+    def start_task(self, task_id: str) -> Task:
+        """Start one ready task: its own worktree, branch and terminal session.
+
+        Enforced ownership: the task is refused if another run already claims
+        any of its files (Single mode stays advisory; team mode blocks).
+        """
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        tasks, deps = self._load_tasks(task.team_id)
+        tasks_by_id = {item.id: item for item in tasks}
+        if task.session_id:
+            return self.get_task(task_id)
+        waiting = blocked_by(task_id, tasks_by_id, deps)
+        if waiting:
+            names = ", ".join(tasks_by_id[dep].title for dep in waiting)
+            raise TaskDependencyError(f"'{task.title}' is waiting on {names}")
+        if task.status == "done":
+            raise TaskDependencyError(f"'{task.title}' is already done")
+        active = self._active_count(task.team_id)
+        if active >= self._max_active():
+            raise WorkInProgressLimit(
+                f"{active} runs are already active (cap {self._max_active()})"
+            )
+        owners = [self._storage.get_session(sid).name for sid in self.claim_conflicts(task.scope)]
+        if owners:
+            raise ScopeConflict(
+                f"'{task.title}' claims files already owned by {', '.join(owners)}"
+            )
+        session = self.create_session(
+            f"{team.name}/{task.title}",
+            kind="terminal",
+            agent=task.agent,
+            project_path=team.project_path,
+            worktree=True,
+            base_ref=team.base_ref,
+            task=task.title,
+            scope=task.scope,
+        )
+        task.session_id = session.id
+        task.status = "working"
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(team.id, "task_started", task.id, {"session_id": session.id})
+        self.post_message(
+            team.id,
+            f"started '{task.title}' on {session.git_branch or session.branch}",
+            kind="system",
+            task_id=task.id,
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def launch_team(self, team_id: str | None = None) -> list[Task]:
+        """Start every ready task; tasks with unmet deps show as blocked.
+
+        Ownership is checked for the whole team *before* anything is created, so
+        an overlapping plan is refused instead of half-launched.
+        """
+        team = self._storage.get_team(team_id) if team_id else self.current_team()
+        if team is None:
+            raise TeamNotFound("no team to launch")
+        tasks, deps = self._load_tasks(team.id)
+        tasks_by_id = {task.id: task for task in tasks}
+
+        ready: list[str] = []
+        for task_id in topological_order(list(tasks_by_id), deps):
+            task = tasks_by_id[task_id]
+            if task.status in {"done", "working", "review"}:
+                continue
+            if blocked_by(task_id, tasks_by_id, deps):
+                self._set_task_status(task_id, "blocked")
+                continue
+            ready.append(task_id)
+
+        claimed: list[tuple[str, list[str]]] = []
+        for task_id in ready:
+            task = tasks_by_id[task_id]
+            owners = [
+                self._storage.get_session(sid).name for sid in self.claim_conflicts(task.scope)
+            ]
+            colliding = [
+                title
+                for title, other in claimed
+                if task.scope and any_overlap(task.scope, other)
+            ]
+            if owners or colliding:
+                raise ScopeConflict(
+                    f"'{task.title}' claims files already owned by "
+                    f"{', '.join([*owners, *colliding])}"
+                )
+            claimed.append((task.title, task.scope))
+
+        started: list[Task] = []
+        for task_id in ready:
+            try:
+                started.append(self.start_task(task_id))
+            except WorkInProgressLimit as limit:
+                # Stop at the cap: the rest simply stay in `todo` for later.
+                self._set_task_status(task_id, "todo")
+                self._record(team.id, "wip_limit", task_id, {"reason": str(limit)})
+                break
+        # Make the live channel available to MCP-capable agent CLIs.
+        ensure_mcp_config(team.project_path)
+        self.sync_team_board(team.id)
+        return started
+
+    def complete_task(self, task_id: str) -> Task:
+        """Finish a task: run its quality gate, then leave it waiting on review.
+
+        The gate (when the project has one) decides the outcome: green lands the
+        task in `review`, red sends it back to `working` with the output as
+        feedback. Approval is what marks a task `done` and unblocks dependents.
+        """
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        if task.status == "done":
+            return self.get_task(task_id)
+        if task.session_id and self._gate_command_for(task, team, None):
+            return self.run_task_gate(task_id)
+        task.status = "review"
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(team.id, "task_completed", task.id, {})
+        self.post_message(
+            team.id, f"'{task.title}' is ready for review", kind="review", task_id=task.id
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def run_task_gate(self, task_id: str) -> Task:
+        """Run the project's gate inside the task's worktree and record the verdict."""
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        if not task.session_id:
+            raise TaskDependencyError(f"'{task.title}' has no run to gate yet")
+        session = self._storage.get_session(task.session_id)
+        command = self._gate_command_for(task, team, session.worktree_path)
+        if not command:
+            raise GateNotConfigured(f"no gate command configured for '{task.title}'")
+        env = dict(os.environ)
+        env["CONTEXTGIT_RUN"] = session.name
+        if session.port:
+            env["PORT"] = str(session.port)
+        result = run_command(command, session.worktree_path or team.project_path, env=env)
+        task.gate_command = command
+        task.gate_status = "pass" if result.ok else "fail"
+        task.gate_exit_code = result.exit_code
+        task.gate_output = result.output
+        task.gate_ran_at = utcnow()
+        task.status = "review" if result.ok else "working"
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(
+            team.id,
+            "gate_ran",
+            task.id,
+            {"command": command, "exit_code": result.exit_code, "status": task.gate_status},
+        )
+        verdict = "passed" if result.ok else "failed"
+        self.post_message(
+            team.id,
+            f"gate {verdict} for '{task.title}' — `{command}`",
+            kind="gate",
+            task_id=task.id,
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def approve_task(self, task_id: str) -> Task:
+        """Accept reviewed work: mark it done, then unblock and start dependents."""
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        if task.status == "done":
+            raise TaskNotReviewable(f"'{task.title}' is already done")
+        task.status = "done"
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(team.id, "task_approved", task.id, {})
+        self.post_message(team.id, f"'{task.title}' approved", kind="review", task_id=task.id)
+
+        tasks, deps = self._load_tasks(team.id)
+        tasks_by_id = {item.id: item for item in tasks}
+        for dependent_id in dependents(deps, task_id):
+            dependent = tasks_by_id.get(dependent_id)
+            if dependent is None or dependent.status not in {"todo", "blocked"}:
+                continue
+            if blocked_by(dependent_id, tasks_by_id, deps):
+                self._set_task_status(dependent_id, "blocked")
+                continue
+            try:
+                self.start_task(dependent_id)
+            except (ScopeConflict, WorkInProgressLimit):
+                self._set_task_status(dependent_id, "blocked")
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def reject_task(self, task_id: str, note: str) -> Task:
+        """Send reviewed work back to the implementer with a note."""
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        if task.status == "done":
+            raise TaskNotReviewable(f"'{task.title}' is already done")
+        task.status = "working"
+        task.review_note = note
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(team.id, "task_rejected", task.id, {"note": note})
+        self.post_message(
+            team.id,
+            f"changes requested on '{task.title}': {note}",
+            kind="review",
+            task_id=task.id,
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def verify_task(self, task_id: str, *, agent: str | None = None) -> Task:
+        """Start a read-only run that reviews this task's diff against its criteria.
+
+        The verifier gets its own worktree branched from the implementer's, claims
+        no files and writes no code, so it can never collide with the work. Its
+        findings land on the board; the verdict stays with the human.
+        """
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        if task.verifier_session_id:
+            return self.get_task(task_id)
+        implementer = task.agent or ""
+        reviewer = agent or next(
+            (name for name in _VERIFIER_AGENTS if name != implementer), _VERIFIER_AGENTS[0]
+        )
+        implementer_session = (
+            self._storage.get_session(task.session_id) if task.session_id else None
+        )
+        base_ref = (
+            implementer_session.git_branch
+            if implementer_session and implementer_session.git_branch
+            else team.base_ref
+        )
+        session = self.create_session(
+            f"{team.name}/verify {task.title}",
+            kind="terminal",
+            agent=reviewer,
+            project_path=team.project_path,
+            worktree=True,
+            base_ref=base_ref,
+            task=f"verify: {task.title}",
+            scope=[],
+        )
+        task.verifier_session_id = session.id
+        task.status = "review"
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        self._record(
+            team.id, "verifier_started", task.id, {"session_id": session.id, "agent": reviewer}
+        )
+        self.post_message(
+            team.id,
+            f"verifier '{reviewer}' started on '{task.title}'",
+            kind="review",
+            task_id=task.id,
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def queue_done_tasks(self, team_id: str | None = None) -> list[MergeQueueEntry]:
+        """Enqueue every done task's run, in dependency order, for the merge queue."""
+        team = self._storage.get_team(team_id) if team_id else self.current_team()
+        if team is None:
+            raise TeamNotFound("no team to merge")
+        tasks, deps = self._load_tasks(team.id)
+        tasks_by_id = {task.id: task for task in tasks}
+        queued: list[MergeQueueEntry] = []
+        for task_id in topological_order(list(tasks_by_id), deps):
+            task = tasks_by_id[task_id]
+            if task.status != "done" or not task.session_id:
+                continue
+            session = self._storage.get_session(task.session_id)
+            if session.git_branch:
+                queued.append(self.enqueue_merge(task.session_id))
+        return queued
 
     # ---------- merge queue (sequential, checkout-free integration) ----------
 

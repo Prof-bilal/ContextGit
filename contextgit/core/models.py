@@ -88,6 +88,8 @@ class Session(BaseModel):
     base_commit: str | None = None
     task: str | None = None
     scope: list[str] = Field(default_factory=list)
+    # A stable local port for this run, so two runs' dev servers cannot collide.
+    port: int | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -104,3 +106,91 @@ class MergeQueueEntry(BaseModel):
     commit_id: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+TaskStatus = Literal["todo", "blocked", "working", "review", "done", "failed"]
+TeamMessageKind = Literal[
+    "update", "question", "answer", "handoff", "contract", "review", "gate", "system"
+]
+
+
+class Team(BaseModel):
+    """One mission: a named set of tasks over a single project folder."""
+
+    id: str
+    name: str
+    project_path: str
+    base_ref: str | None = None
+    # The default quality gate command for this team's tasks.
+    gate_command: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class Task(BaseModel):
+    """One unit of team work, owned by one run and bounded by a file scope.
+
+    `depends_on` and `blocked_by` are derived from `task_deps` by `Repo`
+    (never stored on the row): `blocked_by` lists dependencies that are not
+    `done` yet, so an empty `blocked_by` means the task is ready to start.
+    """
+
+    id: str
+    team_id: str
+    title: str
+    brief: str = ""
+    done_criteria: str = ""
+    role: str = "implementer"
+    status: TaskStatus = "todo"
+    agent: str | None = None
+    session_id: str | None = None
+    scope: list[str] = Field(default_factory=list)
+    contract: str | None = None
+    position: int = 0
+    depends_on: list[str] = Field(default_factory=list)
+    blocked_by: list[str] = Field(default_factory=list)
+    # Quality gate: the project command run in this task's worktree on completion.
+    gate_command: str | None = None
+    gate_status: Literal["pass", "fail"] | None = None
+    gate_exit_code: int | None = None
+    gate_output: str | None = None
+    gate_ran_at: datetime | None = None
+    # Independent review: a read-only run that inspects the task's diff.
+    verifier_session_id: str | None = None
+    review_note: str | None = None
+    # Derived: the committed context size of this task's branch (never stored).
+    tokens: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class TeamMessage(BaseModel):
+    """One line on the team board — how runs talk across their worktrees."""
+
+    id: int
+    team_id: str
+    task_id: str | None = None
+    from_task_id: str | None = None
+    kind: TeamMessageKind = "update"
+    body: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class TeamEvent(BaseModel):
+    """An audit row recording what the coordinator did and why."""
+
+    id: int
+    team_id: str
+    kind: str
+    task_id: str | None = None
+    payload: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class TeamBoard(BaseModel):
+    """Read model for the UI: the team, its task graph and the message feed."""
+
+    team: Team
+    tasks: list[Task]
+    messages: list[TeamMessage]
+    current_branch: str

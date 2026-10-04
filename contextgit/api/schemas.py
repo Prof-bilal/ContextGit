@@ -178,3 +178,70 @@ class IntegrateRequest(BaseModel):
 
     target: str | None = None  # ContextGit branch
     git_target: str | None = None  # git branch
+
+
+class TeamCreateRequest(BaseModel):
+    """Create the team (mission) that tasks hang off."""
+
+    name: str = Field(min_length=1)
+    project_path: str = Field(min_length=1)
+    base_ref: str | None = None
+    gate_command: str | None = None
+
+
+class TeamGateRequest(BaseModel):
+    """Set the team's default quality gate command (empty clears it)."""
+
+    gate_command: str | None = None
+
+
+class TaskCreateRequest(BaseModel):
+    """Add one task to the team graph."""
+
+    title: str = Field(min_length=1)
+    brief: str = ""
+    done_criteria: str = ""
+    role: str = "implementer"
+    agent: str | None = None
+    scope: list[str] = Field(default_factory=list)
+    contract: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    gate_command: str | None = None
+
+
+class TaskUpdateRequest(BaseModel):
+    """Mutable task fields; None means 'leave unchanged'."""
+
+    title: str | None = None
+    brief: str | None = None
+    done_criteria: str | None = None
+    role: str | None = None
+    agent: str | None = None
+    scope: list[str] | None = None
+    contract: str | None = None
+    status: Literal["todo", "blocked", "working", "review", "done", "failed"] | None = None
+    depends_on: list[str] | None = None
+    gate_command: str | None = None
+
+
+class TaskRejectRequest(BaseModel):
+    """Send a reviewed task back with the changes the implementer must make."""
+
+    note: str = Field(min_length=1)
+
+
+class TaskVerifyRequest(BaseModel):
+    """Start a read-only verifier run, optionally with a named agent."""
+
+    agent: str | None = None
+
+
+class TeamMessageRequest(BaseModel):
+    """Post a line to the team board feed."""
+
+    body: str = Field(min_length=1)
+    kind: Literal[
+        "update", "question", "answer", "handoff", "contract", "review", "gate", "system"
+    ] = "update"
+    task_id: str | None = None
+    from_task_id: str | None = None
