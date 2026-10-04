@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ContextGit: version control for LLM conversations",
+  title: "ContextGit: version control for AI work",
   description:
-    "Branch, diff, merge and roll back LLM conversations. ContextGit gives every chat a commit history, so a dead end costs one branch instead of the whole context.",
+    "Run several coding agents on one project without collisions, and keep every conversation as a branchable commit history. Local-first, on your machine.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f6f2ea",
+  themeColor: "#15120e",
   width: "device-width",
   initialScale: 1,
 };

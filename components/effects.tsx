@@ -32,6 +32,18 @@ export default function Effects() {
       cleanups.push(() => io.disconnect());
     }
 
+    /* ---------- topbar shrink ---------- */
+
+    const topbar = document.querySelector<HTMLElement>(".topbar");
+    if (topbar) {
+      const onScroll = () => {
+        topbar.classList.toggle("is-scrolled", window.scrollY > 10);
+      };
+      onScroll();
+      window.addEventListener("scroll", onScroll, { passive: true });
+      cleanups.push(() => window.removeEventListener("scroll", onScroll));
+    }
+
     /* ---------- scroll spy ---------- */
 
     const rail = document.querySelector<HTMLElement>(".rail");

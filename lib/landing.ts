@@ -30,6 +30,29 @@ export const COMMITS: Commit[] = [
 
 export const BRANCH_NAME: Record<string, string> = { main: 'main', redis: 'redis-bucket', memory: 'in-memory' };
 
+/* ---------- Fleet demo: five agent runs over one project ---------- */
+
+export type FleetStatus = 'running' | 'blocked' | 'merged' | 'idle';
+
+export interface FleetRun {
+  key: string;      // agent key (mark hue)
+  mark: string;     // monogram fallback
+  role: string;
+  branch: string;
+  files: number;
+  ahead: number;
+  status: FleetStatus;
+  note?: string;
+}
+
+export const FLEET: FleetRun[] = [
+  { key: 'claude', mark: 'C', role: 'backend', branch: 'ctx/api-contract', files: 7, ahead: 3, status: 'merged' },
+  { key: 'codex', mark: 'X', role: 'frontend', branch: 'ctx/frontend', files: 12, ahead: 4, status: 'running' },
+  { key: 'gemini', mark: 'G', role: 'tests', branch: 'ctx/tests', files: 4, ahead: 2, status: 'blocked', note: 'overlaps ctx/frontend on src/types/api.ts' },
+  { key: 'opencode', mark: 'O', role: 'docs', branch: 'ctx/docs', files: 2, ahead: 1, status: 'running' },
+  { key: 'shell', mark: 'S', role: 'review', branch: 'ctx/review', files: 0, ahead: 0, status: 'idle', note: 'waiting on ctx/frontend' },
+];
+
 export const BRANCH_LABEL = [
   { b: 'main', x: 115, y: 18, text: 'main' },
   { b: 'redis', x: 475, y: 128, text: 'redis-bucket' },
