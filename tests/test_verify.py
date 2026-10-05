@@ -231,6 +231,16 @@ class TestVerifierRun:
         verified = repo.verify_task(task.id, agent="gemini")
         assert repo.get_session(str(verified.verifier_session_id)).agent == "gemini"
 
+    def test_a_new_harness_is_verifier_eligible(self, repo: Repo, team) -> None:  # noqa: ANN001
+        # One of the auto-installed harnesses can implement and be reviewed by a
+        # different agent from the verifier preference list.
+        task = repo.create_task(team.id, title="api", agent="cline")
+        repo.launch_team()
+        verified = repo.verify_task(task.id)
+        verifier = repo.get_session(str(verified.verifier_session_id))
+        assert verifier.agent is not None
+        assert verifier.agent != "cline"
+
 
 class TestIsolationAndLimits:
     def test_every_run_gets_a_unique_port(self, repo: Repo, project: Path) -> None:

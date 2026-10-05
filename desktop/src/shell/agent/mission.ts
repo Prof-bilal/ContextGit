@@ -15,7 +15,19 @@ export interface MissionDraft {
   seed: string;
 }
 
-export const AGENT_HUES = ["claude", "codex", "opencode", "gemini", "aider", "ollama"];
+export const AGENT_HUES = [
+  "claude",
+  "codex",
+  "opencode",
+  "gemini",
+  "aider",
+  "ollama",
+  "freebuff",
+  "cline",
+  "pi",
+  "kilo",
+  "commandcode",
+];
 
 export const DEFAULT_DRAFT: MissionDraft = {
   name: "",

@@ -298,6 +298,20 @@ test("start a run and get a live terminal pane", async () => {
   await expect(page.locator(".cg-term-host .xterm-screen").first()).toBeVisible();
 });
 
+test("the New run picker offers the auto-install harnesses", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run" }).click();
+
+  const agent = page.getByLabel("Agent", { exact: true });
+  for (const label of ["Freebuff", "Cline", "Pi", "Kilo Code", "Command Code"]) {
+    await expect(agent.getByRole("option", { name: label, exact: true })).toHaveCount(1);
+  }
+
+  // Collapse the form so later tests start with the rail uncluttered.
+  await page.getByRole("button", { name: "New run" }).click();
+});
+
 test("choose the project folder from the Code tab", async () => {
   const page = await openShell();
   await nav(page, "Code").click();

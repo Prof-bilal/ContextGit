@@ -1,6 +1,7 @@
 /** Preload: exposes the backend status channel to the renderer (sandbox-safe). */
 import { contextBridge, ipcRenderer } from "electron";
 
+import type { HarnessCheck, HarnessInstallEvent } from "../shared/harnesses";
 import type { BackendStatus } from "../shared/status";
 import type { Workspace } from "../shared/workspace";
 
@@ -35,6 +36,17 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.send("ctx:pty-resize", id, cols, rows),
   ptyKill: (id: string) => ipcRenderer.send("ctx:pty-kill", id),
   ptyPresets: () => ipcRenderer.invoke("ctx:pty-presets") as Promise<string[]>,
+  // ---------- Harness detection + install ----------
+  harnessCheck: (id: string) => ipcRenderer.invoke("ctx:harness-check", id) as Promise<HarnessCheck>,
+  harnessInstall: (id: string) =>
+    ipcRenderer.invoke("ctx:harness-install", id) as Promise<{ started: boolean }>,
+  harnessCancel: (id: string) => ipcRenderer.send("ctx:harness-cancel", id),
+  onHarnessProgress: (callback: (progress: HarnessInstallEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: HarnessInstallEvent) =>
+      callback(progress);
+    ipcRenderer.on("ctx:harness-progress", listener);
+    return () => ipcRenderer.removeListener("ctx:harness-progress", listener);
+  },
   // ---------- Project folder ----------
   getWorkspace: () => ipcRenderer.invoke("ctx:workspace-get") as Promise<Workspace>,
   chooseWorkspace: () => ipcRenderer.invoke("ctx:workspace-choose") as Promise<Workspace | null>,

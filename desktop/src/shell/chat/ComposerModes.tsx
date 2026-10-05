@@ -3,12 +3,12 @@ import type { ProviderInfo } from "@/lib/api";
 import {
   ASPECTS,
   CHAT_MODES,
+  COUNCIL_FACETS,
   RESEARCH_MODES,
   type ChatMode,
   type ComposerControls,
 } from "../../mock/chat";
-import { AgentMark, Chip } from "../primitives";
-import { brandFor } from "../providers";
+import { Chip } from "../primitives";
 
 const DEPTHS: Array<ComposerControls["depth"]> = ["quick", "standard", "deep"];
 
@@ -18,6 +18,24 @@ export interface CouncilCandidate {
   providerId: string;
   modelId: string;
   label: string;
+  /** Free to call: `:free` tier, or a local/offline provider. */
+  free: boolean;
+}
+
+/** Three council slots, one dropdown each. */
+const COUNCIL_SLOTS = [0, 1, 2] as const;
+
+/** Unique, non-empty council keys in slot order (empty dropdowns dropped). */
+export function councilMembers(council: string[]): string[] {
+  const seen = new Set<string>();
+  const members: string[] = [];
+  for (const key of council) {
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      members.push(key);
+    }
+  }
+  return members;
 }
 
 /**
@@ -40,16 +58,35 @@ export default function ComposerModes({
   councilCandidates: CouncilCandidate[];
   imageProviders: ProviderInfo[];
 }) {
-  const toggleMember = (key: string) => {
-    const selected = controls.council.includes(key);
-    if (selected && controls.council.length <= 2) return; // council needs at least two
-    if (!selected && controls.council.length >= 5) return; // and no more than five
-    onControls({
-      council: selected
-        ? controls.council.filter((entry) => entry !== key)
-        : [...controls.council, key],
-    });
+  /** Write one of the three council dropdowns, keeping the others in place. */
+  const setCouncilSlot = (slot: number, key: string) => {
+    const next = [controls.council[0] ?? "", controls.council[1] ?? "", controls.council[2] ?? ""];
+    next[slot] = key;
+    onControls({ council: next });
   };
+
+  const chosen = councilMembers(controls.council);
+  const selectedKeys = new Set(chosen);
+  // The free/paid filter hides models, but never the ones already picked, so a
+  // dropdown can't silently blank out a selection behind the user's back.
+  const matchesFacet = (candidate: CouncilCandidate) =>
+    controls.councilFacet === "all" ||
+    selectedKeys.has(candidate.key) ||
+    (controls.councilFacet === "free" ? candidate.free : !candidate.free);
+
+  // Providers in registry order, each with its (filtered) models.
+  const councilGroups: Array<{ providerId: string; label: string; options: CouncilCandidate[] }> = [];
+  const groupIndex = new Map<string, number>();
+  for (const candidate of councilCandidates) {
+    if (!matchesFacet(candidate)) continue;
+    let at = groupIndex.get(candidate.providerId);
+    if (at === undefined) {
+      at = councilGroups.length;
+      groupIndex.set(candidate.providerId, at);
+      councilGroups.push({ providerId: candidate.providerId, label: candidate.label, options: [] });
+    }
+    councilGroups[at].options.push(candidate);
+  }
 
   const activeImageProvider =
     imageProviders.find((provider) => provider.id === controls.imageProvider) ??
@@ -76,31 +113,48 @@ export default function ComposerModes({
       <span className="cg-toolbar-spacer" />
 
       {mode === "council" && (
-        <div className="cg-tags" role="group" aria-label="Council members">
-          {councilCandidates.map((candidate) => {
-            const on = controls.council.includes(candidate.key);
-            const brand = brandFor(candidate.providerId, candidate.label);
-            return (
+        <div className="cg-council-pick">
+          <div className="cg-mini-seg" role="tablist" aria-label="Free or paid models">
+            {COUNCIL_FACETS.map((facet) => (
               <button
-                key={candidate.key}
+                key={facet.value}
                 type="button"
-                className="cg-chip cg-chip-btn"
-                aria-pressed={on}
-                data-tone={on ? "signal" : undefined}
-                title={`${candidate.label} · ${candidate.modelId}`}
-                onClick={() => toggleMember(candidate.key)}
+                role="tab"
+                aria-selected={controls.councilFacet === facet.value}
+                title={facet.hint}
+                onClick={() => onControls({ councilFacet: facet.value })}
               >
-                <AgentMark agent={brand.hue} icon={brand.icon} label={brand.monogram} />
-                {candidate.label}
-                <span className="cg-mono"> {candidate.modelId}</span>
+                {facet.label}
               </button>
-            );
-          })}
-          {councilCandidates.length === 0 && (
+            ))}
+          </div>
+          <div className="cg-council-slots" role="group" aria-label="Council models">
+            {COUNCIL_SLOTS.map((slot) => (
+              <select
+                key={slot}
+                className="cg-mini-select"
+                aria-label={`Council model ${slot + 1}`}
+                value={controls.council[slot] ?? ""}
+                disabled={councilCandidates.length === 0}
+                onChange={(event) => setCouncilSlot(slot, event.target.value)}
+              >
+                <option value="">— pick a model —</option>
+                {councilGroups.map((group) => (
+                  <optgroup key={group.providerId} label={group.label}>
+                    {group.options.map((candidate) => (
+                      <option key={candidate.key} value={candidate.key}>
+                        {candidate.modelId}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            ))}
+          </div>
+          {councilCandidates.length === 0 ? (
             <span className="cg-view-sub">Add a chat provider to run a council.</span>
-          )}
-          {councilCandidates.length > 0 && controls.council.length < 2 && (
-            <Chip tone="warn">pick at least two</Chip>
+          ) : (
+            chosen.length < 2 && <Chip tone="warn">pick at least two</Chip>
           )}
         </div>
       )}

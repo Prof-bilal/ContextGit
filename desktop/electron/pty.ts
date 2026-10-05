@@ -4,6 +4,8 @@
  */
 import { type IPty, spawn } from "node-pty";
 
+import { HARNESSES } from "../shared/harnesses";
+
 export interface PtyPreset {
   /** Command to run; `null` uses the user's default shell. */
   command: string | null;
@@ -11,15 +13,9 @@ export interface PtyPreset {
 }
 
 /** CLI presets shown in the "New session" picker. Any command can be typed too. */
-export const PTY_PRESETS: Record<string, PtyPreset> = {
-  shell: { command: null, args: [] },
-  claude: { command: "claude", args: [] },
-  codex: { command: "codex", args: [] },
-  opencode: { command: "opencode", args: [] },
-  gemini: { command: "gemini", args: [] },
-  aider: { command: "aider", args: [] },
-  ollama: { command: "ollama", args: ["run"] },
-};
+export const PTY_PRESETS: Record<string, PtyPreset> = Object.fromEntries(
+  HARNESSES.map((harness) => [harness.id, { command: harness.command, args: harness.args }]),
+);
 
 export interface PtyStartOptions {
   id: string;

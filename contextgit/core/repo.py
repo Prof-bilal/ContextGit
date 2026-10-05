@@ -86,7 +86,18 @@ _DEFAULT_MAX_ACTIVE = 5
 # Port the first run gets; each further run takes the next one.
 _DEFAULT_PORT_BASE = 4000
 # Verifier preference when the caller does not name one (never the implementer).
-_VERIFIER_AGENTS = ("claude", "codex", "gemini", "opencode", "aider")
+_VERIFIER_AGENTS = (
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "aider",
+    "freebuff",
+    "cline",
+    "pi",
+    "kilo",
+    "commandcode",
+)
 
 
 class Repo:

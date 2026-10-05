@@ -7,8 +7,10 @@ import { useEffect, useRef, useState } from "react";
 import { LuX } from "react-icons/lu";
 
 import { api, type Session } from "@/lib/api";
+import { harnessFor } from "../../../shared/harnesses";
 import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, StatusIcon } from "../primitives";
+import HarnessInstall from "./HarnessInstall";
 
 /** ANSI palette shared by both themes so full-screen TUIs render intentional colours. */
 const ANSI = {
@@ -101,10 +103,18 @@ export default function TerminalPane({
   const teardownRef = useRef<number | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
   const restartingRef = useRef(false);
+  const command = session.agent ?? "shell";
+  /** True when this harness must be installed (npm) before its terminal starts. */
+  const needsInstall = Boolean(harnessFor(command)?.npmPackage);
   const [nonce, setNonce] = useState(0);
   const [stagedCount, setStagedCount] = useState(0);
   const [exited, setExited] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * A harness CLI that ships via npm is installed on demand before its PTY
+   * starts; `installReady` gates the terminal effect until the binary exists.
+   */
+  const [installReady, setInstallReady] = useState(!needsInstall);
   /**
    * The session object is replaced whenever the backend updates it (status,
    * auto-checkpoint), but the terminal effect runs once per launch — so read the
@@ -113,9 +123,9 @@ export default function TerminalPane({
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  const command = session.agent ?? "shell";
-
   useEffect(() => {
+    // Wait for the on-demand install to finish before creating the terminal.
+    if (needsInstall && !installReady) return;
     const ptyId = ptyIdRef.current;
     const bridge = window.contextgit;
 
@@ -293,9 +303,10 @@ export default function TerminalPane({
         disposeRef.current = null;
       }, 0);
     };
-    // Re-runs only on an explicit restart (nonce); the agent never changes.
+    // Re-runs on an explicit restart (nonce) or once an install clears the gate;
+    // the agent itself never changes for a session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce]);
+  }, [nonce, installReady, needsInstall]);
 
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = TERM_THEME[theme];
@@ -396,7 +407,11 @@ export default function TerminalPane({
           {error}
         </p>
       )}
-      <div className="cg-term-host" ref={hostRef} onMouseDown={() => termRef.current?.focus()} />
+      {needsInstall && !installReady ? (
+        <HarnessInstall command={command} onReady={() => setInstallReady(true)} />
+      ) : (
+        <div className="cg-term-host" ref={hostRef} onMouseDown={() => termRef.current?.focus()} />
+      )}
     </section>
   );
 }

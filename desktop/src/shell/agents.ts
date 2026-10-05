@@ -1,28 +1,27 @@
 /**
- * Agent CLI metadata for the workspace UI. `id` doubles as the PTY preset name
- * (see desktop/electron/pty.ts) and as the `data-agent` key for the monogram hue.
+ * Agent CLI metadata for the workspace UI. The canonical list lives in
+ * desktop/shared/harnesses.ts (shared with the Electron main process); this
+ * module exposes the UI-facing subset.
  */
+import { DEFAULT_HARNESS, HARNESSES } from "../../shared/harnesses";
+
 export interface AgentInfo {
   id: string;
   label: string;
   monogram: string;
 }
 
-export const AGENTS: AgentInfo[] = [
-  { id: "claude", label: "Claude Code", monogram: "C" },
-  { id: "codex", label: "Codex", monogram: "X" },
-  { id: "opencode", label: "OpenCode", monogram: "O" },
-  { id: "gemini", label: "Gemini CLI", monogram: "G" },
-  { id: "aider", label: "Aider", monogram: "A" },
-  { id: "ollama", label: "Ollama", monogram: "L" },
-  { id: "shell", label: "Shell", monogram: "$" },
-];
+export const AGENTS: AgentInfo[] = HARNESSES.map(({ id, label, monogram }) => ({
+  id,
+  label,
+  monogram,
+}));
 
 export const AGENT_BY_ID: Record<string, AgentInfo> = Object.fromEntries(
   AGENTS.map((agent) => [agent.id, agent]),
 );
 
-export const DEFAULT_AGENT = "claude";
+export const DEFAULT_AGENT = DEFAULT_HARNESS;
 
 /** Label for an arbitrary session.agent value (falls back to the raw string). */
 export function agentLabel(agent: string | null): string {

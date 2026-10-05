@@ -12,6 +12,7 @@ import {
 import {
   SiAnthropic,
   SiClaude,
+  SiCline,
   SiGnubash,
   SiGooglegemini,
   SiOllama,
@@ -19,6 +20,7 @@ import {
 } from "react-icons/si";
 
 import type { SessionStatus } from "@/lib/api";
+import { CommandCodeMark, FreebuffMark, KiloMark, PiMark } from "./marks/brand";
 
 /** Real brand mark per agent / provider key; unknown keys fall back to a letter. */
 const MARKS: Record<string, IconType> = {
@@ -36,6 +38,11 @@ const MARKS: Record<string, IconType> = {
   aider: BsRobot,
   grok: LuSparkles,
   compatible: LuPlug,
+  freebuff: FreebuffMark,
+  cline: SiCline,
+  pi: PiMark,
+  kilo: KiloMark,
+  commandcode: CommandCodeMark,
 };
 
 const STATUS_ICONS: Record<SessionStatus, IconType> = {
@@ -68,6 +75,11 @@ const MARK_COLORS: Record<string, string> = {
   aider: "var(--cg-brand-aider)",
   grok: "var(--cg-brand-openai)",
   compatible: "var(--cg-ink-2)",
+  freebuff: "var(--cg-brand-freebuff)",
+  cline: "var(--cg-brand-cline)",
+  pi: "var(--cg-brand-pi)",
+  kilo: "var(--cg-brand-kilo)",
+  commandcode: "var(--cg-brand-commandcode)",
 };
 
 export function AgentMark({

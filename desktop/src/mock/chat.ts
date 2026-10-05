@@ -22,9 +22,20 @@ export const RESEARCH_MODES: Array<{ value: ResearchMode; label: string; hint: s
   { value: "verify", label: "Verify", hint: "Check claims against independent sources" },
 ];
 
+/** Free/paid filter for the council model dropdowns. */
+export type CouncilFacet = "all" | "free" | "paid";
+
+export const COUNCIL_FACETS: Array<{ value: CouncilFacet; label: string; hint: string }> = [
+  { value: "all", label: "All", hint: "Every model" },
+  { value: "free", label: "Free", hint: "Free models (:free, local, offline)" },
+  { value: "paid", label: "Paid", hint: "Metered models" },
+];
+
 export interface ComposerControls {
-  /** Council members as "provider:model" keys. */
+  /** Council members as "provider:model" keys, one per dropdown slot. */
   council: string[];
+  /** Restrict the council dropdowns to free or paid models. */
+  councilFacet: CouncilFacet;
   researchMode: ResearchMode;
   depth: "quick" | "standard" | "deep";
   imageProvider: string;
@@ -34,6 +45,7 @@ export interface ComposerControls {
 
 export const DEFAULT_CONTROLS: ComposerControls = {
   council: [],
+  councilFacet: "all",
   researchMode: "deep",
   depth: "standard",
   imageProvider: "",

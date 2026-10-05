@@ -40,6 +40,11 @@
   --cg-agent-aider: #7fd06a;
   --cg-agent-ollama: #d98cff;
   --cg-agent-shell: #9aa0a6;
+  --cg-agent-freebuff: #f0a35e;
+  --cg-agent-cline: #69d2a0;
+  --cg-agent-pi: #7c9cff;
+  --cg-agent-kilo: #f5e10a;
+  --cg-agent-commandcode: #e0709a;
 
   /* Official brand colours for the CLI / provider marks. */
   --cg-brand-claude: #d97757;
@@ -49,6 +54,13 @@
   --cg-brand-ollama: #ffffff;
   --cg-brand-shell: #4eaa25;
   --cg-brand-aider: #14b014;
+  /* Freebuff / Cline / Pi / Command Code ship monochrome marks (their brand is
+     near-black), so on the dark shell they render light; Kilo stays yellow. */
+  --cg-brand-freebuff: #ffffff;
+  --cg-brand-cline: #f4f4f5;
+  --cg-brand-pi: #ffffff;
+  --cg-brand-kilo: #f5e10a;
+  --cg-brand-commandcode: #ffffff;
 
   --cg-rail: 17rem;
   --cg-dock: 20rem;
@@ -89,10 +101,20 @@
   --cg-agent-gemini: #2f7fd6;
   --cg-agent-aider: #3d8b34;
   --cg-agent-ollama: #8a3fb0;
+  --cg-agent-freebuff: #c9741f;
+  --cg-agent-cline: #1f8f5f;
+  --cg-agent-pi: #3a56c8;
+  --cg-agent-kilo: #a67c00;
+  --cg-agent-commandcode: #b83b68;
   /* Monochrome brand marks flip to near-black on the paper surface. */
   --cg-brand-openai: #191919;
   --cg-brand-opencode: #211e1e;
   --cg-brand-ollama: #191919;
+  --cg-brand-freebuff: #0a0a0b;
+  --cg-brand-cline: #18181b;
+  --cg-brand-pi: #000000;
+  --cg-brand-kilo: #a67c00;
+  --cg-brand-commandcode: #111111;
 }
 
 /* ------------------------------------------------------------------ base --- */
@@ -1053,6 +1075,60 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
   color: var(--cg-bad);
   font: 400 0.68rem/1.4 "Martian Mono", monospace;
+}
+/* On-demand harness install — fills the pane in place of the terminal. */
+.cg-install {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  gap: 0.9rem;
+  padding: 1.1rem 1.25rem;
+  background: var(--cg-surface-2);
+}
+.cg-install-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.cg-install-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.cg-install-copy h3 {
+  margin: 0;
+  font: 600 0.95rem/1.2 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-install-copy p {
+  margin: 0;
+  font: 400 0.78rem/1.35 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink-3);
+  overflow-wrap: anywhere;
+}
+.cg-install-bar > span {
+  transition: width 0.5s var(--cg-ease);
+}
+.cg-install-bar[data-active="true"] > span {
+  background: linear-gradient(90deg, var(--cg-signal), var(--cg-signal-hot), var(--cg-signal));
+  background-size: 200% 100%;
+  animation: cg-install-shimmer 1.2s linear infinite;
+}
+@keyframes cg-install-shimmer {
+  from { background-position: 0% 0; }
+  to { background-position: 200% 0; }
+}
+.cg-install-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.cg-install-phase {
+  margin-right: auto;
+  font: 400 0.62rem/1.2 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+  overflow-wrap: anywhere;
 }
 .cg-form-warn {
   margin: 0;
@@ -2191,6 +2267,25 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   color: var(--cg-ink);
   font: 500 0.72rem/1 "Schibsted Grotesk", sans-serif;
 }
+/* Council: a free/paid filter plus three model dropdowns. */
+.cg-council-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.cg-council-slots {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.cg-council-pick .cg-mini-select {
+  max-width: 15rem;
+}
+.cg-council-pick .cg-mini-select:disabled {
+  opacity: 0.55;
+}
 .cg-chip-btn {
   cursor: pointer;
 }
@@ -2524,6 +2619,11 @@ img.cg-tile-art {
 .cg-hue[data-agent="gemini"] { background: var(--cg-agent-gemini); }
 .cg-hue[data-agent="aider"] { background: var(--cg-agent-aider); }
 .cg-hue[data-agent="ollama"] { background: var(--cg-agent-ollama); }
+.cg-hue[data-agent="freebuff"] { background: var(--cg-agent-freebuff); }
+.cg-hue[data-agent="cline"] { background: var(--cg-agent-cline); }
+.cg-hue[data-agent="pi"] { background: var(--cg-agent-pi); }
+.cg-hue[data-agent="kilo"] { background: var(--cg-agent-kilo); }
+.cg-hue[data-agent="commandcode"] { background: var(--cg-agent-commandcode); }
 .cg-text-input {
   width: 100%;
   padding: 0.55rem 0.7rem;

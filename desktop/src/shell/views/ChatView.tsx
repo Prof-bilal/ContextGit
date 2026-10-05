@@ -26,7 +26,7 @@ import {
 import { brandFor, type ModelSelection } from "../providers";
 import { AgentMark, Chip } from "../primitives";
 import BlameSheet, { type BlameView } from "../chat/BlameSheet";
-import ComposerModes, { type CouncilCandidate } from "../chat/ComposerModes";
+import ComposerModes, { councilMembers, type CouncilCandidate } from "../chat/ComposerModes";
 import ConnectProviderCard from "../chat/ConnectProviderCard";
 import { isReady } from "../chat/providerStatus";
 import CouncilCard, { type CouncilMemberView } from "../chat/CouncilCard";
@@ -145,9 +145,27 @@ export default function ChatView({
           providerId: entry.id,
           modelId: model,
           label: entry.label,
+          // `:free` is OpenRouter's free tier; local/offline cost nothing.
+          free: entry.kind === "local" || entry.kind === "mock" || /:free\b/i.test(model),
         }));
       }),
     [chatProviders],
+  );
+
+  /**
+   * Models a council can actually call: from connected (non-mock) chat
+   * providers. A council is several *models*, which may all live on one
+   * provider (e.g. three OpenRouter models), so count models not providers.
+   */
+  const readyCouncilModels = useMemo(
+    () =>
+      providers
+        .filter((entry) => entry.capability === "chat" && entry.kind !== "mock" && isReady(entry))
+        .reduce(
+          (total, entry) => total + Math.max(entry.models.length, entry.default_model ? 1 : 0),
+          0,
+        ),
+    [providers],
   );
 
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -316,7 +334,7 @@ export default function ChatView({
 
   // ---- Council: same prompt to several providers, streamed in parallel -----------------
   const runCouncil = async (text: string) => {
-    const members: CouncilMemberView[] = controls.council
+    const members: CouncilMemberView[] = councilMembers(controls.council)
       .map((key) => councilCandidates.find((candidate) => candidate.key === key))
       .filter((candidate): candidate is CouncilCandidate => candidate !== undefined)
       .map((candidate) => ({
@@ -615,12 +633,12 @@ export default function ChatView({
           "Add an API key for a model provider (Agnes AI, OpenRouter, Groq, Anthropic, OpenAI…) to start. ContextGit talks straight to your provider and keeps the key on this machine.",
       };
     }
-    if (mode === "council" && readyChatCount < 2) {
+    if (mode === "council" && readyCouncilModels < 2) {
       return {
         capability: "chat",
         title: "Connect two models for a council",
         message:
-          "A council asks the same prompt of several models. Add at least two connected providers (or a second model) with keys.",
+          "A council asks the same prompt of several models. Connect a provider with at least two models — several models from one provider work fine — or add a second provider with a key.",
       };
     }
     if (mode === "image" && readyImageCount === 0) {
@@ -654,7 +672,7 @@ export default function ChatView({
     draft.trim().length > 0 &&
     !running &&
     !blocked &&
-    (mode !== "council" || controls.council.length >= 2) &&
+    (mode !== "council" || councilMembers(controls.council).length >= 2) &&
     (mode !== "chat" || (Boolean(provider) && selection.modelId !== ""));
 
   const send = () => {
@@ -671,7 +689,7 @@ export default function ChatView({
     mode === "image"
       ? IMAGE_PLACEHOLDER
       : mode === "council"
-        ? `Ask the same question of ${controls.council.length} models…`
+        ? `Ask the same question of ${councilMembers(controls.council).length} models…`
         : mode === "research"
           ? "What should it research?"
           : `Ask ${modelLabel || "the model"}…`;
@@ -689,7 +707,7 @@ export default function ChatView({
     mode === "chat"
       ? `Replying with ${provider?.label ?? "—"} · ${modelLabel || "choose a model"}`
       : mode === "council"
-        ? `${controls.council.length} models · one decision recorded`
+        ? `${councilMembers(controls.council).length} models · one decision recorded`
         : mode === "research"
           ? `${controls.researchMode} · ${controls.depth} depth · every step commits`
           : `${controls.imageModel || "choose an image model"} · ${controls.aspect}`;

@@ -17,6 +17,12 @@ export interface ContextGitBridge {
   ptyResize: (id: string, cols: number, rows: number) => void;
   ptyKill: (id: string) => void;
   ptyPresets: () => Promise<string[]>;
+  harnessCheck: (id: string) => Promise<import("../shared/harnesses").HarnessCheck>;
+  harnessInstall: (id: string) => Promise<{ started: boolean }>;
+  harnessCancel: (id: string) => void;
+  onHarnessProgress: (
+    callback: (progress: import("../shared/harnesses").HarnessInstallEvent) => void,
+  ) => () => void;
   getWorkspace: () => Promise<import("../shared/workspace").Workspace>;
   chooseWorkspace: () => Promise<import("../shared/workspace").Workspace | null>;
   pickWorkspaceLocation: () => Promise<string | null>;

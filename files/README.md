@@ -70,3 +70,4 @@ npm run test:e2e
 | `files/team-mode-mcp.md` | Team mode: the MCP channel (tools and setup) |
 | `files/chat-research-landscape.md` | Chat/research: the research types, prior art and lead-scraping guardrails |
 | `files/chat-providers.md` | Chat/research: the provider layer, add-a-provider flow and catalog |
+| `files/code-harnesses.md` | Code tab: the CLI harness registry, on-demand install and branding |

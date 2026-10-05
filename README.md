@@ -35,6 +35,10 @@ that history a mergeable artefact alongside your code.
   branch *and* its reasoning on the context branch.
 - **Desktop workbench** — Electron app with Chat / Code / Agent / Git tabs, live
   terminals (xterm + node-pty) per run.
+- **CLI harnesses** — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama,
+  Freebuff, Cline, Pi, Kilo Code and Command Code, each with its real brand icon.
+  A harness you don't have is installed in the background with a progress bar —
+  no installer terminal. See [`files/code-harnesses.md`](files/code-harnesses.md).
 - **Team mode** — a mission split into tasks with roles, file scopes and
   dependencies; one run + worktree per task, dependency gating, and enforced
   ownership (two tasks can never claim the same files).

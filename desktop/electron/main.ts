@@ -10,6 +10,14 @@ import net from "node:net";
 import path from "node:path";
 
 import { PTY_PRESETS, PtyManager } from "./pty";
+import {
+  augmentedPath,
+  cancelInstall,
+  checkHarness,
+  installHarness,
+  killInstalls,
+} from "./harness";
+import { HARNESS_BY_ID } from "../shared/harnesses";
 import type { BackendStatus } from "../shared/status";
 import type { Workspace } from "../shared/workspace";
 
@@ -277,7 +285,7 @@ function resolvePtyCwd(requested?: string): string | null {
 
 ipcMain.on(
   "ctx:pty-start",
-  (
+  async (
     _event,
     options: {
       id: string;
@@ -300,11 +308,14 @@ ipcMain.on(
       mainWindow?.webContents.send("ctx:pty-exit", options.id, 1);
       return;
     }
+    // GUI-launched Electron has a bare PATH; use the augmented one so a CLI in
+    // ~/.local/bin, a mise shim or an npm global prefix is actually spawnable.
+    const PATH = await augmentedPath();
     ptys.start({
       ...options,
       cwd,
       // A run's own PORT keeps its dev server off every other run's.
-      env: { TERM: "xterm-256color", ...(options.env ?? {}) },
+      env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}) },
     });
   },
 );
@@ -314,6 +325,30 @@ ipcMain.on("ctx:pty-resize", (_event, id: string, cols: number, rows: number) =>
 );
 ipcMain.on("ctx:pty-kill", (_event, id: string) => ptys.kill(id));
 ipcMain.handle("ctx:pty-presets", () => Object.keys(PTY_PRESETS));
+
+// ---------- Harness detection + hidden install ----------
+
+/** Is a harness's CLI on PATH? `shell` is always ready. */
+ipcMain.handle("ctx:harness-check", async (_event, id: string) => {
+  const harness = HARNESS_BY_ID[id];
+  if (!harness) return { id, command: id, installed: false, path: null };
+  return checkHarness(harness);
+});
+
+/**
+ * Install a harness globally. Resolves immediately; progress (and the final
+ * result) arrive over `ctx:harness-progress`. Never shows a terminal.
+ */
+ipcMain.handle("ctx:harness-install", (_event, id: string) => {
+  const harness = HARNESS_BY_ID[id];
+  if (!harness) throw new Error(`Unknown harness: ${id}`);
+  void installHarness(harness, (progress) => {
+    mainWindow?.webContents.send("ctx:harness-progress", progress);
+  });
+  return { started: true };
+});
+
+ipcMain.on("ctx:harness-cancel", (_event, id: string) => cancelInstall(id));
 
 ipcMain.handle("ctx:restart-backend", async () => {
   stopBackend();
@@ -384,10 +419,12 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   ptys.killAll();
+  killInstalls();
   stopBackend();
   app.quit();
 });
 app.on("before-quit", () => {
   ptys.killAll();
+  killInstalls();
   stopBackend();
 });
