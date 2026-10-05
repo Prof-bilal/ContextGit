@@ -1,15 +1,8 @@
 /**
- * Sample data for the two tabs still on fixtures (Chat, Agent). Code and Git read
- * the real API; those two need the capture layer (plan.md Phase 10) to be real.
+ * Sample data for the one tab still on fixtures (Agent). Chat, Code and Git all
+ * read the real API now; Agent still needs its capture layer (plan.md Phase 10).
  */
-import type { Branch, Message, SessionStatus } from "@/lib/api";
-
-export interface Conversation {
-  branch: Branch;
-  messages: Message[];
-  updatedAt: string;
-  tokens: number;
-}
+import type { SessionStatus } from "@/lib/api";
 
 export interface AgentRun {
   id: string;
@@ -45,38 +38,6 @@ export interface NamedAgent {
   };
   runs: AgentRun[];
 }
-
-export const CONVERSATIONS: Conversation[] = [
-  {
-    branch: { name: "chat/caching-strategy", head_commit_id: "d1a2b3c4e5f6" },
-    updatedAt: "2026-10-02T08:15:00Z",
-    tokens: 3120,
-    messages: [
-      { role: "user", content: "We need a cache for the token bucket. Redis or in-process?" },
-      { role: "assistant", content: "In-process for a single node; Redis only when you run more than one instance. Given the 50ms skew you hit before, I'd start in-process with an LRU and revisit at scale." },
-      { role: "user", content: "What was the skew problem exactly?" },
-      { role: "assistant", content: "Two Redis nodes disagreed by 50ms on the bucket refill window, so requests were double-counted. Sticky sessions fixed it, but it's a reason to avoid Redis here." },
-    ],
-  },
-  {
-    branch: { name: "chat/merge-quality", head_commit_id: "a9b8c7d6e5f4" },
-    updatedAt: "2026-10-01T19:40:00Z",
-    tokens: 2240,
-    messages: [
-      { role: "user", content: "How should we score whether a merge lost information?" },
-      { role: "assistant", content: "Generate probe questions from the source branch before merging, ask them against the merged context, and score retention. A lost fact is a failing eval." },
-    ],
-  },
-  {
-    branch: { name: "chat/hashing", head_commit_id: "f0e1d2c3b4a5" },
-    updatedAt: "2026-09-30T09:05:00Z",
-    tokens: 1180,
-    messages: [
-      { role: "user", content: "Why canonical JSON for commit ids?" },
-      { role: "assistant", content: "Same logical commit must hash identically regardless of key order. Sorted keys plus UTF-8 gives that, and it's byte-compatible with the landing-page demo." },
-    ],
-  },
-];
 
 /**
  * First-party agents: small recurring jobs that maintain the context layer itself

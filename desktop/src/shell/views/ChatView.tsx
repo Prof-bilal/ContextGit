@@ -13,6 +13,7 @@ import {
   type ProviderCapability,
   type ProviderInfo,
   type ResearchEvent,
+  type Role,
 } from "@/lib/api";
 
 import {
@@ -22,7 +23,6 @@ import {
   type ComposerControls,
   type ResearchMode,
 } from "../../mock/chat";
-import type { Conversation } from "../../mock/fixtures";
 import { brandFor, type ModelSelection } from "../providers";
 import { AgentMark, Chip } from "../primitives";
 import BlameSheet, { type BlameView } from "../chat/BlameSheet";
@@ -38,7 +38,7 @@ import ResearchRun, {
 } from "../chat/ResearchRun";
 
 type Entry =
-  | { kind: "message"; role: "user" | "assistant"; content: string }
+  | { kind: "message"; role: Role; content: string }
   | {
       kind: "council";
       prompt: string;
@@ -78,7 +78,6 @@ const RESEARCH_BUDGETS: Record<
 };
 
 export default function ChatView({
-  conversation,
   selection,
   providers,
   branch,
@@ -92,7 +91,6 @@ export default function ChatView({
   offlineOk,
   onUseOffline,
 }: {
-  conversation: Conversation;
   selection: ModelSelection;
   providers: ProviderInfo[];
   /** The real repo branch the turn is committed to. */
@@ -152,13 +150,7 @@ export default function ChatView({
     [chatProviders],
   );
 
-  const [entries, setEntries] = useState<Entry[]>(() =>
-    conversation.messages.map((message) => ({
-      kind: "message" as const,
-      role: message.role === "assistant" ? ("assistant" as const) : ("user" as const),
-      content: message.content,
-    })),
-  );
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [mode, setMode] = useState<ChatMode>("chat");
   const [controls, setControls] = useState<ComposerControls>(DEFAULT_CONTROLS);
   const [draft, setDraft] = useState("");
@@ -174,6 +166,30 @@ export default function ChatView({
   const blameCache = useRef<BlameEntry[] | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // The transcript is the branch's real committed context, never sample data.
+  useEffect(() => {
+    let alive = true;
+    blameCache.current = null;
+    void (async () => {
+      try {
+        const messages = await api.branchContext(branch);
+        if (!alive) return;
+        setEntries(
+          messages.map((message) => ({
+            kind: "message" as const,
+            role: message.role,
+            content: message.content,
+          })),
+        );
+      } catch {
+        if (alive) setEntries([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [branch]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -662,7 +678,7 @@ export default function ChatView({
 
   const label =
     mode === "chat"
-      ? `New message on ${branch || conversation.branch.name}`
+      ? `New message on ${branch || "this branch"}`
       : mode === "council"
         ? "Council run"
         : mode === "research"
@@ -681,7 +697,7 @@ export default function ChatView({
   return (
     <div className="cg-chat">
       <div className="cg-view-toolbar">
-        <h1>{branch || conversation.branch.name}</h1>
+        <h1>{branch || "Conversation"}</h1>
         {commitId && <Chip>{commitId.slice(0, 7)}</Chip>}
         <Chip tone="ok">live</Chip>
         <span className="cg-toolbar-spacer" />

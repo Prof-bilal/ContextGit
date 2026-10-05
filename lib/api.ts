@@ -380,6 +380,8 @@ export const api = {
     request<CommitResponse[]>(`/api/v1/commits?branch=${encodeURIComponent(branch)}`),
   context: (commitId: string) =>
     request<Message[]>(`/api/v1/context?commit_id=${encodeURIComponent(commitId)}`),
+  branchContext: (name: string) =>
+    request<Message[]>(`/api/v1/context?branch=${encodeURIComponent(name)}`),
   diff: (a: string, b: string) =>
     request<Diff>(`/api/v1/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   createBranch: (name: string, fromCommit: string) =>

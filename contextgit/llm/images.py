@@ -13,7 +13,12 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel
 
-_RETRYABLE_STATUS = {408, 409, 429}
+from contextgit.llm.http_error import (
+    ProviderHTTPError,
+    describe_payload,
+    describe_response,
+    retryable,
+)
 
 # Aspect ratio -> (gpt-image-1, dall-e-3, local SD) pixel sizes.
 _SIZES: dict[str, dict[str, str]] = {
@@ -52,11 +57,9 @@ def size_for(aspect: str, model: str) -> str:
     return table.get(family, table.get("gpt-image-1", "1024x1024"))
 
 
-def _retryable(exc: Exception) -> bool:
-    return isinstance(exc, httpx.TransportError) or (
-        isinstance(exc, httpx.HTTPStatusError)
-        and (exc.response.status_code in _RETRYABLE_STATUS or exc.response.status_code >= 500)
-    )
+def _check(response: httpx.Response) -> None:
+    if response.status_code >= 400:
+        raise ProviderHTTPError(response.status_code, describe_response(response))
 
 
 class OpenAIImages:
@@ -98,8 +101,11 @@ class OpenAIImages:
                         },
                         json=body,
                     )
-                    response.raise_for_status()
+                    _check(response)
                     data = response.json()
+                entries = data.get("data") if isinstance(data, dict) else None
+                if not entries:
+                    raise ProviderHTTPError(200, describe_payload(data))
                 return [
                     ImageResult(
                         index=index,
@@ -108,11 +114,11 @@ class OpenAIImages:
                         model=model,
                         revised_prompt=entry.get("revised_prompt"),
                     )
-                    for index, entry in enumerate(data.get("data", []))
+                    for index, entry in enumerate(entries)
                 ]
             except Exception as exc:
                 last = exc
-                if not _retryable(exc) or attempt == self.retries:
+                if not retryable(exc) or attempt == self.retries:
                     break
                 time.sleep(min(0.25 * (2**attempt), 2.0))
         raise RuntimeError(f"image generation failed: {last}") from last
@@ -146,7 +152,7 @@ class LocalSDImages:
                         "steps": 25,
                     },
                 )
-                response.raise_for_status()
+                _check(response)
                 data = response.json()
         except Exception as exc:
             raise RuntimeError(f"local image generation failed: {exc}") from exc

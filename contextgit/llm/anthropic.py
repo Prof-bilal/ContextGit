@@ -14,9 +14,14 @@ from typing import Any
 import httpx
 
 from contextgit.core.models import Message
+from contextgit.llm.http_error import (
+    ProviderHTTPError,
+    describe_payload,
+    describe_response,
+    retryable,
+)
 
 _ANTHROPIC_VERSION = "2023-06-01"
-_RETRYABLE_STATUS = {408, 409, 429}
 
 
 class AnthropicProvider:
@@ -68,15 +73,14 @@ class AnthropicProvider:
         return payload
 
     @staticmethod
-    def _retryable(exc: Exception) -> bool:
-        if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
-            return True
-        if isinstance(exc, httpx.HTTPStatusError):
-            return exc.response.status_code in _RETRYABLE_STATUS or exc.response.status_code >= 500
-        return False
+    def _raise_for_status(response: httpx.Response) -> None:
+        if response.status_code >= 400:
+            raise ProviderHTTPError(response.status_code, describe_response(response))
 
     @staticmethod
     def _text_from(data: dict[str, Any]) -> str:
+        if data.get("error"):
+            raise ProviderHTTPError(200, describe_payload(data))
         blocks = data.get("content") or []
         return "".join(str(block.get("text", "")) for block in blocks if isinstance(block, dict))
 
@@ -88,12 +92,12 @@ class AnthropicProvider:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     response = client.post(url, headers=self._headers(), json=payload)
-                    response.raise_for_status()
+                    self._raise_for_status(response)
                     data = response.json()
                 return self._text_from(data)
             except Exception as exc:
                 last = exc
-                if not self._retryable(exc) or attempt == self.retries:
+                if not retryable(exc) or attempt == self.retries:
                     break
                 time.sleep(min(0.25 * (2**attempt), 2.0))
         raise RuntimeError(f"LLM request failed: {last}") from last
@@ -107,6 +111,8 @@ class AnthropicProvider:
             event = json.loads(line[5:].strip())
         except ValueError:
             return None
+        if event.get("type") == "error":
+            raise ProviderHTTPError(200, describe_payload(event.get("error") or event))
         if event.get("type") == "content_block_delta":
             delta = event.get("delta") or {}
             text = delta.get("text")
@@ -120,7 +126,7 @@ class AnthropicProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 with client.stream("POST", url, headers=self._headers(), json=payload) as response:
-                    response.raise_for_status()
+                    self._raise_for_status(response)
                     for line in response.iter_lines():
                         text = self._delta_from(line)
                         if text:
@@ -138,7 +144,7 @@ class AnthropicProvider:
                     async with client.stream(
                         "POST", url, headers=self._headers(), json=payload
                     ) as response:
-                        response.raise_for_status()
+                        self._raise_for_status(response)
                         async for line in response.aiter_lines():
                             text = self._delta_from(line)
                             if text:
@@ -146,7 +152,7 @@ class AnthropicProvider:
                                 yield text
                 return
             except Exception as exc:
-                if sent or not self._retryable(exc) or attempt == self.retries:
+                if sent or not retryable(exc) or attempt == self.retries:
                     raise RuntimeError(f"LLM stream failed: {exc}") from exc
                 await asyncio.sleep(min(0.25 * (2**attempt), 2.0))
 

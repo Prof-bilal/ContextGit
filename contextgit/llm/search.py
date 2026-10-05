@@ -12,7 +12,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel
 
-_RETRYABLE_STATUS = {408, 409, 429}
+from contextgit.llm.http_error import ProviderHTTPError, describe_response, retryable
 
 
 class SearchResult(BaseModel):
@@ -61,8 +61,18 @@ class TavilySearch:
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     response = client.post(f"{self.base_url}/search", json=body)
-                    response.raise_for_status()
+                    if response.status_code >= 400:
+                        raise ProviderHTTPError(
+                            response.status_code, describe_response(response)
+                        )
                     data = response.json()
+                if isinstance(data, dict) and data.get("error"):
+                    raise ProviderHTTPError(
+                        200,
+                        str(data["error"])
+                        if not isinstance(data["error"], dict)
+                        else str(data["error"].get("message", data["error"])),
+                    )
                 results: list[SearchResult] = []
                 for entry in data.get("results", []):
                     content = entry.get("raw_content") or entry.get("content") or ""
@@ -77,13 +87,7 @@ class TavilySearch:
                 return results
             except Exception as exc:
                 last = exc
-                status = (
-                    exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-                )
-                retryable = isinstance(exc, httpx.TransportError) or (
-                    status is not None and (status in _RETRYABLE_STATUS or status >= 500)
-                )
-                if not retryable or attempt == self.retries:
+                if not retryable(exc) or attempt == self.retries:
                     break
                 time.sleep(min(0.25 * (2**attempt), 2.0))
         raise RuntimeError(f"search failed: {last}") from last

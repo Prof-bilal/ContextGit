@@ -15,8 +15,12 @@ from typing import Any
 import httpx
 
 from contextgit.core.models import AuthStyle, Message
-
-_RETRYABLE_STATUS = {408, 409, 429}
+from contextgit.llm.http_error import (
+    ProviderHTTPError,
+    describe_payload,
+    describe_response,
+    retryable,
+)
 
 
 class OpenAICompatibleProvider:
@@ -70,12 +74,9 @@ class OpenAICompatibleProvider:
         return payload
 
     @staticmethod
-    def _retryable(exc: Exception) -> bool:
-        if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
-            return True
-        if isinstance(exc, httpx.HTTPStatusError):
-            return exc.response.status_code in _RETRYABLE_STATUS or exc.response.status_code >= 500
-        return False
+    def _raise_for_status(response: httpx.Response) -> None:
+        if response.status_code >= 400:
+            raise ProviderHTTPError(response.status_code, describe_response(response))
 
     # ---------- completions ----------
 
@@ -90,12 +91,18 @@ class OpenAICompatibleProvider:
                     response = client.post(
                         url, headers=self._headers(), params=self._params(), json=payload
                     )
-                    response.raise_for_status()
+                    self._raise_for_status(response)
                     data = response.json()
-                return str(data["choices"][0]["message"]["content"])
+                choices = data.get("choices") if isinstance(data, dict) else None
+                if not choices:
+                    # A 200 whose body is not a completion (some gateways return
+                    # errors this way); surface the provider's reason, not a KeyError.
+                    raise ProviderHTTPError(200, describe_payload(data))
+                message = choices[0].get("message") or {}
+                return str(message.get("content") or "")
             except Exception as exc:
                 last = exc
-                if not self._retryable(exc) or attempt == self.retries:
+                if not retryable(exc) or attempt == self.retries:
                     break
                 time.sleep(min(0.25 * (2**attempt), 2.0))
         raise RuntimeError(f"LLM request failed: {last}") from last
@@ -114,6 +121,9 @@ class OpenAICompatibleProvider:
                 event = json.loads(data)
             except ValueError:
                 continue
+            if isinstance(event, dict) and event.get("error"):
+                # Providers stream mid-stream failures as an error frame.
+                raise ProviderHTTPError(200, describe_payload(event))
             choices = event.get("choices") or []
             if not choices:
                 continue
@@ -131,7 +141,7 @@ class OpenAICompatibleProvider:
                 with client.stream(
                     "POST", url, headers=self._headers(), params=self._params(), json=payload
                 ) as response:
-                    response.raise_for_status()
+                    self._raise_for_status(response)
                     yield from self._iter_sse_deltas(response.iter_lines())
         except Exception as exc:
             raise RuntimeError(f"LLM stream failed: {exc}") from exc
@@ -148,14 +158,14 @@ class OpenAICompatibleProvider:
                     async with client.stream(
                         "POST", url, headers=self._headers(), params=self._params(), json=payload
                     ) as response:
-                        response.raise_for_status()
+                        self._raise_for_status(response)
                         async for line in response.aiter_lines():
                             for delta in self._iter_sse_deltas(iter([line])):
                                 sent = True
                                 yield delta
                 return
             except Exception as exc:
-                if sent or not self._retryable(exc) or attempt == self.retries:
+                if sent or not retryable(exc) or attempt == self.retries:
                     raise RuntimeError(f"LLM stream failed: {exc}") from exc
                 await asyncio.sleep(min(0.25 * (2**attempt), 2.0))
 
@@ -165,7 +175,7 @@ class OpenAICompatibleProvider:
             response = client.get(
                 f"{self.base_url}/models", headers=self._headers(), params=self._params()
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             data = response.json()
         entries = data.get("data") if isinstance(data, dict) else data
         models: list[str] = []

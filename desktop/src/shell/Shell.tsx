@@ -9,7 +9,7 @@ import {
   type Session,
   type Task,
 } from "@/lib/api";
-import { CONVERSATIONS, NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
+import { NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
 import { agentLabel } from "./agents";
 import AgentDialog from "./agent/AgentDialog";
 import { DEFAULT_DRAFT, draftFrom, humanSchedule, newSeed, type MissionDraft } from "./agent/mission";
@@ -29,7 +29,7 @@ import { useProviders } from "./chat/useProviders";
 import { brandFor, type ModelSelection } from "./providers";
 import TopNav, { type TabDef, type TabId } from "./TopNav";
 import AgentRail from "./rail/AgentRail";
-import ChatRail from "./rail/ChatRail";
+import ChatRail, { type ChatConversation } from "./rail/ChatRail";
 import GitRail, { type CommitFilter } from "./rail/GitRail";
 import RosterRail from "./rail/RosterRail";
 import { useFleet } from "./terminal/useFleet";
@@ -94,8 +94,8 @@ export default function Shell() {
   /** Session id → the one-line briefing typed into that terminal once it is up. */
   const [kickoff, setKickoff] = useState<Record<string, string>>({});
 
-  // ---- Chat + Agent tabs read fixtures; Git reads the real repo snapshot ----
-  const [conversationName, setConversationName] = useState(CONVERSATIONS[0]?.branch.name ?? "");
+  // ---- Chat operates on a real branch; Agent still reads fixtures ----
+  const [chatBranch, setChatBranch] = useState("");
   const [agentId, setAgentId] = useState(NAMED_AGENTS[0]?.id ?? "");
   const [agents, setAgents] = useState<NamedAgent[]>(NAMED_AGENTS);
   const [agentDialog, setAgentDialog] = useState<{ mode: "create" | "edit"; draft: MissionDraft } | null>(
@@ -139,9 +139,6 @@ export default function Shell() {
   );
 
   const activeSession = sessions.find((session) => session.id === activeId) ?? null;
-  const activeConversation =
-    CONVERSATIONS.find((conversation) => conversation.branch.name === conversationName) ??
-    CONVERSATIONS[0];
   const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
 
   // ---- Git tab: the real snapshot ----
@@ -155,6 +152,42 @@ export default function Shell() {
   const branchCommits = branchHead ? commitsOnBranch(commits, branchHead) : commits;
   const activeCommit = commits.find((commit) => commit.id === commitId) ?? branchCommits[0] ?? null;
   const activeCommitTags = (snapshot?.tags ?? []).filter((tag) => tag.commit_id === activeCommit?.id);
+
+  // Chat conversations are the repo's real branches — but only the ones that are
+  // conversations. Run/terminal branches (owned by a session) and empty scratch
+  // branches belong to the Code tab, not here.
+  const chatBranchHead =
+    branches.find((branch) => branch.name === chatBranch)?.head_commit_id ?? null;
+  const sessionBranches = new Set(sessions.map((session) => session.branch));
+  const chatConversations: ChatConversation[] = branches
+    .map((branch) => {
+      const list = commitsOnBranch(commits, branch.head_commit_id);
+      return {
+        name: branch.name,
+        head: branch.head_commit_id,
+        messages: list.reduce((total, commit) => total + commit.messages.length, 0),
+        tokens: list.reduce((total, commit) => total + commit.token_count, 0),
+        updatedAt: list[0]?.created_at ?? "",
+      };
+    })
+    .filter(
+      (conversation) =>
+        !sessionBranches.has(conversation.name) &&
+        (conversation.messages > 0 ||
+          conversation.name.startsWith("chat/") ||
+          conversation.name === snapshot?.current_branch),
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  // Keep the chat branch valid; default to the repo's current branch.
+  useEffect(() => {
+    if (!snapshot) return;
+    setChatBranch((current) =>
+      current && snapshot.branches.some((branch) => branch.name === current)
+        ? current
+        : snapshot.current_branch || snapshot.branches[0]?.name || "",
+    );
+  }, [snapshot]);
 
   // Keep the branch selection valid; default to the repo's current branch.
   useEffect(() => {
@@ -205,11 +238,10 @@ export default function Shell() {
 
   // Real context size of the chat branch (refresh after each committed turn).
   useEffect(() => {
-    const branchName = snapshot?.current_branch;
-    if (!branchName) return;
+    if (!chatBranch) return;
     let alive = true;
     void api
-      .branchBudget(branchName)
+      .branchBudget(chatBranch)
       .then((value) => {
         if (alive) setBudget(value);
       })
@@ -217,7 +249,7 @@ export default function Shell() {
     return () => {
       alive = false;
     };
-  }, [snapshot?.current_branch, budgetTick]);
+  }, [chatBranch, budgetTick]);
 
   // Ask for a key the first time the Chat tab opens with nothing connected.
   const promptedForProvider = useRef(false);
@@ -233,6 +265,24 @@ export default function Shell() {
     const head = branches.find((branch) => branch.name === name)?.head_commit_id ?? null;
     if (head) setCommitId(head);
   };
+
+  /** Start a new conversation: a real branch forked from the current one. */
+  const newConversation = useCallback(async () => {
+    const head =
+      snapshot?.branches.find((branch) => branch.name === snapshot.current_branch)
+        ?.head_commit_id ?? null;
+    if (!head) return;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const name = `chat/${stamp}`;
+    try {
+      await api.createBranch(name, head);
+      await refreshRepo();
+      setChatBranch(name);
+      setBarError(null);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not create the conversation");
+    }
+  }, [snapshot, refreshRepo]);
 
   /** Switch the repo's current branch, then reload so HEAD-derived state follows. */
   const checkoutBranch = async (name: string) => {
@@ -579,8 +629,10 @@ export default function Shell() {
       case "chat":
         return (
           <ChatRail
-            selectedBranch={activeConversation.branch.name}
-            onSelect={(conversation) => setConversationName(conversation.branch.name)}
+            conversations={chatConversations}
+            selectedBranch={chatBranch}
+            onSelect={setChatBranch}
+            onNew={() => void newConversation()}
           />
         );
       case "code":
@@ -636,14 +688,10 @@ export default function Shell() {
       case "chat":
         return (
           <ChatView
-            conversation={activeConversation}
             selection={model}
             providers={providers}
-            branch={snapshot?.current_branch ?? ""}
-            commitId={
-              branches.find((branch) => branch.name === snapshot?.current_branch)
-                ?.head_commit_id ?? null
-            }
+            branch={chatBranch}
+            commitId={chatBranchHead}
             onPickModel={() => setPickerOpen(true)}
             onAddProvider={openProviderDialog}
             onCommitted={() => setBudgetTick((value) => value + 1)}
@@ -693,9 +741,7 @@ export default function Shell() {
       case "chat": {
         const chatProvider = providers.find((provider) => provider.id === model.providerId);
         const chatBrand = brandFor(model.providerId, chatProvider?.label ?? "");
-        const chatBranch = snapshot?.current_branch ?? "";
-        const chatHead =
-          branches.find((branch) => branch.name === chatBranch)?.head_commit_id ?? null;
+        const chatHead = chatBranchHead;
         const governorCommits = (chatHead ? commitsOnBranch(commits, chatHead) : [])
           .slice(0, 6)
           .map((commit) => ({
