@@ -52,6 +52,12 @@ class TestTaskGraph:
     def test_topological_order_respects_edges(self) -> None:
         assert topological_order(["a", "b", "c"], {"b": ["a"], "c": ["b"]}) == ["a", "b", "c"]
 
+    def test_topological_order_keeps_plan_order_for_independent_tasks(self) -> None:
+        # Task ids are random, so a lexicographic tie-break would start tasks
+        # in a random order; the plan's own order must win instead.
+        planned = ["zulu", "mike", "alpha"]
+        assert topological_order(planned, {}) == planned
+
     def test_topological_order_raises_on_cycle(self) -> None:
         with pytest.raises(TaskCycleError):
             topological_order(["a", "b"], {"a": ["b"], "b": ["a"]})

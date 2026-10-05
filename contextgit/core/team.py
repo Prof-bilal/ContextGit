@@ -60,7 +60,11 @@ def validate_graph(task_ids: list[str], deps: dict[str, list[str]]) -> None:
 
 
 def topological_order(task_ids: list[str], deps: dict[str, list[str]]) -> list[str]:
-    """A dependency-respecting order of tasks; raises on a cycle (Kahn's algorithm)."""
+    """A dependency-respecting order of tasks; raises on a cycle (Kahn's algorithm).
+
+    Ties are broken by the input order (plan order), never by id — ids are
+    random, so sorting them would launch independent tasks in a random order.
+    """
     known = set(task_ids)
     indegree = {task_id: 0 for task_id in task_ids}
     edges: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
@@ -73,7 +77,7 @@ def topological_order(task_ids: list[str], deps: dict[str, list[str]]) -> list[s
             indegree[task_id] += 1
             edges[need].append(task_id)
 
-    ready = sorted(task_id for task_id in task_ids if indegree[task_id] == 0)
+    ready = [task_id for task_id in task_ids if indegree[task_id] == 0]
     order: list[str] = []
     while ready:
         current = ready.pop(0)
@@ -82,7 +86,6 @@ def topological_order(task_ids: list[str], deps: dict[str, list[str]]) -> list[s
             indegree[follower] -= 1
             if indegree[follower] == 0:
                 ready.append(follower)
-        ready.sort()
 
     if len(order) != len(task_ids):
         raise TaskCycleError("task dependencies form a cycle")
