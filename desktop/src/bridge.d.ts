@@ -23,7 +23,11 @@ export interface ContextGitBridge {
   onHarnessProgress: (
     callback: (progress: import("../shared/harnesses").HarnessInstallEvent) => void,
   ) => () => void;
-  getWorkspace: () => Promise<import("../shared/workspace").Workspace>;
+  getWorkspace: () => Promise<import("../shared/workspace").Workspace | null>;
+  /** Every remembered project folder, and the active one. */
+  listProjects: () => Promise<import("../shared/workspace").Workspace[]>;
+  useProject: (path: string) => Promise<import("../shared/workspace").Workspace | null>;
+  forgetProject: (path: string) => Promise<import("../shared/workspace").Workspace[]>;
   chooseWorkspace: () => Promise<import("../shared/workspace").Workspace | null>;
   pickWorkspaceLocation: () => Promise<string | null>;
   createWorkspace: (parent: string, name: string) => Promise<import("../shared/workspace").Workspace>;

@@ -24,7 +24,12 @@ def context_document(runs: list[dict[str, str]], digest: str | None = None) -> s
     ]
     for run in runs:
         scope = run.get("scope") or "(no scope claimed)"
-        lines.append(f"- {run.get('name', 'run')} [{run.get('agent') or 'shell'}] - {scope}")
+        line = f"- {run.get('name', 'run')} [{run.get('agent') or 'shell'}] - {scope}"
+        if run.get("role"):
+            line += f" · role: {run['role']}"
+        if run.get("skills"):
+            line += f" · skills: {run['skills']}"
+        lines.append(line)
     if digest and digest.strip():
         lines.extend(["", digest.strip()])
     return "\n".join(lines)

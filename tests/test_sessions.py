@@ -1,10 +1,13 @@
 """Sessions: parallel AI runs with commit-on-demand staging."""
 
+from pathlib import Path
+
 import pytest
 
 from contextgit.core.errors import InvalidRefName, SessionNotFound, StagingEmpty
-from contextgit.core.models import Message
-from contextgit.core.repo import Repo
+from contextgit.core.models import Message, Session
+from contextgit.core.repo import Repo, _project_from_worktree
+from contextgit.gitops.context import context_document
 
 
 def _messages(*contents: str) -> list[Message]:
@@ -68,6 +71,31 @@ class TestSessions:
         assert repo.get_session(session.id).status == "running"
         with pytest.raises(InvalidRefName):
             repo.set_session_status(session.id, "sideways")
+
+    def test_session_stores_role_and_skills(self, repo: Repo) -> None:
+        skills = ["UI research", "UI design", "UI build", "Responsive check", "Accessibility check"]
+        session = repo.create_session(
+            "frontend run",
+            kind="terminal",
+            agent="claude",
+            role="Frontend Developer",
+            skills=skills,
+        )
+        stored = repo.get_session(session.id)
+        assert stored.role == "Frontend Developer"
+        assert stored.skills == skills
+
+    def test_session_without_role_defaults_empty(self, repo: Repo) -> None:
+        stored = repo.get_session(repo.create_session("plain run").id)
+        assert stored.role is None
+        assert stored.skills == []
+
+    def test_session_stores_its_project(self, repo: Repo) -> None:
+        session = repo.create_session("grouped run", project_path="/home/me/warden")
+        assert repo.get_session(session.id).project_path == "/home/me/warden"
+
+    def test_session_without_project_defaults_none(self, repo: Repo) -> None:
+        assert repo.get_session(repo.create_session("loose run").id).project_path is None
 
 
 class TestStaging:
@@ -143,3 +171,46 @@ class TestStaging:
 
 def session_branch_head(repo: Repo, branch: str) -> str:
     return repo.get_branch(branch).head_commit_id
+
+
+def test_context_document_lists_role_and_skills() -> None:
+    body = context_document(
+        [
+            {
+                "name": "run-a",
+                "agent": "claude",
+                "scope": "src/**",
+                "role": "Backend Developer",
+                "skills": "API design, Data modeling",
+            }
+        ]
+    )
+    assert "role: Backend Developer" in body
+    assert "skills: API design, Data modeling" in body
+
+
+def test_context_document_omits_role_when_absent() -> None:
+    body = context_document([{"name": "run-b", "agent": "claude", "scope": ""}])
+    assert "role:" not in body
+    assert "skills:" not in body
+
+
+def test_project_from_worktree_recovers_the_project() -> None:
+    assert _project_from_worktree("/home/me/warden/.contextgit/worktrees/run") == "/home/me/warden"
+    assert _project_from_worktree("/tmp/not-a-worktree") is None
+    assert _project_from_worktree("/tmp/.contextgit/worktrees/run/extra") is None
+
+
+def test_list_sessions_backfills_project_from_worktree(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    repo._storage.insert_session(
+        Session(
+            id="legacy-run",
+            name="old run",
+            kind="terminal",
+            branch="legacy",
+            worktree_path="/home/me/warden/.contextgit/worktrees/legacy",
+        )
+    )
+    listing = repo.list_sessions()
+    assert next(s for s in listing if s.id == "legacy-run").project_path == "/home/me/warden"

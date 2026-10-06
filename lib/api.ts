@@ -163,8 +163,13 @@ export interface Session {
   git_branch: string | null;
   base_ref: string | null;
   base_commit: string | null;
+  /** The project folder this run belongs to (for grouping runs by project). */
+  project_path: string | null;
   task: string | null;
   scope: string[];
+  /** The role this run plays, and the skills auto-loaded for it. */
+  role: string | null;
+  skills: string[];
   /** A private local port for this run's dev server. */
   port: number | null;
   created_at: string;
@@ -587,6 +592,8 @@ export const api = {
     baseRef?: string;
     task?: string;
     scope?: string[];
+    role?: string;
+    skills?: string[];
   }) =>
     request<Session>("/api/v1/sessions", {
       method: "POST",
@@ -602,6 +609,8 @@ export const api = {
         base_ref: input.baseRef,
         task: input.task,
         scope: input.scope ?? [],
+        role: input.role,
+        skills: input.skills ?? [],
       }),
     }),
   updateSession: (

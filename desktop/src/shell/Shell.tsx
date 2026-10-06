@@ -10,6 +10,7 @@ import {
   type Task,
 } from "@/lib/api";
 import { NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
+import { ROLE_BY_ID, roleFor, roleSkills } from "../../shared/roles";
 import { agentLabel } from "./agents";
 import AgentDialog from "./agent/AgentDialog";
 import { DEFAULT_DRAFT, draftFrom, humanSchedule, newSeed, type MissionDraft } from "./agent/mission";
@@ -33,7 +34,7 @@ import DeleteConversationDialog from "./chat/DeleteConversationDialog";
 import NewConversationDialog, {
   type NewConversationInput,
 } from "./chat/NewConversationDialog";
-import AgentRail from "./rail/AgentRail";
+import ProjectsRail from "./rail/ProjectsRail";
 import ChatRail, { type ChatConversation, type ConversationMode } from "./rail/ChatRail";
 import GitRail from "./rail/GitRail";
 import RosterRail from "./rail/RosterRail";
@@ -55,7 +56,7 @@ import GitView, { type CommitFilter } from "./views/GitView";
 import TeamView from "./views/TeamView";
 import UsageView from "./views/UsageView";
 import ProjectPicker from "./workspace/ProjectPicker";
-import { useWorkspace } from "./workspace/useWorkspace";
+import { useProjects } from "./workspace/useProjects";
 
 type Theme = "dark" | "light";
 
@@ -119,7 +120,17 @@ export default function Shell() {
   const { fleet, error: fleetError } = useFleet();
   const mergeQueue = useMergeQueue();
   const { board: teamBoard, error: teamError, refresh: refreshTeam, act: teamAct } = useTeam();
-  const { workspace, error: workspaceError, choose, pickLocation, create: createWorkspace } = useWorkspace();
+  const {
+    workspace,
+    projects,
+    activePath,
+    error: workspaceError,
+    choose,
+    pickLocation,
+    create: createWorkspace,
+    use: useProject,
+    forget: forgetProject,
+  } = useProjects();
   const [projectOpen, setProjectOpen] = useState(false);
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -490,12 +501,30 @@ export default function Shell() {
   }, []);
 
   const startRun = useCallback(
-    async (name: string, agent: string, scope: string[]) => {
+    async (name: string, agent: string, scope: string[], roleId: string) => {
       if (!workspace) {
         setProjectOpen(true);
         throw new Error("Choose a project folder first");
       }
-      const created = await create(name, agent, workspace.path, scope);
+      const role = roleId ? ROLE_BY_ID[roleId] : undefined;
+      const created = await create(
+        name,
+        agent,
+        workspace.path,
+        scope,
+        role?.label,
+        role ? roleSkills(role).map((skill) => skill.label) : [],
+      );
+      if (role) {
+        // Auto-load the role's skills as this run's opening instruction.
+        const skills = roleSkills(role)
+          .map((skill, index) => `${index + 1}) ${skill.label} — ${skill.brief}`)
+          .join(" ");
+        setKickoff((current) => ({
+          ...current,
+          [created.id]: `You are acting as a ${role.label} on "${name}". Apply these skills on this run: ${skills} Read AGENTS.md for your file scope and the other runs.`,
+        }));
+      }
       openSession(created);
     },
     [create, openSession, workspace],
@@ -529,12 +558,16 @@ export default function Shell() {
 
   /** The line a freshly started agent reads before its task brief. */
   const briefingFor = useCallback((task: Task) => {
+    const role = roleFor(task.role);
     const parts = [
-      `Read .contextgit/team.md and start task "${task.title}"`,
+      `Read .contextgit/team.md and start task "${task.title}"${role ? ` as a ${role.label}` : ""}`,
       task.scope.length > 0 ? `you own ${task.scope.join(", ")}` : "no files claimed yet",
       task.depends_on.length > 0 ? "your dependencies are done" : "nothing blocks you",
     ];
-    return `${parts.join(". ")}. Post a note when you finish.`;
+    const skills = role
+      ? ` Apply these skills: ${roleSkills(role).map((skill) => skill.label).join(", ")}.`
+      : "";
+    return `${parts.join(". ")}.${skills} Post a note when you finish.`;
   }, []);
 
   /** The line an independent verifier reads before it inspects the work. */
@@ -816,15 +849,20 @@ export default function Shell() {
             onNew={() => setTaskForm({ task: null })}
           />
         ) : (
-          <AgentRail
+          <ProjectsRail
             sessions={sessions.filter((session) => session.kind === "terminal")}
             fleet={fleet}
             openIds={openIds}
             activeId={activeId}
             limits={Object.fromEntries(limitsByHarness)}
+            projects={projects}
+            activePath={activePath}
             onSelect={openSession}
             onNew={startRun}
             onDelete={(session) => void deleteRun(session)}
+            onUseProject={(path) => void useProject(path)}
+            onForgetProject={(path) => void forgetProject(path)}
+            onChooseProject={() => setProjectOpen(true)}
           />
         );
       case "agent":

@@ -312,6 +312,59 @@ test("the New run picker offers the auto-install harnesses", async () => {
   await page.getByRole("button", { name: "New run" }).click();
 });
 
+test("a run role auto-loads its five skills", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run" }).click();
+
+  // Picking a role fills in exactly its five skills.
+  const role = page.locator(".cg-form").getByLabel("Role");
+  await role.selectOption("Frontend Developer");
+  const skills = page.locator(".cg-role-skills li");
+  await expect(skills).toHaveCount(5);
+  await expect(page.locator(".cg-role-skills")).toContainText("UI research");
+  await expect(page.locator(".cg-role-skills")).toContainText("Accessibility check");
+
+  // Switching roles swaps the whole set.
+  await role.selectOption("QA Engineer");
+  await expect(skills).toHaveCount(5);
+  await expect(page.locator(".cg-role-skills")).toContainText("Regression sweep");
+
+  // Start it: the row carries a compact role chip, and the row still fits its
+  // wrapper so the delete button is never clipped off the rail.
+  await page.getByLabel("Run name").fill("role run");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  const row = page.locator(".cg-row-wrap", { hasText: "role run" });
+  await expect(row.locator(".cg-role-chip")).toHaveText("QA");
+  await expect(row.getByRole("button", { name: "Delete run role run" })).toBeVisible();
+  expect(await row.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+test("the rail groups runs by project and the project menu opens", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  // CONTEXTGIT_WORKDIR pins the workspace; it shows as the single active project.
+  const project = page.locator(".cg-project-group");
+  await expect(project).toHaveCount(1);
+  await expect(project.locator(".cg-group-name")).toContainText("playwright-workdir");
+  await expect(page.locator('.cg-project-group[data-active="true"]')).toBeVisible();
+
+  // A run nests under its project (an agent subgroup holds the rows).
+  await expect(page.locator(".cg-project-group .cg-subgroup").first()).toBeVisible();
+  await expect(page.locator(".cg-project-group .cg-row").first()).toBeVisible();
+
+  // The header dropdown lists the project and closes on Escape.
+  await page.locator(".cg-project-menu").click();
+  const pop = page.locator(".cg-project-pop");
+  await expect(pop).toBeVisible();
+  await expect(pop.locator(".cg-project-pop-name")).toContainText("playwright-workdir");
+  await page.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+});
+
 test("the Code dock shows harness usage limits", async () => {
   const page = await openShell();
   await nav(page, "Code").click();

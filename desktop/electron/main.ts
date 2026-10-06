@@ -162,13 +162,24 @@ ipcMain.on("ctx:status-sync", (event) => {
   event.returnValue = { status, apiBase };
 });
 
-// ---------- Workspace (project folder) ----------
+// ---------- Projects (the folders the user works in) ----------
 
 /**
- * The folder the user works in. New terminals and agents start here; it is
- * chosen in the Code tab and persisted per machine. `CONTEXTGIT_WORKDIR`, when
- * set, is a hard override (used by tests/scripts).
+ * Every folder the user has opened, plus which one is active. New terminals and
+ * agents start in the active project; all of them are remembered so the sidebar
+ * can switch between projects. `CONTEXTGIT_WORKDIR`, when set, is a hard
+ * single-project override (used by tests/scripts).
  */
+interface ProjectStore {
+  active: string | null;
+  paths: string[];
+}
+
+function projectsFile(): string {
+  return path.join(app.getPath("userData"), "projects.json");
+}
+
+/** Legacy single-workspace file, migrated into the store on first read. */
 function workspaceFile(): string {
   return path.join(app.getPath("userData"), "workspace.json");
 }
@@ -186,41 +197,86 @@ function toWorkspace(target: string): Workspace {
   return { path: resolved, name: path.basename(resolved) || resolved, parent: path.dirname(resolved) };
 }
 
-function readWorkspace(): Workspace | null {
+function readStore(): ProjectStore {
   const override = process.env.CONTEXTGIT_WORKDIR;
-  if (override && isDirectory(override)) return toWorkspace(override);
+  if (override && isDirectory(override)) {
+    const resolved = path.resolve(override);
+    return { active: resolved, paths: [resolved] };
+  }
   try {
-    const parsed = JSON.parse(fs.readFileSync(workspaceFile(), "utf8")) as { path?: unknown };
-    if (typeof parsed.path === "string" && isDirectory(parsed.path)) return toWorkspace(parsed.path);
+    const parsed = JSON.parse(fs.readFileSync(projectsFile(), "utf8")) as {
+      active?: unknown;
+      paths?: unknown;
+    };
+    const paths = Array.isArray(parsed.paths)
+      ? parsed.paths.filter((entry): entry is string => typeof entry === "string" && isDirectory(entry))
+      : [];
+    if (paths.length > 0) {
+      const active =
+        typeof parsed.active === "string" && paths.includes(parsed.active) ? parsed.active : paths[0];
+      return { active, paths };
+    }
   } catch {
-    // no saved workspace yet
+    // no projects store yet
+  }
+  // Migrate a legacy single workspace.json into the list.
+  try {
+    const legacy = JSON.parse(fs.readFileSync(workspaceFile(), "utf8")) as { path?: unknown };
+    if (typeof legacy.path === "string" && isDirectory(legacy.path)) {
+      const resolved = path.resolve(legacy.path);
+      return { active: resolved, paths: [resolved] };
+    }
+  } catch {
+    // none
   }
   // First run: no folder yet. The Code tab prompts the user to choose one
   // instead of defaulting to the app's own bundle directory.
-  return null;
+  return { active: null, paths: [] };
 }
 
-let workspace: Workspace | null = null;
-let workspaceLoaded = false;
+let store: ProjectStore | null = null;
 
-function currentWorkspace(): Workspace | null {
-  if (!workspaceLoaded) {
-    workspace = readWorkspace();
-    workspaceLoaded = true;
-  }
-  return workspace;
+function projectStore(): ProjectStore {
+  if (!store) store = readStore();
+  return store;
 }
 
-function setWorkspace(target: string): Workspace {
-  workspace = toWorkspace(target);
-  workspaceLoaded = true;
+function saveStore(): void {
   try {
-    fs.mkdirSync(path.dirname(workspaceFile()), { recursive: true });
-    fs.writeFileSync(workspaceFile(), `${JSON.stringify({ path: workspace.path }, null, 2)}\n`);
+    fs.mkdirSync(path.dirname(projectsFile()), { recursive: true });
+    fs.writeFileSync(projectsFile(), `${JSON.stringify(projectStore(), null, 2)}\n`);
   } catch {
     // persistence is best-effort; the in-memory value still applies
   }
-  return workspace;
+}
+
+function listProjects(): Workspace[] {
+  return projectStore().paths.map(toWorkspace);
+}
+
+function currentWorkspace(): Workspace | null {
+  const active = projectStore().active;
+  return active ? toWorkspace(active) : null;
+}
+
+/** Make an existing folder active, adding it to the list if it's new. */
+function useProject(target: string): Workspace {
+  const resolved = path.resolve(target);
+  const state = projectStore();
+  if (!state.paths.includes(resolved)) state.paths.push(resolved);
+  state.active = resolved;
+  saveStore();
+  return toWorkspace(resolved);
+}
+
+/** Drop a folder from the list; its runs and commits are untouched. */
+function forgetProject(target: string): Workspace[] {
+  const resolved = path.resolve(target);
+  const state = projectStore();
+  state.paths = state.paths.filter((entry) => entry !== resolved);
+  if (state.active === resolved) state.active = state.paths[0] ?? null;
+  saveStore();
+  return listProjects();
 }
 
 /** Native folder picker. `createDirectory` adds the dialog's "New Folder" button. */
@@ -235,11 +291,18 @@ function showFolderDialog(title: string): Promise<Electron.OpenDialogReturnValue
 }
 
 ipcMain.handle("ctx:workspace-get", () => currentWorkspace());
+ipcMain.handle("ctx:projects-list", () => listProjects());
+
+ipcMain.handle("ctx:projects-use", (_event, target: string) =>
+  isDirectory(target) ? useProject(target) : currentWorkspace(),
+);
+
+ipcMain.handle("ctx:projects-forget", (_event, target: string) => forgetProject(target));
 
 ipcMain.handle("ctx:workspace-choose", async () => {
   const result = await showFolderDialog("Choose a project folder");
   if (result.canceled || result.filePaths.length === 0) return null;
-  return setWorkspace(result.filePaths[0]);
+  return useProject(result.filePaths[0]);
 });
 
 /** Pick a location without applying it — used as the parent for a new folder. */
@@ -257,7 +320,7 @@ ipcMain.handle("ctx:workspace-create", (_event, options: { parent: string; name:
   if (!isDirectory(parent)) throw new Error("Choose an existing folder for the location");
   const target = path.join(parent, name);
   fs.mkdirSync(target, { recursive: true });
-  return setWorkspace(target);
+  return useProject(target);
 });
 
 /** Save a generated file (document export) via the native Save dialog. */
@@ -286,19 +349,22 @@ const ptys = new PtyManager(
 );
 
 /**
- * Only allow a per-run cwd inside the workspace or its managed worktrees.
- * Returns null when no project folder has been chosen yet.
+ * Only allow a per-run cwd inside one of the known projects or its managed
+ * worktrees. Returns null when no project folder has been chosen yet.
  */
 function resolvePtyCwd(requested?: string): string | null {
-  const root = currentWorkspace()?.path;
-  if (!root) return null;
+  const roots = projectStore().paths.map((entry) => path.resolve(entry));
+  if (roots.length === 0) return null;
   if (requested) {
     const resolved = path.resolve(requested);
-    const worktrees = `${path.join(root, ".contextgit", "worktrees")}${path.sep}`;
-    const inside = resolved === path.resolve(root) || resolved.startsWith(worktrees);
-    if (inside && isDirectory(resolved)) return resolved;
+    for (const root of roots) {
+      const worktrees = `${path.join(root, ".contextgit", "worktrees")}${path.sep}`;
+      if ((resolved === root || resolved.startsWith(worktrees)) && isDirectory(resolved)) {
+        return resolved;
+      }
+    }
   }
-  return root;
+  return currentWorkspace()?.path ?? roots[0];
 }
 
 ipcMain.on(

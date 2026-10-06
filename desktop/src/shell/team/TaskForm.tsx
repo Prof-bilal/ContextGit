@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { api, type Task, type TaskInput } from "@/lib/api";
 
+import { ROLES, roleFor, roleSkills } from "../../../shared/roles";
 import { AGENTS, DEFAULT_AGENT } from "../agents";
 import Modal from "../Modal";
 
@@ -30,7 +31,7 @@ export default function TaskForm({
   const [title, setTitle] = useState(task?.title ?? "");
   const [brief, setBrief] = useState(task?.brief ?? "");
   const [doneCriteria, setDoneCriteria] = useState(task?.done_criteria ?? "");
-  const [role, setRole] = useState(task?.role ?? "implementer");
+  const [role, setRole] = useState(task?.role ?? "");
   const [agent, setAgent] = useState(task?.agent ?? DEFAULT_AGENT);
   const [scope, setScope] = useState((task?.scope ?? []).join(", "));
   const [contract, setContract] = useState(task?.contract ?? "");
@@ -40,6 +41,7 @@ export default function TaskForm({
   const [error, setError] = useState<string | null>(null);
 
   const others = tasks.filter((entry) => entry.id !== task?.id);
+  const activeRole = roleFor(role);
 
   const toggleDep = (id: string) =>
     setDeps((current) =>
@@ -134,13 +136,20 @@ export default function TaskForm({
           <label className="cg-kicker" htmlFor="cg-task-role">
             Role
           </label>
-          <input
+          <select
             id="cg-task-role"
             className="cg-text-input"
             value={role}
             onChange={(event) => setRole(event.target.value)}
-            placeholder="backend · frontend · qa"
-          />
+          >
+            <option value="">No role</option>
+            {role && !activeRole && <option value={role}>{role}</option>}
+            {ROLES.map((entry) => (
+              <option key={entry.id} value={entry.label}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
         </span>
         <span>
           <label className="cg-kicker" htmlFor="cg-task-agent">
@@ -160,6 +169,19 @@ export default function TaskForm({
           </select>
         </span>
       </div>
+
+      {activeRole && (
+        <div className="cg-role-skills" role="note">
+          <span className="cg-kicker">Auto-loaded skills</span>
+          <ul>
+            {roleSkills(activeRole).map((skill) => (
+              <li key={skill.id} title={skill.brief}>
+                {skill.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <label className="cg-kicker" htmlFor="cg-task-scope">
         Own files (optional)

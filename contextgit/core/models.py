@@ -204,8 +204,15 @@ class Session(BaseModel):
     git_branch: str | None = None
     base_ref: str | None = None
     base_commit: str | None = None
+    # The project folder this run belongs to (its worktree lives under it). Set
+    # for every run so the UI can group runs by project, git or not.
+    project_path: str | None = None
     task: str | None = None
     scope: list[str] = Field(default_factory=list)
+    # The role this run plays and the skills auto-loaded for it (human-readable
+    # labels resolved from the desktop catalog). Both optional and best-effort.
+    role: str | None = None
+    skills: list[str] = Field(default_factory=list)
     # A stable local port for this run, so two runs' dev servers cannot collide.
     port: int | None = None
     created_at: datetime = Field(default_factory=utcnow)

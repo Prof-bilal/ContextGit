@@ -222,6 +222,9 @@ class SessionRequest(BaseModel):
     base_ref: str | None = None  # fresh | head | a branch name
     task: str | None = None
     scope: list[str] = Field(default_factory=list)
+    # The role this run plays and the skills auto-loaded for it (labels).
+    role: str | None = None
+    skills: list[str] = Field(default_factory=list)
 
 
 class SessionUpdateRequest(BaseModel):

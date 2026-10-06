@@ -363,6 +363,8 @@ def create_app(
             base_ref=body.base_ref,
             task=body.task,
             scope=body.scope,
+            role=body.role,
+            skills=body.skills,
         )
         return session.model_dump(mode="json")
 

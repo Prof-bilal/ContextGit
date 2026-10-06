@@ -47,8 +47,13 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.on("ctx:harness-progress", listener);
     return () => ipcRenderer.removeListener("ctx:harness-progress", listener);
   },
-  // ---------- Project folder ----------
-  getWorkspace: () => ipcRenderer.invoke("ctx:workspace-get") as Promise<Workspace>,
+  // ---------- Project folders (remembered projects + active) ----------
+  getWorkspace: () => ipcRenderer.invoke("ctx:workspace-get") as Promise<Workspace | null>,
+  listProjects: () => ipcRenderer.invoke("ctx:projects-list") as Promise<Workspace[]>,
+  useProject: (target: string) =>
+    ipcRenderer.invoke("ctx:projects-use", target) as Promise<Workspace | null>,
+  forgetProject: (target: string) =>
+    ipcRenderer.invoke("ctx:projects-forget", target) as Promise<Workspace[]>,
   chooseWorkspace: () => ipcRenderer.invoke("ctx:workspace-choose") as Promise<Workspace | null>,
   pickWorkspaceLocation: () => ipcRenderer.invoke("ctx:workspace-pick") as Promise<string | null>,
   createWorkspace: (parent: string, name: string) =>

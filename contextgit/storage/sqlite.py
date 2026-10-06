@@ -227,8 +227,11 @@ class SqliteStorage:
             git_branch=row["git_branch"],
             base_ref=row["base_ref"],
             base_commit=row["base_commit"],
+            project_path=row["project_path"],
             task=row["task"],
             scope=json.loads(row["scope"]) if row["scope"] else [],
+            role=row["role"],
+            skills=json.loads(row["skills"]) if row["skills"] else [],
             port=row["port"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -239,8 +242,9 @@ class SqliteStorage:
             self._conn.execute(
                 "INSERT INTO sessions"
                 " (id, name, kind, branch, status, agent, auto_commit, worktree_path,"
-                " git_branch, base_ref, base_commit, task, scope, port, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " git_branch, base_ref, base_commit, project_path, task, scope, role,"
+                " skills, port, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.name,
@@ -253,8 +257,11 @@ class SqliteStorage:
                     session.git_branch,
                     session.base_ref,
                     session.base_commit,
+                    session.project_path,
                     session.task,
                     json.dumps(session.scope),
+                    session.role,
+                    json.dumps(session.skills),
                     session.port,
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
@@ -277,7 +284,8 @@ class SqliteStorage:
             cur = self._conn.execute(
                 "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
                 " auto_commit = ?, worktree_path = ?, git_branch = ?, base_ref = ?,"
-                " base_commit = ?, task = ?, scope = ?, port = ?, updated_at = ? WHERE id = ?",
+                " base_commit = ?, project_path = ?, task = ?, scope = ?, role = ?,"
+                " skills = ?, port = ?, updated_at = ? WHERE id = ?",
                 (
                     session.name,
                     session.branch,
@@ -288,8 +296,11 @@ class SqliteStorage:
                     session.git_branch,
                     session.base_ref,
                     session.base_commit,
+                    session.project_path,
                     session.task,
                     json.dumps(session.scope),
+                    session.role,
+                    json.dumps(session.skills),
                     session.port,
                     session.updated_at.isoformat(),
                     session.id,

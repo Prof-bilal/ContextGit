@@ -31,7 +31,14 @@ export function useSessions() {
   }, [refresh]);
 
   const create = useCallback(
-    async (name: string, agent: string, projectPath?: string, scope?: string[]) => {
+    async (
+      name: string,
+      agent: string,
+      projectPath?: string,
+      scope?: string[],
+      role?: string,
+      skills?: string[],
+    ) => {
       const created = await api.createSession({
         name,
         kind: "terminal",
@@ -41,6 +48,8 @@ export function useSessions() {
         // back to the shared workspace otherwise).
         worktree: Boolean(projectPath),
         scope: scope ?? [],
+        role,
+        skills,
       });
       // A poll can land between the POST and this append and already contain the
       // run; guard so the rail never renders the same session twice.

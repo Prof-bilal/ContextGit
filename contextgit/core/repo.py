@@ -137,12 +137,26 @@ def _streak_from_dates(dates: set[date], today: date) -> UsageStreak:
     )
 
 
+def _project_from_worktree(worktree_path: str) -> str | None:
+    """The project folder a run's worktree lives under.
+
+    Worktrees are laid out as `<project>/.contextgit/worktrees/<name>`, so the
+    project is two directories up. None when the path is not that shape.
+    """
+    parents = Path(worktree_path).parents
+    if len(parents) >= 3 and parents[0].name == "worktrees" and parents[1].name == ".contextgit":
+        return str(parents[2])
+    return None
+
+
 class Repo:
     """A ContextGit repository rooted at a directory."""
 
     def __init__(self, root: Path | str, storage: SqliteStorage | None = None) -> None:
         self._root = Path(root)
         self._storage = storage or SqliteStorage(self._root / _DB_NAME)
+        # One-time: fill in project_path for runs recorded before the column.
+        self._projects_backfilled = False
 
     @property
     def root(self) -> Path:
@@ -471,6 +485,8 @@ class Repo:
         base_ref: str | None = None,
         task: str | None = None,
         scope: list[str] | None = None,
+        role: str | None = None,
+        skills: list[str] | None = None,
     ) -> Session:
         """Create a session bound to a branch (creating the branch if needed).
 
@@ -493,6 +509,9 @@ class Repo:
             auto_commit=auto_commit,
             task=task,
             scope=scope or [],
+            role=role,
+            skills=skills or [],
+            project_path=project_path,
         )
         if worktree and project_path:
             self._attach_worktree(session, project_path, base_ref)
@@ -531,7 +550,21 @@ class Repo:
         return self._storage.get_session(session_id)
 
     def list_sessions(self) -> list[Session]:
+        self._backfill_session_projects()
         return self._storage.list_sessions()
+
+    def _backfill_session_projects(self) -> None:
+        """Fill project_path for runs recorded before it existed (from their worktree)."""
+        if self._projects_backfilled:
+            return
+        self._projects_backfilled = True
+        for session in self._storage.list_sessions():
+            if session.project_path or not session.worktree_path:
+                continue
+            project = _project_from_worktree(session.worktree_path)
+            if project:
+                session.project_path = project
+                self._storage.update_session(session)
 
     def set_session_status(self, session_id: str, status: str) -> Session:
         """Update a session's lifecycle status (idle/running/done/error)."""
@@ -666,6 +699,8 @@ class Repo:
                 "name": session.name,
                 "agent": session.agent or "",
                 "scope": ", ".join(session.scope),
+                "role": session.role or "",
+                "skills": ", ".join(session.skills),
             }
             for session in self._storage.list_sessions()
             if session.worktree_path
