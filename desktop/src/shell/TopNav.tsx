@@ -1,6 +1,14 @@
 import { useRef } from "react";
 
-export type TabId = "chat" | "code" | "assets" | "agent" | "git" | "usage";
+export type TabId =
+  | "chat"
+  | "code"
+  | "assets"
+  | "browser"
+  | "editor"
+  | "agent"
+  | "git"
+  | "usage";
 
 export interface TabDef {
   id: TabId;

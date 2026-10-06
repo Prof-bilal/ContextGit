@@ -51,6 +51,21 @@ export interface ContextGitBridge {
   assetsReveal: (id: string) => Promise<boolean>;
   /** Stable URL for an asset's bytes (served via the ctxasset:// scheme). */
   assetUrl: (id: string) => string;
+  /** Browser tab: a main-process WebContentsView positioned over the panel. */
+  viewCreate: (id: string, url: string) => Promise<import("../shared/browser").ViewCreateResult>;
+  viewSetBounds: (id: string, bounds: import("../shared/browser").ViewBounds) => void;
+  viewSetVisible: (id: string, visible: boolean) => void;
+  viewLoad: (id: string, url: string) => Promise<import("../shared/browser").ViewCreateResult>;
+  viewBack: (id: string) => void;
+  viewForward: (id: string) => void;
+  viewReload: (id: string) => void;
+  viewDevtools: (id: string) => void;
+  viewDestroy: (id: string) => void;
+  onViewEvent: (callback: (event: import("../shared/browser").ViewEvent) => void) => () => void;
+  /** Editor tab: the embedded VS Code sidecar. */
+  editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
+  editorStart: () => Promise<import("../shared/editor").EditorStartResult>;
+  editorStop: () => Promise<import("../shared/editor").EditorStatus>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

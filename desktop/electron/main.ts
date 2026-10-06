@@ -22,6 +22,9 @@ import { HARNESS_BY_ID } from "../shared/harnesses";
 import type { BackendStatus } from "../shared/status";
 import type { Workspace } from "../shared/workspace";
 import { AssetLibrary } from "./library";
+import { ViewManager } from "./viewmanager";
+import { EditorSidecar } from "./editor";
+import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
 
 const isDev = !app.isPackaged;
@@ -421,6 +424,72 @@ ipcMain.handle("ctx:assets-reveal", (_event, id: string) => {
   return Boolean(file);
 });
 
+// ---------- Browser tab (in-app WebContentsView) ----------
+
+let viewManager: ViewManager | null = null;
+
+function views(): ViewManager {
+  if (!viewManager) {
+    viewManager = new ViewManager(
+      () => mainWindow,
+      (event) => mainWindow?.webContents.send("ctx:view-event", event),
+    );
+  }
+  return viewManager;
+}
+
+ipcMain.handle("ctx:view-create", (_event, id: string, url: string) => views().create(id, url));
+ipcMain.on("ctx:view-set-bounds", (_event, id: string, bounds: ViewBounds) =>
+  views().setBounds(id, bounds),
+);
+ipcMain.on("ctx:view-set-visible", (_event, id: string, visible: boolean) =>
+  views().setVisible(id, visible),
+);
+ipcMain.handle("ctx:view-load", (_event, id: string, url: string) => views().load(id, url));
+ipcMain.on("ctx:view-back", (_event, id: string) => views().back(id));
+ipcMain.on("ctx:view-forward", (_event, id: string) => views().forward(id));
+ipcMain.on("ctx:view-reload", (_event, id: string) => views().reload(id));
+ipcMain.on("ctx:view-devtools", (_event, id: string) => views().devtools(id));
+ipcMain.on("ctx:view-destroy", (_event, id: string) => views().destroy(id));
+
+// ---------- Editor tab (embedded VS Code sidecar) ----------
+
+/** The code-server binary: bundled under resources (packaged) or build/editor (dev). */
+function resolveEditorBinary(): string | null {
+  if (!isDev) {
+    const packaged = path.join(process.resourcesPath, "editor", "bin", "code-server");
+    return fs.existsSync(packaged) ? packaged : null;
+  }
+  try {
+    const root = path.join(app.getAppPath(), "build", "editor");
+    const dir = fs.readdirSync(root).find((name) => name.startsWith("code-server-"));
+    if (!dir) return null;
+    const binary = path.join(root, dir, "bin", "code-server");
+    return fs.existsSync(binary) ? binary : null;
+  } catch {
+    return null;
+  }
+}
+
+let editorSidecar: EditorSidecar | null = null;
+
+function editor(): EditorSidecar {
+  if (!editorSidecar) {
+    editorSidecar = new EditorSidecar(
+      resolveEditorBinary,
+      path.join(app.getPath("userData"), "editor"),
+    );
+  }
+  return editorSidecar;
+}
+
+ipcMain.handle("ctx:editor-status", () => editor().status());
+ipcMain.handle("ctx:editor-start", () => editor().start(currentWorkspace()?.path ?? null));
+ipcMain.handle("ctx:editor-stop", () => {
+  editor().stop();
+  return editor().status();
+});
+
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 const ptys = new PtyManager(
@@ -589,12 +658,16 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  views().destroyAll();
+  editor().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();
   app.quit();
 });
 app.on("before-quit", () => {
+  views().destroyAll();
+  editor().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();

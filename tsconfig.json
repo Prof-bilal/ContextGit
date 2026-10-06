@@ -36,6 +36,10 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "desktop/build",
+    "desktop/dist",
+    "desktop/dist-electron",
+    "desktop/release"
   ]
 }

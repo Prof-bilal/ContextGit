@@ -54,6 +54,10 @@ import AgentView from "./views/AgentView";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
 import AssetsRail, { type AssetFilter } from "./rail/AssetsRail";
+import BrowserRail from "./rail/BrowserRail";
+import BrowserView from "./views/BrowserView";
+import EditorRail from "./rail/EditorRail";
+import EditorView from "./views/EditorView";
 import AssetsView from "./views/AssetsView";
 import AssetDetails from "./assets/AssetDetails";
 import AssetPreview from "./assets/AssetPreview";
@@ -69,7 +73,7 @@ import { useProjects } from "./workspace/useProjects";
 
 type Theme = "dark" | "light";
 
-const TAB_IDS: TabId[] = ["chat", "code", "assets", "agent", "git", "usage"];
+const TAB_IDS: TabId[] = ["chat", "code", "assets", "browser", "editor", "agent", "git", "usage"];
 
 /** Time windows for the Usage tab. */
 const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
@@ -166,6 +170,10 @@ export default function Shell() {
   const [assetFolder, setAssetFolder] = useState<string | null>(null);
   const [agentOpen, setAgentOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  /** Browser tab: a navigation asked for from the rail. */
+  const [browserRequest, setBrowserRequest] = useState<{ url: string; nonce: number } | null>(null);
+  /** Editor tab: bumped to tell EditorView to (re)check the sidecar. */
+  const [editorNonce, setEditorNonce] = useState(0);
   const [chatFilter, setChatFilter] = useState<ConversationMode | "all">("all");
   /** Usage tab time window: undefined = all time. */
   const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
@@ -841,6 +849,8 @@ export default function Shell() {
     { id: "chat", label: "Chat" },
     { id: "code", label: "Code" },
     { id: "assets", label: "Assets" },
+    { id: "browser", label: "Browser" },
+    { id: "editor", label: "Editor" },
     { id: "agent", label: "Agent" },
     { id: "git", label: "Git" },
     { id: "usage", label: "Usage" },
@@ -960,6 +970,16 @@ export default function Shell() {
             tags={assetTags}
             activeTag={assetTag}
             onTag={setAssetTag}
+          />
+        );
+      case "browser":
+        return <BrowserRail onOpen={(url) => setBrowserRequest({ url, nonce: Date.now() })} />;
+      case "editor":
+        return (
+          <EditorRail
+            reloadKey={editorNonce}
+            onStarted={() => setEditorNonce((value) => value + 1)}
+            onOpenFolder={() => setProjectOpen(true)}
           />
         );
       case "agent":
@@ -1388,6 +1408,14 @@ export default function Shell() {
       // No commit bar: the gallery is the bottom edge.
       return null;
     }
+    if (tab === "browser") {
+      // No commit bar: the page is the bottom edge.
+      return null;
+    }
+    if (tab === "editor") {
+      // No commit bar: VS Code owns the bottom edge.
+      return null;
+    }
     if (tab === "agent") {
       return (
         <footer className="cg-bottombar">
@@ -1516,7 +1544,11 @@ export default function Shell() {
           ? "Agent"
           : tab === "assets"
             ? "Asset"
-            : "Commit";
+            : tab === "browser"
+              ? "Page"
+              : tab === "editor"
+                ? "Editor"
+                : "Commit";
 
   const notice =
     sessionsError ??
@@ -1621,13 +1653,21 @@ export default function Shell() {
               onStatus={() => void refresh()}
             />
           </div>
-          {tab !== "code" && (
+          {/* Browser stays mounted too, so its page survives tab switches. */}
+          <div className="cg-view" data-active={tab === "browser"}>
+            <BrowserView active={tab === "browser"} request={browserRequest} />
+          </div>
+          {/* Editor stays mounted too, so VS Code survives tab switches. */}
+          <div className="cg-view" data-active={tab === "editor"}>
+            <EditorView active={tab === "editor"} nonce={editorNonce} />
+          </div>
+          {tab !== "code" && tab !== "browser" && tab !== "editor" && (
             <div className="cg-view" data-active>
               {view()}
             </div>
           )}
         </main>
-        {dockOpen && tab !== "usage" && (
+        {dockOpen && tab !== "usage" && tab !== "browser" && tab !== "editor" && (
           <Dock title={dockTitle} onClose={() => setDockOpen(false)}>
             {dock()}
           </Dock>

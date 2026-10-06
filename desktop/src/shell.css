@@ -3600,3 +3600,123 @@ img.cg-tile-art {
   margin: 0.4rem 0;
   padding-left: 1.1rem;
 }
+
+/* ----------------------------------------------------------- browser tab --- */
+
+.cg-browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cg-browser-address {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+}
+.cg-browser-address input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--cg-line);
+  border-radius: 7px;
+  background: var(--cg-bg);
+  color: var(--cg-ink);
+  padding: 0.32rem 0.6rem;
+  font: 400 0.76rem/1.4 "Martian Mono", ui-monospace, monospace;
+}
+.cg-browser-address input:focus {
+  outline: none;
+  border-color: var(--cg-focus);
+}
+.cg-browser-status {
+  flex: none;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--cg-surface-3);
+  color: var(--cg-ink-3);
+  font: 600 0.62rem/1 "Martian Mono", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cg-browser-status[data-status="loaded"] {
+  color: var(--cg-ok);
+}
+.cg-browser-status[data-status="blocked"],
+.cg-browser-status[data-status="error"] {
+  color: var(--cg-bad);
+}
+.cg-browser-title {
+  padding: 0.3rem 0.85rem;
+  border-bottom: 1px solid var(--cg-line);
+  color: var(--cg-ink-3);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cg-browser-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--cg-bg);
+}
+
+.cg-browser-start {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 2rem 1.4rem;
+}
+.cg-browser-start h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.cg-browser-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.7rem;
+  max-width: 52rem;
+}
+.cg-browser-tile {
+  padding: 1.1rem 0.6rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 12px;
+  background: var(--cg-surface);
+  color: var(--cg-ink);
+  cursor: pointer;
+  font: 600 0.85rem/1 "Schibsted Grotesk", sans-serif;
+}
+.cg-browser-tile:hover {
+  border-color: var(--cg-signal);
+  background: var(--cg-surface-2);
+}
+.cg-browser-start .cg-empty-note {
+  margin-top: 1.2rem;
+}
+
+/* ------------------------------------------------------------ editor tab --- */
+
+.cg-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cg-editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--cg-bg);
+}
+.cg-editor-start {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 2rem 1.4rem;
+}
+.cg-editor-start h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}

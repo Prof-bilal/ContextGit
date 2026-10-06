@@ -90,6 +90,37 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.invoke("ctx:assets-reveal", id) as Promise<boolean>,
   /** Stable URL for an asset's bytes (served through the ctxasset:// scheme). */
   assetUrl: (id: string) => `ctxasset://a/${encodeURIComponent(id)}`,
+  // ---------- Browser tab (in-app WebContentsView) ----------
+  viewCreate: (id: string, url: string) =>
+    ipcRenderer.invoke("ctx:view-create", id, url) as Promise<
+      import("../shared/browser").ViewCreateResult
+    >,
+  viewSetBounds: (id: string, bounds: import("../shared/browser").ViewBounds) =>
+    ipcRenderer.send("ctx:view-set-bounds", id, bounds),
+  viewSetVisible: (id: string, visible: boolean) =>
+    ipcRenderer.send("ctx:view-set-visible", id, visible),
+  viewLoad: (id: string, url: string) =>
+    ipcRenderer.invoke("ctx:view-load", id, url) as Promise<
+      import("../shared/browser").ViewCreateResult
+    >,
+  viewBack: (id: string) => ipcRenderer.send("ctx:view-back", id),
+  viewForward: (id: string) => ipcRenderer.send("ctx:view-forward", id),
+  viewReload: (id: string) => ipcRenderer.send("ctx:view-reload", id),
+  viewDevtools: (id: string) => ipcRenderer.send("ctx:view-devtools", id),
+  viewDestroy: (id: string) => ipcRenderer.send("ctx:view-destroy", id),
+  onViewEvent: (callback: (event: import("../shared/browser").ViewEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, next: import("../shared/browser").ViewEvent) =>
+      callback(next);
+    ipcRenderer.on("ctx:view-event", listener);
+    return () => ipcRenderer.removeListener("ctx:view-event", listener);
+  },
+  // ---------- Editor tab (embedded VS Code sidecar) ----------
+  editorStatus: () =>
+    ipcRenderer.invoke("ctx:editor-status") as Promise<import("../shared/editor").EditorStatus>,
+  editorStart: () =>
+    ipcRenderer.invoke("ctx:editor-start") as Promise<import("../shared/editor").EditorStartResult>,
+  editorStop: () =>
+    ipcRenderer.invoke("ctx:editor-stop") as Promise<import("../shared/editor").EditorStatus>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

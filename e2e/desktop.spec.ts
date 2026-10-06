@@ -219,6 +219,42 @@ test("the asset agent uses the provider connector, isolated from Chat", async ()
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+test("the Browser tab opens real pages and refuses non-http schemes", async () => {
+  const page = await openShell();
+  await nav(page, "Browser").click();
+
+  const browser = page.locator(".cg-browser");
+  await expect(browser).toBeVisible();
+  // A new tab shows the start page with shortcuts.
+  await expect(browser.locator(".cg-browser-tile", { hasText: "Google" })).toBeVisible();
+
+  // Loopback loads through the in-app view (the e2e backend).
+  const status = page.locator(".cg-browser .cg-browser-status");
+  const address = page.getByLabel("Address");
+  await address.fill("http://127.0.0.1:8757/api/v1/health");
+  await address.press("Enter");
+  await expect(status).toHaveAttribute("data-status", "loaded", { timeout: 20_000 });
+
+  // Non-http(s) schemes are refused.
+  await address.fill("file:///etc/passwd");
+  await address.press("Enter");
+  await expect(status).toHaveAttribute("data-status", "blocked", { timeout: 10_000 });
+});
+
+test("the Editor tab starts the embedded VS Code sidecar", async () => {
+  const page = await openShell();
+  await nav(page, "Editor").click();
+  await expect(page.locator(".cg-editor")).toBeVisible();
+
+  // Start code-server from the view's start card.
+  await page.locator(".cg-editor-start").getByRole("button", { name: "Start editor" }).click();
+  await expect(page.locator(".cg-editor .cg-browser-status")).toHaveAttribute(
+    "data-status",
+    "loaded",
+    { timeout: 60_000 },
+  );
+});
+
 test("switch to the Git tab and toggle list/graph", async () => {
   const page = await openShell();
 
