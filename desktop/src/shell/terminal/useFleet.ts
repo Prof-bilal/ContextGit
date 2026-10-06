@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type FleetEntry } from "@/lib/api";
+import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
 const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
@@ -12,17 +13,17 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
  */
 export function useFleet() {
   const [fleet, setFleet] = useState<FleetEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { error, reportSuccess, reportFailure } = useTransientError();
 
   const refresh = useCallback(async () => {
     if (!HAS_BRIDGE) return;
     try {
       setFleet(await api.fleet());
-      setError(null);
+      reportSuccess();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load run state");
+      reportFailure(cause instanceof Error ? cause.message : "Could not load run state");
     }
-  }, []);
+  }, [reportSuccess, reportFailure]);
 
   useEffect(() => {
     void refresh();

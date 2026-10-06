@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from contextgit.core.models import Message
+from contextgit.llm.base import UsageSink
 from contextgit.llm.http_error import (
     ProviderHTTPError,
     describe_payload,
@@ -84,7 +85,9 @@ class AnthropicProvider:
         blocks = data.get("content") or []
         return "".join(str(block.get("text", "")) for block in blocks if isinstance(block, dict))
 
-    def complete(self, messages: list[Message], **opts: object) -> str:
+    def complete(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> str:
         payload = self._payload(messages, stream=False, opts=dict(opts))
         url = f"{self.base_url}/messages"
         last: Exception | None = None
@@ -94,6 +97,13 @@ class AnthropicProvider:
                     response = client.post(url, headers=self._headers(), json=payload)
                     self._raise_for_status(response)
                     data = response.json()
+                if usage_sink is not None and isinstance(data, dict):
+                    usage = data.get("usage")
+                    if isinstance(usage, dict):
+                        usage_sink(
+                            int(usage.get("input_tokens", 0)),
+                            int(usage.get("output_tokens", 0)),
+                        )
                 return self._text_from(data)
             except Exception as exc:
                 last = exc
@@ -103,42 +113,66 @@ class AnthropicProvider:
         raise RuntimeError(f"LLM request failed: {last}") from last
 
     @staticmethod
-    def _delta_from(line: str) -> str | None:
+    def _parse_event(line: str) -> tuple[str | None, tuple[int, int] | None]:
+        """Parse one SSE line into `(text delta, (input_tokens, output_tokens) usage)`."""
         line = line.strip()
         if not line.startswith("data:"):
-            return None
+            return None, None
         try:
             event = json.loads(line[5:].strip())
         except ValueError:
-            return None
-        if event.get("type") == "error":
+            return None, None
+        if not isinstance(event, dict):
+            return None, None
+        kind = event.get("type")
+        if kind == "error":
             raise ProviderHTTPError(200, describe_payload(event.get("error") or event))
-        if event.get("type") == "content_block_delta":
+        if kind == "content_block_delta":
             delta = event.get("delta") or {}
             text = delta.get("text")
-            if text:
-                return str(text)
-        return None
+            return (str(text), None) if text else (None, None)
+        if kind == "message_start":
+            usage = (event.get("message") or {}).get("usage") or {}
+            return None, (int(usage.get("input_tokens", 0)), 0)
+        if kind == "message_delta":
+            usage = event.get("usage") or {}
+            return None, (0, int(usage.get("output_tokens", 0)))
+        return None, None
 
-    def stream(self, messages: list[Message], **opts: object) -> Iterator[str]:
+    def stream(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> Iterator[str]:
         payload = self._payload(messages, stream=True, opts=dict(opts))
         url = f"{self.base_url}/messages"
+        usage_in = 0
+        usage_out = 0
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 with client.stream("POST", url, headers=self._headers(), json=payload) as response:
                     self._raise_for_status(response)
                     for line in response.iter_lines():
-                        text = self._delta_from(line)
+                        text, usage = self._parse_event(line)
+                        if usage is not None:
+                            usage_in = max(usage_in, usage[0])
+                            usage_out = max(usage_out, usage[1])
                         if text:
                             yield text
         except Exception as exc:
             raise RuntimeError(f"LLM stream failed: {exc}") from exc
+        # `message_start` carries input tokens and `message_delta` output tokens;
+        # report the accumulated usage once the stream is done.
+        if usage_sink is not None and (usage_in or usage_out):
+            usage_sink(usage_in, usage_out)
 
-    async def astream(self, messages: list[Message], **opts: object) -> AsyncIterator[str]:
+    async def astream(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> AsyncIterator[str]:
         payload = self._payload(messages, stream=True, opts=dict(opts))
         url = f"{self.base_url}/messages"
         for attempt in range(self.retries + 1):
             sent = False
+            usage_in = 0
+            usage_out = 0
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     async with client.stream(
@@ -146,10 +180,15 @@ class AnthropicProvider:
                     ) as response:
                         self._raise_for_status(response)
                         async for line in response.aiter_lines():
-                            text = self._delta_from(line)
+                            text, usage = self._parse_event(line)
+                            if usage is not None:
+                                usage_in = max(usage_in, usage[0])
+                                usage_out = max(usage_out, usage[1])
                             if text:
                                 sent = True
                                 yield text
+                if usage_sink is not None and (usage_in or usage_out):
+                    usage_sink(usage_in, usage_out)
                 return
             except Exception as exc:
                 if sent or not retryable(exc) or attempt == self.retries:

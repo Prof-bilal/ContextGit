@@ -312,6 +312,24 @@ test("the New run picker offers the auto-install harnesses", async () => {
   await page.getByRole("button", { name: "New run" }).click();
 });
 
+test("the Code dock shows harness usage limits", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill("limits run");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  const row = page.locator(".cg-row", { hasText: "limits run" });
+  await expect(row).toBeVisible();
+  await row.click();
+
+  // The Limits section renders for the selected run's harness (a message when
+  // the CLI isn't signed in) — it must never be a broken panel.
+  await expect(page.locator(".cg-limits")).toBeVisible();
+});
+
 test("choose the project folder from the Code tab", async () => {
   const page = await openShell();
   await nav(page, "Code").click();
@@ -510,6 +528,31 @@ test("chat send runs the mock thinking + streaming reply", async () => {
   await expect(log.locator(".cg-msg")).toHaveCount(before + 2);
 });
 
+test("a new conversation starts empty and can be deleted", async () => {
+  const page = await openShell();
+  await nav(page, "Chat").click();
+
+  await page.getByRole("button", { name: "New conversation" }).click();
+  const dialog = page.getByRole("dialog", { name: "New conversation" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Label (optional)").fill("e2e convo");
+  await dialog.getByRole("button", { name: "Create conversation" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // The new conversation is selected and, forked from the root, starts empty.
+  const row = page.locator(".cg-row", { hasText: "e2e-convo" });
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".cg-chat-log .cg-msg")).toHaveCount(0);
+
+  // Delete it (with confirmation) — the row disappears.
+  await page.getByRole("button", { name: /Delete conversation chat\/e2e-convo/ }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete conversation" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Delete conversation" }).click();
+  await expect(page.locator(".cg-row", { hasText: "e2e-convo" })).toHaveCount(0);
+});
+
 test("council mode fans out to several models and keeps one answer", async () => {
   const page = await openShell();
   await nav(page, "Chat").click();
@@ -590,6 +633,37 @@ test("governor lists compaction receipts and locks the dead end", async () => {
   await expect(
     governor.locator('.cg-receipt[data-kind="dropped"]').first().locator("input"),
   ).toBeEnabled();
+});
+
+test("the Docs sub-tab in Chat has the creator", async () => {
+  const page = await openShell();
+  await nav(page, "Chat").click();
+
+  // The Chat tab's own sub-tab (not the composer modes).
+  await page.locator(".cg-view-toolbar").getByRole("tab", { name: "Docs" }).click();
+  await expect(page.locator(".cg-docs")).toBeVisible();
+
+  const format = page.getByLabel("Document format");
+  await expect(format).toBeVisible();
+  await expect(format.locator("option")).toHaveCount(4);
+
+  const style = page.getByLabel("Document style");
+  await expect(style).toBeVisible();
+  await expect(style.locator("option")).toHaveCount(3);
+});
+
+test("the Usage tab shows the merged token view", async () => {
+  const page = await openShell();
+  await nav(page, "Usage").click();
+
+  const usage = page.locator(".cg-usage");
+  await expect(usage).toBeVisible();
+  await expect(usage.getByRole("heading", { name: "Usage" })).toBeVisible();
+  // The streak panel and contribution graph render.
+  await expect(usage.locator(".cg-usage-streak")).toBeVisible();
+  await expect(usage.locator(".cg-heat-grid")).toBeVisible();
+  await expect(usage.locator(".cg-heat-legend")).toContainText("More");
+  await expect(usage.locator(".cg-usage-row").first()).toBeVisible();
 });
 
 test("agent tab renders distinct clay avatars that react to state", async () => {

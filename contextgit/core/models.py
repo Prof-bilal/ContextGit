@@ -109,6 +109,81 @@ class ProviderRecord(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+# Where an LLM call happened: a chat turn, a council member, a research run, an
+# image render, or a committed CLI/PTY turn.
+UsageSurface = Literal["chat", "council", "research", "image", "code"]
+# 'provider' when the provider reported real usage; 'estimate' for the ~4-chars fallback.
+UsageSource = Literal["provider", "estimate"]
+
+
+class UsageEvent(BaseModel):
+    """One recorded LLM call's token usage (real or estimated)."""
+
+    provider: str
+    model: str
+    surface: UsageSurface
+    source: UsageSource
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    session_id: str | None = None
+    branch: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class UsageTotals(BaseModel):
+    """Summed token counts over a set of usage events."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    # How much of `total_tokens` came from estimates rather than real usage.
+    estimated_tokens: int = 0
+    calls: int = 0
+
+
+class UsageRow(BaseModel):
+    """One grouped bucket of usage (by provider/model, surface, or source)."""
+
+    provider: str | None = None
+    model: str | None = None
+    surface: UsageSurface | None = None
+    source: UsageSource | None = None
+    totals: UsageTotals
+
+
+class UsageDay(BaseModel):
+    """One calendar day's usage (UTC), for the trend chart and activity heatmap."""
+
+    date: str  # ISO date, YYYY-MM-DD
+    totals: UsageTotals
+
+
+class UsageStreak(BaseModel):
+    """Consecutive-day activity stats, computed over every recorded usage event."""
+
+    # Consecutive active days ending today; yesterday still counts as current.
+    current: int = 0
+    longest: int = 0
+    active_days: int = 0
+    last_active: str | None = None  # ISO date
+
+
+class UsageSummary(BaseModel):
+    """Merged usage across every surface, for the Usage tab."""
+
+    totals: UsageTotals
+    by_provider: list[UsageRow] = Field(default_factory=list)
+    by_surface: list[UsageRow] = Field(default_factory=list)
+    by_source: list[UsageRow] = Field(default_factory=list)
+    # Daily buckets within the requested window, oldest first.
+    by_day: list[UsageDay] = Field(default_factory=list)
+    # Daily buckets over the last 365 days, for the contribution graph.
+    activity: list[UsageDay] = Field(default_factory=list)
+    # All-time streaks (independent of the requested window).
+    streak: UsageStreak = Field(default_factory=UsageStreak)
+
+
 class Session(BaseModel):
     """One AI run bound to a branch, with its own staging buffer.
 

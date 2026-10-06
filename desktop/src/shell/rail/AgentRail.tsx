@@ -1,9 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import { api, type FleetEntry, type Session } from "@/lib/api";
+import { api, type FleetEntry, type HarnessLimits, type Session } from "@/lib/api";
 import { AGENTS, DEFAULT_AGENT, agentLabel, agentMonogram } from "../agents";
 import { AgentMark, Chip, StatusIcon } from "../primitives";
 import { LuChevronRight, LuPlus, LuX } from "react-icons/lu";
+
+/** Compact "5-hour 16%" badge for a harness's tightest limit window. */
+function limitBadge(limits: HarnessLimits | undefined): string | null {
+  if (!limits?.signed_in) return null;
+  const windows = limits.windows.filter((window) => window.cap > 0);
+  if (windows.length === 0) return null;
+  const worst = windows.reduce((a, b) => (b.used / b.cap > a.used / a.cap ? b : a));
+  return `${worst.label} ${Math.round((worst.used / worst.cap) * 100)}%`;
+}
 
 /** "src/api/**, docs/**" -> ["src/api/**", "docs/**"]. */
 function parseScope(text: string): string[] {
@@ -35,6 +44,7 @@ export default function AgentRail({
   fleet,
   openIds,
   activeId,
+  limits,
   onSelect,
   onNew,
   onDelete,
@@ -43,6 +53,8 @@ export default function AgentRail({
   fleet: FleetEntry[];
   openIds: string[];
   activeId: string | null;
+  /** Each harness's account limits, keyed by harness id (cmd, cline). */
+  limits: Record<string, HarnessLimits>;
   onSelect: (session: Session) => void;
   onNew: (name: string, agent: string, scope: string[]) => Promise<void>;
   onDelete: (session: Session) => void;
@@ -215,6 +227,9 @@ export default function AgentRail({
               </span>
               <AgentMark agent={group.id} label={agentMonogram(group.id)} />
               <span className="cg-group-name">{agentLabel(group.id)}</span>
+              {limitBadge(limits[group.id]) && (
+                <span className="cg-group-limits">{limitBadge(limits[group.id])}</span>
+              )}
             </button>
             <div className="cg-group-items">
               <div>

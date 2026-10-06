@@ -24,12 +24,13 @@ import {
   type ResearchMode,
 } from "../../mock/chat";
 import { brandFor, type ModelSelection } from "../providers";
-import { AgentMark, Chip } from "../primitives";
+import { AgentMark, Chip, MiniSeg } from "../primitives";
 import BlameSheet, { type BlameView } from "../chat/BlameSheet";
 import ComposerModes, { councilMembers, type CouncilCandidate } from "../chat/ComposerModes";
 import ConnectProviderCard from "../chat/ConnectProviderCard";
 import { isReady } from "../chat/providerStatus";
 import CouncilCard, { type CouncilMemberView } from "../chat/CouncilCard";
+import DocsCreator from "../chat/DocsCreator";
 import ImageLab, { type ImageTile } from "../chat/ImageLab";
 import ResearchRun, {
   type ResearchResultPayload,
@@ -67,6 +68,12 @@ type Entry =
 
 const IMAGE_PLACEHOLDER = PROMPT_VERSIONS[1].text;
 
+/** The Chat tab's two surfaces: the chat composer, or the docs creator. */
+const CHAT_SURFACES: Array<{ value: "chat" | "docs"; label: string }> = [
+  { value: "chat", label: "Chat" },
+  { value: "docs", label: "Docs" },
+];
+
 /** Depth is the user's dial; these are the explicit budgets behind it. */
 const RESEARCH_BUDGETS: Record<
   ComposerControls["depth"],
@@ -81,10 +88,12 @@ export default function ChatView({
   selection,
   providers,
   branch,
+  sessionId,
   commitId,
   onPickModel,
   onAddProvider,
   onCommitted,
+  onStaged,
   readyChatCount,
   readyImageCount,
   readySearchCount,
@@ -95,12 +104,16 @@ export default function ChatView({
   providers: ProviderInfo[];
   /** The real repo branch the turn is committed to. */
   branch: string;
+  /** The chat session that owns this conversation's staging buffer. */
+  sessionId: string | null;
   /** The real commit the context is built from (null → the branch head). */
   commitId: string | null;
   onPickModel: () => void;
   onAddProvider: (capability: ProviderCapability, initialId?: string) => void;
   /** Called after a turn is committed, so the inspector can refresh. */
   onCommitted?: () => void;
+  /** Called after a turn is staged (uncommitted), so the rail/dock can refresh. */
+  onStaged?: () => void;
   /** How many usable providers exist per capability (mock and bare rows excluded). */
   readyChatCount: number;
   readyImageCount: number;
@@ -168,6 +181,7 @@ export default function ChatView({
     [providers],
   );
 
+  const [surface, setSurface] = useState<"chat" | "docs">("chat");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [mode, setMode] = useState<ChatMode>("chat");
   const [controls, setControls] = useState<ComposerControls>(DEFAULT_CONTROLS);
@@ -185,16 +199,18 @@ export default function ChatView({
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // The transcript is the branch's real committed context, never sample data.
+  // The transcript is the branch's real committed context plus any staged
+  // (uncommitted) turns, never sample data.
   useEffect(() => {
     let alive = true;
     blameCache.current = null;
     void (async () => {
       try {
-        const messages = await api.branchContext(branch);
+        const committed = await api.branchContext(branch);
+        const stagedTurns = sessionId ? await api.staging(sessionId) : [];
         if (!alive) return;
         setEntries(
-          messages.map((message) => ({
+          [...committed, ...stagedTurns].map((message) => ({
             kind: "message" as const,
             role: message.role,
             content: message.content,
@@ -207,7 +223,7 @@ export default function ChatView({
     return () => {
       alive = false;
     };
-  }, [branch]);
+  }, [branch, sessionId]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -298,13 +314,14 @@ export default function ChatView({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const { answer } = await streamChat(
+      const { answer, staged: wasStaged } = await streamChat(
         {
           prompt: text,
           branch,
           commitId,
           model: selection.modelId,
           provider: selection.providerId,
+          ...(sessionId ? { sessionId, autoCommit: false } : {}),
         },
         (chunk) => {
           accumulated.current += chunk;
@@ -316,7 +333,8 @@ export default function ChatView({
         ...current,
         { kind: "message", role: "assistant", content: answer },
       ]);
-      onCommitted?.();
+      if (wasStaged) onStaged?.();
+      else onCommitted?.();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Chat failed";
       setEntries((current) => [
@@ -425,16 +443,23 @@ export default function ChatView({
       ),
     );
     try {
-      await api.commit({
-        messages: [
-          { role: "user", content: entry.prompt },
-          { role: "assistant", content: answer },
-        ],
-        model: member.modelId,
-        summary: `council: kept ${member.label}`,
-        branch,
-      });
-      onCommitted?.();
+      const turn = [
+        { role: "user" as const, content: entry.prompt },
+        { role: "assistant" as const, content: answer },
+      ];
+      if (sessionId) {
+        // Commit on demand: the kept answer is staged, not committed.
+        await api.stage(sessionId, turn);
+        onStaged?.();
+      } else {
+        await api.commit({
+          messages: turn,
+          model: member.modelId,
+          summary: `council: kept ${member.label}`,
+          branch,
+        });
+        onCommitted?.();
+      }
     } catch (cause) {
       const detail =
         cause instanceof Error ? cause.message : "Could not record the council decision";
@@ -466,6 +491,7 @@ export default function ChatView({
     const budget = RESEARCH_BUDGETS[controls.depth];
     const controller = new AbortController();
     abortRef.current = controller;
+    let stagedResult = false;
     try {
       await streamResearch(
         {
@@ -479,8 +505,13 @@ export default function ChatView({
           breadth: budget.breadth,
           depth: budget.depth,
           maxPages: budget.maxPages,
+          ...(sessionId ? { sessionId, autoCommit: false } : {}),
         },
         (event: ResearchEvent) => {
+          if (event.type === "done") {
+            stagedResult = event.staged;
+            return;
+          }
           setEntries((current) =>
             current.map((entry, position) => {
               if (position !== researchIndex || entry.kind !== "research") return entry;
@@ -529,7 +560,8 @@ export default function ChatView({
             : entry,
         ),
       );
-      onCommitted?.();
+      if (stagedResult) onStaged?.();
+      else onCommitted?.();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Research failed";
       setEntries((current) => [
@@ -581,6 +613,7 @@ export default function ChatView({
     });
     const controller = new AbortController();
     abortRef.current = controller;
+    let stagedResult = false;
     try {
       await streamImages(
         {
@@ -591,8 +624,13 @@ export default function ChatView({
           count: 4,
           branch,
           commitId,
+          ...(sessionId ? { sessionId, autoCommit: false } : {}),
         },
         (event: ImageEvent) => {
+          if (event.type === "done") {
+            stagedResult = event.staged;
+            return;
+          }
           if (event.type !== "image") return;
           setEntries((current) =>
             current.map((entry, position) =>
@@ -610,7 +648,8 @@ export default function ChatView({
         },
         controller.signal,
       );
-      onCommitted?.();
+      if (stagedResult) onStaged?.();
+      else onCommitted?.();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Image generation failed";
       setEntries((current) => [
@@ -712,9 +751,41 @@ export default function ChatView({
           ? `${controls.researchMode} · ${controls.depth} depth · every step commits`
           : `${controls.imageModel || "choose an image model"} · ${controls.aspect}`;
 
+  // The Docs surface is a separate workspace for the document creator.
+  if (surface === "docs") {
+    return (
+      <div className="cg-chat">
+        <div className="cg-view-toolbar">
+          <MiniSeg
+            value={surface}
+            options={CHAT_SURFACES}
+            onChange={setSurface}
+            label="Chat surface"
+          />
+          <span className="cg-toolbar-spacer" />
+        </div>
+        <DocsCreator
+          selection={selection}
+          provider={provider}
+          branch={branch}
+          sessionId={sessionId}
+          commitId={commitId}
+          onCommitted={onCommitted}
+          onStaged={onStaged}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="cg-chat">
       <div className="cg-view-toolbar">
+        <MiniSeg
+          value={surface}
+          options={CHAT_SURFACES}
+          onChange={setSurface}
+          label="Chat surface"
+        />
         <h1>{branch || "Conversation"}</h1>
         {commitId && <Chip>{commitId.slice(0, 7)}</Chip>}
         <Chip tone="ok">live</Chip>

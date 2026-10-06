@@ -438,6 +438,26 @@
   color: var(--cg-ok);
   background: color-mix(in srgb, var(--cg-ok) 14%, transparent);
 }
+/* Conversation-type filter in the chat rail: one full-width row that only
+   scrolls if it truly cannot fit, instead of wrapping to a ragged second line. */
+.cg-mini-seg.cg-rail-filter {
+  display: flex;
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 0.85rem 0.45rem;
+}
+.cg-mini-seg.cg-rail-filter::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.cg-mini-seg.cg-rail-filter button {
+  flex: 1 0 auto;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
 
 /* ---------- team mode (task board, feed, task form) ---------- */
 
@@ -770,6 +790,26 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   background: color-mix(in srgb, var(--cg-warn) 12%, transparent);
 }
 
+/* Chips double as filter toggles (history kind filter), so give the button
+   form a pointer and a hover that reads as clickable. */
+button.cg-chip {
+  cursor: pointer;
+  transition: border-color 120ms var(--cg-ease), color 120ms var(--cg-ease);
+}
+button.cg-chip:hover {
+  border-color: var(--cg-line-strong);
+  color: var(--cg-ink);
+}
+button.cg-chip[aria-pressed="true"] {
+  cursor: default;
+}
+
+/* Folded branch labels on a busy commit ("+12 more"): quiet, not a real chip. */
+.cg-chip-more {
+  border-style: dashed;
+  color: var(--cg-ink-3);
+}
+
 /* ------------------------------------------------------------------ main --- */
 
 .cg-main {
@@ -807,7 +847,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
 .cg-view-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.6rem;
+  row-gap: 0.4rem;
   padding: 0.5rem 0.85rem;
   border-bottom: 1px solid var(--cg-line);
   background: var(--cg-surface);
@@ -1129,6 +1171,253 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   font: 400 0.62rem/1.2 "Martian Mono", monospace;
   color: var(--cg-ink-3);
   overflow-wrap: anywhere;
+}
+/* Usage tab: merged token accounting across every surface and connected AI. */
+.cg-usage {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  height: 100%;
+  padding: 0.9rem 1rem 1.4rem;
+  overflow-y: auto;
+}
+.cg-usage-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.7rem;
+}
+.cg-usage-card {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 10px;
+  background: var(--cg-surface);
+}
+.cg-usage-card strong {
+  font: 600 1.5rem/1.1 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-usage-section {
+  display: grid;
+  gap: 0.4rem;
+}
+.cg-usage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.cg-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+  background: var(--cg-surface-2);
+}
+.cg-usage-name {
+  font: 500 0.86rem/1.3 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-usage-calls {
+  font: 400 0.66rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+  white-space: nowrap;
+}
+.cg-usage-tokens {
+  font: 600 0.78rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink);
+  white-space: nowrap;
+}
+/* Streak panel: current streak hero + best/active stats. */
+.cg-usage-streak {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.6rem 1.4rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 12px;
+  background:
+    radial-gradient(
+      120% 160% at 0% 0%,
+      color-mix(in srgb, var(--cg-signal) 16%, transparent),
+      transparent 60%
+    ),
+    var(--cg-surface);
+}
+.cg-usage-streak-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.cg-usage-streak-flame {
+  font-size: 1.9rem;
+  color: var(--cg-ink-3);
+}
+.cg-usage-streak[data-active="true"] .cg-usage-streak-flame {
+  color: var(--cg-signal-hot);
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--cg-signal) 55%, transparent));
+}
+.cg-usage-streak-count {
+  display: grid;
+  gap: 0.1rem;
+}
+.cg-usage-streak-count strong {
+  font: 700 2rem/1 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-usage-streak-stats {
+  display: flex;
+  gap: 1.6rem;
+  justify-self: end;
+}
+.cg-usage-streak-stats > div {
+  display: grid;
+  gap: 0.15rem;
+}
+.cg-usage-streak-stats strong {
+  font: 600 1.35rem/1 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-usage-streak > .cg-view-sub {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Per-harness account limits (Code dock panel + rail group badge). */
+.cg-limits {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--cg-line);
+}
+.cg-limit {
+  display: grid;
+  gap: 0.25rem;
+}
+.cg-limit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cg-limit-label {
+  font: 600 0.78rem/1 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-limit-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cg-limit-credits {
+  display: flex;
+  gap: 1rem;
+  margin: 0.15rem 0 0;
+}
+.cg-limit-credits > div {
+  display: grid;
+  gap: 0.1rem;
+}
+.cg-limit-credits dt {
+  font: 400 0.6rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+  text-transform: uppercase;
+}
+.cg-limit-credits dd {
+  margin: 0;
+  font: 600 0.9rem/1 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-group-limits {
+  margin-left: auto;
+  font: 500 0.6rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+  white-space: nowrap;
+}
+
+/* Generated document card (Chat "Document" mode). */
+.cg-doc {
+  display: grid;
+  gap: 0.55rem;
+}
+.cg-doc-title {
+  margin: 0;
+  font: 600 1rem/1.3 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+}
+.cg-doc-preview {
+  margin: 0;
+  max-height: 20rem;
+  overflow: auto;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+  background: var(--cg-term-bg);
+  color: var(--cg-term-ink);
+  font: 400 0.76rem/1.55 "Martian Mono", ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Docs workspace (Chat | Docs). */
+.cg-docs {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  height: 100%;
+  padding: 0.9rem 1rem 1.4rem;
+  overflow-y: auto;
+}
+.cg-docs-form {
+  display: grid;
+  gap: 0.45rem;
+}
+.cg-docs-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cg-docs-library {
+  display: grid;
+  gap: 0.4rem;
+}
+.cg-doclib {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.cg-doclib-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+  background: var(--cg-surface-2);
+}
+.cg-doclib-copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.cg-doclib-title {
+  font: 500 0.88rem/1.3 "Schibsted Grotesk", sans-serif;
+  color: var(--cg-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cg-form-warn {
   margin: 0;
@@ -1702,6 +1991,12 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   font: 500 0.66rem/1 "Martian Mono", monospace;
   color: var(--cg-ink-3);
 }
+.cg-commit-time {
+  flex: none;
+  white-space: nowrap;
+  font: 500 0.66rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+}
 
 .cg-graph-placeholder {
   border: 1px dashed var(--cg-line-strong);
@@ -1768,6 +2063,127 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
 }
 .cg-graph .react-flow__attribution {
   display: none;
+}
+
+/* Git lane graph (git-log style) */
+.cg-lane-wrap {
+  height: 100%;
+  min-height: 30rem;
+  padding: 0.6rem;
+  overflow: auto;
+}
+.cg-lane {
+  display: block;
+  border: 1px solid var(--cg-line);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 1px 1px, var(--cg-line) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--cg-bg);
+}
+.cg-lane-edge {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+/* Extra (non-first) parents of a merge are drawn dashed: they reach in from another lane. */
+.cg-lane-edge[data-merge="true"] {
+  stroke-dasharray: 2 6;
+  opacity: 0.6;
+}
+.cg-lane-label {
+  font: 600 0.62rem/1 "Martian Mono", monospace;
+  letter-spacing: 0.04em;
+  text-anchor: middle;
+}
+.cg-lane-node {
+  cursor: pointer;
+  outline: none;
+}
+.cg-lane-hit {
+  fill: transparent;
+}
+.cg-lane-dot {
+  fill: var(--cg-surface-2);
+  stroke-width: 3;
+  transition: r 160ms var(--cg-ease);
+}
+.cg-lane-node[data-kind="root"] .cg-lane-dot { fill: var(--cg-ink-3); }
+.cg-lane-node[data-kind="merge"] .cg-lane-dot { fill: var(--cg-signal); }
+.cg-lane-node[data-kind="note"] .cg-lane-dot { fill: var(--cg-warn); }
+.cg-lane-node:hover .cg-lane-dot { r: 12; }
+.cg-lane-sel {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+.cg-lane-focus {
+  fill: none;
+  stroke: var(--cg-focus);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+  opacity: 0;
+}
+.cg-lane-node:focus-visible .cg-lane-focus {
+  opacity: 1;
+}
+.cg-lane-id {
+  font: 500 0.62rem/1 "Martian Mono", monospace;
+  fill: var(--cg-ink-3);
+  text-anchor: middle;
+}
+.cg-lane-node[aria-pressed="true"] .cg-lane-id {
+  fill: var(--cg-ink);
+}
+
+/* Commit activity heatmap (a GitHub-style year of weeks × days) */
+.cg-heat {
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+}
+.cg-heat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.cg-heat-legend {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font: 400 0.62rem/1 "Martian Mono", monospace;
+  color: var(--cg-ink-3);
+}
+.cg-heat-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--cg-line);
+}
+.cg-heat-swatch[data-level="0"] { background: var(--cg-surface-3); }
+.cg-heat-swatch[data-level="1"] { background: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3)); }
+.cg-heat-swatch[data-level="2"] { background: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3)); }
+.cg-heat-swatch[data-level="3"] { background: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3)); }
+.cg-heat-swatch[data-level="4"] { background: var(--cg-ok); }
+.cg-heat-scroll {
+  overflow-x: auto;
+}
+.cg-heat-grid {
+  display: block;
+}
+.cg-heat-cell {
+  fill: var(--cg-surface-3);
+}
+.cg-heat-cell[data-level="1"] { fill: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3)); }
+.cg-heat-cell[data-level="2"] { fill: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3)); }
+.cg-heat-cell[data-level="3"] { fill: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3)); }
+.cg-heat-cell[data-level="4"] { fill: var(--cg-ok); }
+.cg-heat-axis {
+  font: 500 0.6rem/1 "Martian Mono", monospace;
+  fill: var(--cg-ink-3);
 }
 
 /* Merge conflict resolution */

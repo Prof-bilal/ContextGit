@@ -27,6 +27,8 @@ export interface ContextGitBridge {
   chooseWorkspace: () => Promise<import("../shared/workspace").Workspace | null>;
   pickWorkspaceLocation: () => Promise<string | null>;
   createWorkspace: (parent: string, name: string) => Promise<import("../shared/workspace").Workspace>;
+  /** Native Save dialog; returns the written path or null when cancelled. */
+  saveFile: (options: { defaultName: string; data: ArrayBuffer }) => Promise<string | null>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

@@ -21,6 +21,21 @@ that history a mergeable artefact alongside your code.
 
 - **Conversation DAG** — immutable, content-addressed commits over messages;
   branches, tags, checkout, `log`, `diff`, rollback.
+- **Docs tab (in Chat)** — a **Chat | Docs** switch inside the Chat tab. Docs asks
+  the assistant to write a document on any topic and download it as **Markdown,
+  PDF, Word or PowerPoint** in a **professional house style** (Report / Brief /
+  Proposal: cover page, table of contents, page numbers, styled code and tables),
+  with a library of everything you've generated.
+  See [`files/chat-documents.md`](files/chat-documents.md).
+- **Token usage** — every LLM call is counted and merged into one **Usage** view:
+  real provider usage where the API reports it (chat, council), estimates for
+  research and CLI/PTY turns, broken down per connected AI, model and surface.
+  See [`files/usage.md`](files/usage.md).
+- **Chat conversations** — each new conversation is an isolated session forked
+  from the root, so nothing leaks in from another thread. Turns are **staged** and
+  land on the branch only when you press **Commit**; a pending-changes diff shows
+  exactly what is about to land, for Chat, Council, Research and Image alike.
+  See [`files/chat-sessions.md`](files/chat-sessions.md).
 - **Semantic merge** — merges two branches by extracting decisions/facts/dead
   ends and detecting contradictions; conflicts are never auto-resolved.
 - **Parallel agent runs** — one **git worktree + branch per run**, so agents
@@ -39,6 +54,10 @@ that history a mergeable artefact alongside your code.
   Freebuff, Cline, Pi, Kilo Code and Command Code, each with its real brand icon.
   A harness you don't have is installed in the background with a progress bar —
   no installer terminal. See [`files/code-harnesses.md`](files/code-harnesses.md).
+- **Harness usage limits** — the Code tab shows each CLI's own account limits
+  (Command Code's 5-hour / Weekly windows, credits and lifetime tokens; Cline's
+  plan), read locally from the CLI's stored login.
+  See [`files/code-harness-limits.md`](files/code-harness-limits.md).
 - **Team mode** — a mission split into tasks with roles, file scopes and
   dependencies; one run + worktree per task, dependency gating, and enforced
   ownership (two tasks can never claim the same files).

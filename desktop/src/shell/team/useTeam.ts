@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type TeamBoard } from "@/lib/api";
+import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
 const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
@@ -11,17 +12,17 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
  */
 export function useTeam(intervalMs = 4000) {
   const [board, setBoard] = useState<TeamBoard | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { error, reportSuccess, reportFailure } = useTransientError();
 
   const refresh = useCallback(async () => {
     if (!HAS_BRIDGE) return;
     try {
       setBoard(await api.team());
-      setError(null);
+      reportSuccess();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load the team board");
+      reportFailure(cause instanceof Error ? cause.message : "Could not load the team board");
     }
-  }, []);
+  }, [reportSuccess, reportFailure]);
 
   useEffect(() => {
     void refresh();

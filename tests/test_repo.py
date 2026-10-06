@@ -126,6 +126,17 @@ class TestBranches:
         ctx = repo.build_context(repo.log()[0].id)
         assert [m.content for m in ctx] == ["shared"]
 
+    def test_branch_from_root_starts_empty(self, repo: Repo) -> None:
+        # A conversation forked from the repo root is isolated: it starts with no
+        # context and only ever shows its own turns.
+        repo.commit([Message(role="user", content="shared")], model="m")
+        root_id = repo.log()[-1].id
+        repo.branch("chat/new", from_commit=root_id)
+        assert repo.build_context(repo.log("chat/new")[0].id) == []
+        repo.commit([Message(role="user", content="own")], model="m", branch="chat/new")
+        ctx = repo.build_context(repo.log("chat/new")[0].id)
+        assert [m.content for m in ctx] == ["own"]
+
     def test_checkout_commit_returns_ref_without_switch(self, repo: Repo) -> None:
         c1 = repo.commit([Message(role="user", content="one")], model="m")
         repo.commit([Message(role="user", content="two")], model="m")

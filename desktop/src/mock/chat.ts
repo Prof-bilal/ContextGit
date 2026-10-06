@@ -13,6 +13,29 @@ export const CHAT_MODES: Array<{ value: ChatMode; label: string; hint: string }>
   { value: "image", label: "Image", hint: "Versioned prompt → render" },
 ];
 
+/** File types the Docs creator can generate. */
+export type DocumentFormat = "md" | "pdf" | "docx" | "pptx";
+
+export const DOCUMENT_FORMATS: Array<{ value: DocumentFormat; label: string; hint: string }> = [
+  { value: "md", label: "Markdown", hint: ".md — plain text" },
+  { value: "pdf", label: "PDF", hint: ".pdf — printable" },
+  { value: "docx", label: "Word", hint: ".docx — editable" },
+  { value: "pptx", label: "Slides", hint: ".pptx — presentation" },
+];
+
+/** House styles for the Docs creator. */
+export type DocumentTemplate = "report" | "brief" | "proposal";
+
+export const DOCUMENT_TEMPLATES: Array<{
+  value: DocumentTemplate;
+  label: string;
+  hint: string;
+}> = [
+  { value: "report", label: "Report", hint: "Formal, numbered sections" },
+  { value: "brief", label: "Brief", hint: "Concise, scannable" },
+  { value: "proposal", label: "Proposal", hint: "Accent colour, persuasive" },
+];
+
 export type ResearchMode = "deep" | "competitive" | "lead" | "verify";
 
 export const RESEARCH_MODES: Array<{ value: ResearchMode; label: string; hint: string }> = [

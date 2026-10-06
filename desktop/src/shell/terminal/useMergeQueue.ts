@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type MergeQueueEntry } from "@/lib/api";
+import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
 const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
@@ -8,17 +9,17 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */
 export function useMergeQueue() {
   const [queue, setQueue] = useState<MergeQueueEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { error, reportSuccess, reportFailure } = useTransientError();
 
   const refresh = useCallback(async () => {
     if (!HAS_BRIDGE) return;
     try {
       setQueue(await api.mergeQueue());
-      setError(null);
+      reportSuccess();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load the merge queue");
+      reportFailure(cause instanceof Error ? cause.message : "Could not load the merge queue");
     }
-  }, []);
+  }, [reportSuccess, reportFailure]);
 
   useEffect(() => {
     void refresh();

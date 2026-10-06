@@ -88,6 +88,8 @@ class ImageRequest(BaseModel):
     count: int = Field(default=4, ge=1, le=8)
     branch: str | None = None
     commit_id: str | None = None
+    session_id: str | None = None
+    auto_commit: bool | None = None
 
 
 class ResearchRequest(BaseModel):
@@ -103,6 +105,20 @@ class ResearchRequest(BaseModel):
     breadth: int = Field(default=3, ge=1, le=6)
     depth: int = Field(default=2, ge=1, le=4)
     max_pages: int = Field(default=6, ge=1, le=20)
+    session_id: str | None = None
+    auto_commit: bool | None = None
+
+
+class DocumentRequest(BaseModel):
+    """Generate a document on a topic in a chosen format (Chat "Document" mode)."""
+
+    prompt: str = Field(min_length=1)
+    format: Literal["md", "pdf", "docx", "pptx"] = "pdf"
+    template: Literal["report", "brief", "proposal"] = "report"
+    provider: str | None = None
+    model: str | None = None
+    branch: str | None = None
+    commit_id: str | None = None
     session_id: str | None = None
     auto_commit: bool | None = None
 

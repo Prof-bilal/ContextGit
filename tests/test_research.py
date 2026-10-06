@@ -75,6 +75,30 @@ def test_deep_research_streams_steps_and_commits(tmp_path: Path) -> None:
     assert (repo.root / "research" / run_id / "run.json").exists()
 
 
+def test_research_stream_with_session_stages(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    client = client_for(repo, deep_provider())
+    session = client.post(
+        "/api/v1/sessions", json={"name": "research session", "auto_commit": False}
+    ).json()
+    response = client.post(
+        "/api/v1/research/stream",
+        json={
+            "mode": "deep",
+            "prompt": "how do token buckets work",
+            "depth": 1,
+            "session_id": session["id"],
+        },
+    )
+    events = parse(response.text)
+    done = next(data for name, data in events if name == "done")
+    assert done["staged"] is True
+    assert done["commit_id"] is None
+    staged = client.get(f"/api/v1/sessions/{session['id']}/staging").json()
+    assert [message["content"] for message in staged][0] == "how do token buckets work"
+    assert len(repo.log(session["branch"])) == 1  # root only — nothing committed
+
+
 def test_competitive_returns_a_matrix(tmp_path: Path) -> None:
     repo = Repo.init(tmp_path / "repo")
     provider = FakeProvider(

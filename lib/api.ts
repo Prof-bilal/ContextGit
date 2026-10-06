@@ -357,6 +357,98 @@ export interface BranchBudget {
   messages: number;
 }
 
+// ---------- usage (merged token accounting across every surface) ----------
+
+export type UsageSurface = "chat" | "council" | "research" | "image" | "code";
+export type UsageSource = "provider" | "estimate";
+
+export interface UsageTotals {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  /** How much of `total_tokens` came from estimates rather than real usage. */
+  estimated_tokens: number;
+  calls: number;
+}
+
+export interface UsageRow {
+  provider: string | null;
+  model: string | null;
+  surface: UsageSurface | null;
+  source: UsageSource | null;
+  totals: UsageTotals;
+}
+
+/** One calendar day's usage (UTC), for the trend chart and activity heatmap. */
+export interface UsageDay {
+  date: string;
+  totals: UsageTotals;
+}
+
+/** Consecutive-day activity stats, computed over every recorded usage event. */
+export interface UsageStreak {
+  current: number;
+  longest: number;
+  active_days: number;
+  last_active: string | null;
+}
+
+export interface UsageSummary {
+  totals: UsageTotals;
+  by_provider: UsageRow[];
+  by_surface: UsageRow[];
+  by_source: UsageRow[];
+  /** Daily buckets within the requested window, oldest first. */
+  by_day: UsageDay[];
+  /** Daily buckets over the last 365 days, for the contribution graph. */
+  activity: UsageDay[];
+  /** All-time streaks (independent of the requested window). */
+  streak: UsageStreak;
+}
+
+// ---------- harness limits (each CLI's own account limits) ----------
+
+export interface LimitWindow {
+  label: string;
+  used: number;
+  cap: number;
+  reset_at: string | null;
+  unit: string;
+}
+
+export interface LimitCredits {
+  monthly_remaining: number | null;
+  purchased_remaining: number | null;
+  free_remaining: number | null;
+  /** Freebuff keeps a separate wallet pool from its daily allowance. */
+  wallet_remaining: number | null;
+  total_remaining: number | null;
+  total_spent: number | null;
+}
+
+export interface LimitTotals {
+  total_tokens: number | null;
+  total_cost: number | null;
+  requests: number | null;
+  period: string | null;
+}
+
+export interface HarnessLimits {
+  harness: string;
+  label: string;
+  /** Whether this app has an adapter for the harness at all. */
+  supported: boolean;
+  signed_in: boolean;
+  source: string | null;
+  plan: string | null;
+  windows: LimitWindow[];
+  credits: LimitCredits | null;
+  totals: LimitTotals | null;
+  /** Why limits are unavailable (not an error), when they are. */
+  message: string | null;
+  fetched_at: string;
+}
+
 /** Provenance for one context message: the commit that introduced it. */
 export interface BlameEntry {
   index: number;
@@ -374,6 +466,11 @@ export const api = {
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
   branchBudget: (name: string) =>
     request<BranchBudget>(`/api/v1/branches/${encodeURIComponent(name)}/budget`),
+  usage: (days?: number) =>
+    request<UsageSummary>(`/api/v1/usage${days ? `?days=${days}` : ""}`),
+  limits: (refresh = false) =>
+    request<HarnessLimits[]>(`/api/v1/limits${refresh ? "?refresh=true" : ""}`),
+  documents: () => request<DocumentInfo[]>("/api/v1/documents"),
   branchBlame: (name: string) =>
     request<BlameEntry[]>(`/api/v1/branches/${encodeURIComponent(name)}/blame`),
   commits: (branch: string) =>
@@ -641,12 +738,17 @@ export async function streamChat(
     commitId: string | null;
     model: string;
     provider?: string;
+    /** When set with autoCommit false, the turn is staged, not committed. */
+    sessionId?: string | null;
+    autoCommit?: boolean;
   },
   onToken: (text: string) => void,
   signal?: AbortSignal,
-): Promise<{ answer: string; commitId: string | null }> {
+): Promise<{ answer: string; commitId: string | null; staged: boolean; stagedCount: number }> {
   let answer = "";
   let commitId: string | null = null;
+  let staged = false;
+  let stagedCount = 0;
   let sawDone = false;
   await readSse(
     "/api/v1/chat/stream",
@@ -656,15 +758,25 @@ export async function streamChat(
       commit_id: input.commitId,
       model: input.model,
       provider: input.provider,
+      session_id: input.sessionId ?? undefined,
+      auto_commit: input.autoCommit,
     },
     (message) => {
-      const data = message.data as { text?: string; error?: string; commit_id?: string | null };
+      const data = message.data as {
+        text?: string;
+        error?: string;
+        commit_id?: string | null;
+        staged?: boolean;
+        staged_count?: number;
+      };
       if (message.event === "token" && data.text) {
         answer += data.text;
         onToken(data.text);
       } else if (message.event === "done") {
         sawDone = true;
         commitId = data.commit_id ?? null;
+        staged = data.staged ?? false;
+        stagedCount = data.staged_count ?? 0;
       } else if (message.event === "error") {
         throw new Error(data.error ?? "Chat stream failed");
       }
@@ -672,7 +784,7 @@ export async function streamChat(
     signal,
   );
   if (!sawDone) throw new Error("Chat ended without a done event");
-  return { answer, commitId };
+  return { answer, commitId, staged, stagedCount };
 }
 
 /** One member of a council run: a provider id plus the model to ask. */
@@ -730,7 +842,7 @@ export interface RenderedImage {
 export type ImageEvent =
   | { type: "step"; label: string; detail: string }
   | ({ type: "image" } & RenderedImage)
-  | { type: "done"; commit_id: string; branch: string; tiles: number }
+  | { type: "done"; commit_id: string | null; branch: string; tiles: number; staged: boolean }
   | { type: "error"; error: string };
 
 export interface ResearchSourceInfo {
@@ -753,7 +865,7 @@ export type ResearchEvent =
   | ({ type: "source" } & ResearchSourceInfo)
   | { type: "report"; text: string }
   | { type: "result"; mode: string } & Record<string, unknown>
-  | { type: "done"; commit_id: string; branch: string; run_id: string }
+  | { type: "done"; commit_id: string | null; branch: string; run_id: string; staged: boolean }
   | { type: "error"; error: string };
 
 /** Run a research pass; steps, sources and the report stream as they happen. */
@@ -769,6 +881,8 @@ export async function streamResearch(
     breadth: number;
     depth: number;
     maxPages: number;
+    sessionId?: string | null;
+    autoCommit?: boolean;
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -787,6 +901,8 @@ export async function streamResearch(
       breadth: input.breadth,
       depth: input.depth,
       max_pages: input.maxPages,
+      session_id: input.sessionId ?? undefined,
+      auto_commit: input.autoCommit,
     },
     (message) => {
       if (message.event === "done") sawDone = true;
@@ -807,6 +923,8 @@ export async function streamImages(
     count: number;
     branch: string;
     commitId: string | null;
+    sessionId?: string | null;
+    autoCommit?: boolean;
   },
   onEvent: (event: ImageEvent) => void,
   signal?: AbortSignal,
@@ -822,6 +940,8 @@ export async function streamImages(
       count: input.count,
       branch: input.branch,
       commit_id: input.commitId,
+      session_id: input.sessionId ?? undefined,
+      auto_commit: input.autoCommit,
     },
     (message) => {
       if (message.event === "done") sawDone = true;
@@ -830,4 +950,79 @@ export async function streamImages(
     signal,
   );
   if (!sawDone) throw new Error("Image run ended without a done event");
+}
+
+// ---------- documents (Chat "Document" mode: generate a file) ----------
+
+export type DocumentFormat = "md" | "pdf" | "docx" | "pptx";
+export type DocumentTemplate = "report" | "brief" | "proposal";
+
+export interface RenderedDocument {
+  id: string;
+  filename: string;
+  format: DocumentFormat;
+  size: number;
+  title: string;
+  markdown: string;
+}
+
+/** A previously generated document, for the Docs library list. */
+export interface DocumentInfo {
+  id: string;
+  filename: string;
+  format: DocumentFormat;
+  size: number;
+  title: string;
+  created_at: string;
+}
+
+export type DocumentEvent =
+  | { type: "step"; label: string; detail: string }
+  | { type: "token"; text: string }
+  | ({ type: "document" } & RenderedDocument)
+  | { type: "done"; commit_id: string | null; branch: string; staged: boolean }
+  | { type: "error"; error: string };
+
+/** Ask the assistant to write a document on a topic; tokens + progress stream. */
+export async function streamDocument(
+  input: {
+    prompt: string;
+    format: DocumentFormat;
+    template?: DocumentTemplate;
+    provider?: string;
+    model?: string;
+    branch: string;
+    commitId: string | null;
+    sessionId?: string | null;
+    autoCommit?: boolean;
+  },
+  onEvent: (event: DocumentEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let sawDone = false;
+  await readSse(
+    "/api/v1/documents/stream",
+    {
+      prompt: input.prompt,
+      format: input.format,
+      template: input.template,
+      provider: input.provider,
+      model: input.model,
+      branch: input.branch,
+      commit_id: input.commitId,
+      session_id: input.sessionId ?? undefined,
+      auto_commit: input.autoCommit,
+    },
+    (message) => {
+      if (message.event === "done") sawDone = true;
+      onEvent({ type: message.event, ...(message.data as object) } as DocumentEvent);
+    },
+    signal,
+  );
+  if (!sawDone) throw new Error("Document generation ended without a done event");
+}
+
+/** Download URL for a rendered document. */
+export function documentUrl(id: string, format: DocumentFormat): string {
+  return `${base}/api/v1/documents/${encodeURIComponent(id)}?format=${format}`;
 }

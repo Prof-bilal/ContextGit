@@ -71,3 +71,7 @@ npm run test:e2e
 | `files/chat-research-landscape.md` | Chat/research: the research types, prior art and lead-scraping guardrails |
 | `files/chat-providers.md` | Chat/research: the provider layer, add-a-provider flow and catalog |
 | `files/code-harnesses.md` | Code tab: the CLI harness registry, on-demand install and branding |
+| `files/code-harness-limits.md` | Code tab: each CLI's account usage limits (Command Code, Cline) |
+| `files/chat-sessions.md` | Chat tab: conversations as isolated sessions, staging + commit, the pending diff |
+| `files/chat-documents.md` | Chat's Docs tab: generate + download md/pdf/docx/pptx, with a library |
+| `files/usage.md` | Token usage: real-vs-estimated capture, the event log and the Usage tab |

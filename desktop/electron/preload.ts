@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld("contextgit", {
   pickWorkspaceLocation: () => ipcRenderer.invoke("ctx:workspace-pick") as Promise<string | null>,
   createWorkspace: (parent: string, name: string) =>
     ipcRenderer.invoke("ctx:workspace-create", { parent, name }) as Promise<Workspace>,
+  // ---------- File save (document export) ----------
+  saveFile: (options: { defaultName: string; data: ArrayBuffer }) =>
+    ipcRenderer.invoke("ctx:save-file", options) as Promise<string | null>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

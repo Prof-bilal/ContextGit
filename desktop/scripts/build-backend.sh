@@ -14,6 +14,15 @@ fi
 
 "$PY" -m pip install --quiet pyinstaller
 
+# Bundle the optional document renderers (Chat Docs) when installed. Absent ones
+# just mean that format falls back (PDF) or reports "not installed" at runtime.
+EXTRAS=()
+for pkg in docx pptx reportlab weasyprint; do
+  if "$PY" -c "import $pkg" >/dev/null 2>&1; then
+    EXTRAS+=(--collect-all "$pkg")
+  fi
+done
+
 "$PY" -m PyInstaller --noconfirm --clean --onefile \
   --name contextgit-api \
   --paths "$ROOT" \
@@ -25,6 +34,7 @@ fi
   --hidden-import uvicorn.protocols.websockets.auto \
   --hidden-import uvicorn.lifespan.on \
   --collect-all contextgit \
+  ${EXTRAS[@]+"${EXTRAS[@]}"} \
   --distpath "$ROOT/desktop/build/backend" \
   --workpath "$ROOT/desktop/build/pyinstaller" \
   --specpath "$ROOT/desktop/build/pyinstaller" \

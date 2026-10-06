@@ -260,6 +260,24 @@ ipcMain.handle("ctx:workspace-create", (_event, options: { parent: string; name:
   return setWorkspace(target);
 });
 
+/** Save a generated file (document export) via the native Save dialog. */
+ipcMain.handle(
+  "ctx:save-file",
+  async (_event, options: { defaultName: string; data: ArrayBuffer }) => {
+    const dialogOptions: Electron.SaveDialogOptions = {
+      title: "Save file",
+      buttonLabel: "Save",
+      defaultPath: path.join(app.getPath("downloads"), options.defaultName),
+    };
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+    if (result.canceled || !result.filePath) return null;
+    await fs.promises.writeFile(result.filePath, Buffer.from(options.data));
+    return result.filePath;
+  },
+);
+
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 const ptys = new PtyManager(

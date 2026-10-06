@@ -66,6 +66,25 @@ def test_images_stream_renders_and_commits(tmp_path: Path) -> None:
     assert commit.messages[0].content == "isometric token bucket"
 
 
+def test_images_stream_with_session_stages(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    client = client_for(repo)
+    session = client.post(
+        "/api/v1/sessions", json={"name": "image session", "auto_commit": False}
+    ).json()
+    response = client.post(
+        "/api/v1/images/stream",
+        json={"prompt": "a token bucket", "aspect": "1:1", "count": 1, "session_id": session["id"]},
+    )
+    assert response.status_code == 200
+    done = next(data for name, data in parse(response.text) if name == "done")
+    assert done["staged"] is True
+    assert done["commit_id"] is None
+    staged = client.get(f"/api/v1/sessions/{session['id']}/staging").json()
+    assert str(staged[-1]["content"]).startswith("[image]")
+    assert len(repo.log(session["branch"])) == 1  # root only — nothing committed
+
+
 def test_images_stream_reports_backend_failure(tmp_path: Path) -> None:
     repo = Repo.init(tmp_path / "repo")
     client = client_for(repo)

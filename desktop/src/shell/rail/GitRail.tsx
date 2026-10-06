@@ -5,14 +5,6 @@ import type { Branch, Commit } from "@/lib/api";
 import { commitsOnBranch } from "../git/branchCommits";
 import { Chip } from "../primitives";
 
-export type CommitFilter = "all" | "merge" | "note";
-
-const FILTERS: Array<{ value: CommitFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "merge", label: "Merges" },
-  { value: "note", label: "Notes" },
-];
-
 /**
  * Real branches. Every run creates one, and runs that never committed all sit on
  * the same root commit — so branches with no work of their own are counted and
@@ -26,8 +18,6 @@ export default function GitRail({
   onSelectBranch,
   onCheckout,
   onDelete,
-  filter,
-  onFilter,
 }: {
   branches: Branch[];
   commits: Commit[];
@@ -36,8 +26,6 @@ export default function GitRail({
   onSelectBranch: (branch: string) => void;
   onCheckout: (branch: string) => void;
   onDelete: (branch: string) => void;
-  filter: CommitFilter;
-  onFilter: (filter: CommitFilter) => void;
 }) {
   const [query, setQuery] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
@@ -125,22 +113,6 @@ export default function GitRail({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-      </div>
-      <div className="cg-rail-search">
-        <div className="cg-tags" role="group" aria-label="Commit kind filter">
-          {FILTERS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className="cg-chip"
-              aria-pressed={filter === option.value}
-              data-tone={filter === option.value ? "signal" : undefined}
-              onClick={() => onFilter(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {active.map(row)}

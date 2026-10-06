@@ -6,7 +6,8 @@ Deleting a branch never deletes commits.
 """
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
@@ -47,6 +48,14 @@ from contextgit.core.models import (
     TeamEvent,
     TeamMessage,
     TeamMessageKind,
+    UsageDay,
+    UsageEvent,
+    UsageRow,
+    UsageSource,
+    UsageStreak,
+    UsageSummary,
+    UsageSurface,
+    UsageTotals,
     utcnow,
 )
 from contextgit.core.team import (
@@ -98,6 +107,34 @@ _VERIFIER_AGENTS = (
     "kilo",
     "commandcode",
 )
+
+
+def _streak_from_dates(dates: set[date], today: date) -> UsageStreak:
+    """Consecutive-day activity over a set of active dates (pure, for tests).
+
+    `longest` is the longest run anywhere in the history; `current` walks back
+    from today (or yesterday, so a streak is not reported broken before the
+    day's first call). `today` is injected so the math is deterministic.
+    """
+    if not dates:
+        return UsageStreak()
+    ordered = sorted(dates)
+    longest = run = 1
+    for previous_day, day in zip(ordered, ordered[1:], strict=False):
+        run = run + 1 if (day - previous_day).days == 1 else 1
+        longest = max(longest, run)
+    anchor = today if today in dates else today - timedelta(days=1)
+    current = 0
+    probe = anchor
+    while probe in dates:
+        current += 1
+        probe -= timedelta(days=1)
+    return UsageStreak(
+        current=current,
+        longest=longest,
+        active_days=len(dates),
+        last_active=ordered[-1].isoformat(),
+    )
 
 
 class Repo:
@@ -1444,7 +1481,188 @@ class Repo:
         self._storage.clear_staged(session_id)
         session.updated_at = utcnow()
         self._storage.update_session(session)
+        if session.kind == "terminal":
+            # A PTY agent's live usage is not observable, so record an estimate
+            # from the text we own, attributed to the CLI harness. Chat turns are
+            # recorded at call time instead (so we never double count).
+            prompt = sum(
+                self._estimate_text(m.content) for m in messages if m.role != "assistant"
+            )
+            completion = sum(
+                self._estimate_text(m.content) for m in messages if m.role == "assistant"
+            )
+            self.record_usage(
+                session.agent or "cli",
+                session.agent or "cli",
+                "code",
+                source="estimate",
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                session_id=session.id,
+                branch=session.branch,
+            )
         return commit
+
+    @staticmethod
+    def _estimate_text(text: str) -> int:
+        """The repository's documented ~4-chars-per-token heuristic for one string."""
+        return (len(text) + 3) // 4 if text else 0
+
+    def record_usage(
+        self,
+        provider: str,
+        model: str,
+        surface: UsageSurface,
+        *,
+        source: UsageSource,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        session_id: str | None = None,
+        branch: str | None = None,
+    ) -> None:
+        """Append one usage event: real provider usage, or an estimate."""
+        prompt = max(0, prompt_tokens)
+        completion = max(0, completion_tokens)
+        self._storage.insert_usage(
+            UsageEvent(
+                provider=provider or "unknown",
+                model=model or "unknown",
+                surface=surface,
+                source=source,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=prompt + completion,
+                session_id=session_id,
+                branch=branch,
+            )
+        )
+
+    def backfill_usage(self) -> int:
+        """Seed the usage log once from committed history.
+
+        Real per-call usage is only observable going forward, so past work is
+        reconstructed from the commits themselves (estimated), attributed to the
+        commit's model and tagged `estimate`. Idempotent: runs only while the
+        usage log is empty, so it never double counts.
+        """
+        if self._storage.list_usage():
+            return 0
+        commits = self.all_commits()
+        if not commits:
+            return 0
+        terminal_branches = {
+            session.branch
+            for session in self._storage.list_sessions()
+            if session.kind == "terminal"
+        }
+        branch_of: dict[str, str] = {}
+        for ref in self._storage.list_branches():
+            for commit in self.log(ref.name):
+                branch_of.setdefault(commit.id, ref.name)
+        seeded = 0
+        for commit in commits:
+            if commit.kind == "root":
+                continue
+            prompt = sum(
+                self._estimate_text(m.content) for m in commit.messages if m.role != "assistant"
+            )
+            completion = sum(
+                self._estimate_text(m.content) for m in commit.messages if m.role == "assistant"
+            )
+            if prompt == 0 and completion == 0:
+                continue
+            branch_name = branch_of.get(commit.id)
+            self._storage.insert_usage(
+                UsageEvent(
+                    provider=commit.model or "unknown",
+                    model=commit.model or "unknown",
+                    surface="code" if branch_name in terminal_branches else "chat",
+                    source="estimate",
+                    prompt_tokens=prompt,
+                    completion_tokens=completion,
+                    total_tokens=prompt + completion,
+                    branch=branch_name,
+                    created_at=commit.created_at,
+                )
+            )
+            seeded += 1
+        return seeded
+
+    def usage_summary(self, since: datetime | None = None) -> UsageSummary:
+        """Merge every usage event (optionally since a time) into totals + buckets."""
+        # First call on a pre-existing repository reconstructs history, so the
+        # Usage tab is not empty for work done before recording existed.
+        self.backfill_usage()
+        events = self._storage.list_usage(since.isoformat() if since else None)
+
+        def totals_of(rows: list[UsageEvent]) -> UsageTotals:
+            prompt = sum(event.prompt_tokens for event in rows)
+            completion = sum(event.completion_tokens for event in rows)
+            return UsageTotals(
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=prompt + completion,
+                estimated_tokens=sum(
+                    event.total_tokens for event in rows if event.source == "estimate"
+                ),
+                calls=len(rows),
+            )
+
+        def bucket(
+            source: list[UsageEvent],
+            key_of: "Callable[[UsageEvent], tuple[object, ...]]",
+        ) -> list[list[UsageEvent]]:
+            grouped: dict[tuple[object, ...], list[UsageEvent]] = {}
+            for event in source:
+                grouped.setdefault(key_of(event), []).append(event)
+            return list(grouped.values())
+
+        def days_of(source: list[UsageEvent]) -> list[UsageDay]:
+            return sorted(
+                (
+                    UsageDay(date=rows[0].created_at.date().isoformat(), totals=totals_of(rows))
+                    for rows in bucket(source, lambda event: (event.created_at.date(),))
+                ),
+                key=lambda row: row.date,
+            )
+
+        by_provider = sorted(
+            (
+                UsageRow(
+                    provider=rows[0].provider,
+                    model=rows[0].model,
+                    totals=totals_of(rows),
+                )
+                for rows in bucket(events, lambda event: (event.provider, event.model))
+            ),
+            key=lambda row: row.totals.total_tokens,
+            reverse=True,
+        )
+        by_surface = sorted(
+            (
+                UsageRow(surface=rows[0].surface, totals=totals_of(rows))
+                for rows in bucket(events, lambda event: (event.surface,))
+            ),
+            key=lambda row: row.totals.total_tokens,
+            reverse=True,
+        )
+        by_source = [
+            UsageRow(source=rows[0].source, totals=totals_of(rows))
+            for rows in bucket(events, lambda event: (event.source,))
+        ]
+        # Streaks and the contribution graph span the whole history, not just
+        # the requested window. A year of daily buckets is plenty for the graph.
+        all_events = self._storage.list_usage()
+        active_dates = {event.created_at.date() for event in all_events}
+        return UsageSummary(
+            totals=totals_of(events),
+            by_provider=by_provider,
+            by_surface=by_surface,
+            by_source=by_source,
+            by_day=days_of(events),
+            activity=days_of(all_events)[-365:],
+            streak=_streak_from_dates(active_dates, utcnow().date()),
+        )
 
     def _unique_branch_name(self, base: str) -> str:
         """A valid branch name derived from `base`, suffixed if taken."""

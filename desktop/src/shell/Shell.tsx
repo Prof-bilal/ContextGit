@@ -24,18 +24,25 @@ import { Dock } from "./Dock";
 import ModelPicker from "./ModelPicker";
 import AddProviderDialog from "./chat/AddProviderDialog";
 import GovernorPanel from "./chat/GovernorPanel";
+import PendingChanges from "./chat/PendingChanges";
 import { isReady } from "./chat/providerStatus";
 import { useProviders } from "./chat/useProviders";
 import { brandFor, type ModelSelection } from "./providers";
 import TopNav, { type TabDef, type TabId } from "./TopNav";
+import DeleteConversationDialog from "./chat/DeleteConversationDialog";
+import NewConversationDialog, {
+  type NewConversationInput,
+} from "./chat/NewConversationDialog";
 import AgentRail from "./rail/AgentRail";
-import ChatRail, { type ChatConversation } from "./rail/ChatRail";
-import GitRail, { type CommitFilter } from "./rail/GitRail";
+import ChatRail, { type ChatConversation, type ConversationMode } from "./rail/ChatRail";
+import GitRail from "./rail/GitRail";
 import RosterRail from "./rail/RosterRail";
 import { useFleet } from "./terminal/useFleet";
 import { useMergeQueue } from "./terminal/useMergeQueue";
 import { useSessions } from "./terminal/useSessions";
 import PaneCanvas, { type PaneLayout } from "./terminal/PaneCanvas";
+import HarnessLimitsPanel from "./terminal/HarnessLimitsPanel";
+import { useLimits } from "./terminal/useLimits";
 import TaskDetail from "./team/TaskDetail";
 import TaskForm from "./team/TaskForm";
 import TeamMessages from "./team/TeamMessages";
@@ -44,20 +51,52 @@ import { useTeam } from "./team/useTeam";
 import AgentView from "./views/AgentView";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
-import GitView from "./views/GitView";
+import GitView, { type CommitFilter } from "./views/GitView";
 import TeamView from "./views/TeamView";
+import UsageView from "./views/UsageView";
 import ProjectPicker from "./workspace/ProjectPicker";
 import { useWorkspace } from "./workspace/useWorkspace";
 
 type Theme = "dark" | "light";
 
-const TAB_IDS: TabId[] = ["chat", "code", "agent", "git"];
+const TAB_IDS: TabId[] = ["chat", "code", "agent", "git", "usage"];
+
+/** Time windows for the Usage tab. */
+const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
+  { label: "All time", days: undefined },
+  { label: "Last 7 days", days: 7 },
+  { label: "Today", days: 1 },
+];
 
 /** The Code tab's two surfaces: one run at a time, or a task graph. */
 const MODE_OPTIONS = [
   { value: "single" as const, label: "Single" },
   { value: "team" as const, label: "Team" },
 ];
+
+/** Branch-name prefixes that tag a conversation with its surface. */
+const CONVERSATION_PREFIXES: ConversationMode[] = ["chat", "council", "research", "image"];
+
+/** The chat model the user last picked, remembered across refreshes/restarts. */
+const MODEL_KEY = "cg-chat-model";
+
+function readStoredModel(): ModelSelection | null {
+  try {
+    const raw = window.localStorage.getItem(MODEL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ModelSelection>;
+    if (
+      typeof parsed.providerId === "string" &&
+      parsed.providerId &&
+      typeof parsed.modelId === "string"
+    ) {
+      return { providerId: parsed.providerId, modelId: parsed.modelId };
+    }
+  } catch {
+    // ignore malformed storage
+  }
+  return null;
+}
 
 function initialTab(): TabId {
   const value = new URLSearchParams(window.location.search).get("tab");
@@ -96,6 +135,13 @@ export default function Shell() {
 
   // ---- Chat operates on a real branch; Agent still reads fixtures ----
   const [chatBranch, setChatBranch] = useState("");
+  const [chatFilter, setChatFilter] = useState<ConversationMode | "all">("all");
+  /** Usage tab time window: undefined = all time. */
+  const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
+  /** Staged (uncommitted) messages per chat session id. */
+  const [chatStaging, setChatStaging] = useState<Record<string, Message[]>>({});
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [agentId, setAgentId] = useState(NAMED_AGENTS[0]?.id ?? "");
   const [agents, setAgents] = useState<NamedAgent[]>(NAMED_AGENTS);
   const [agentDialog, setAgentDialog] = useState<{ mode: "create" | "edit"; draft: MissionDraft } | null>(
@@ -117,7 +163,9 @@ export default function Shell() {
     test: testProvider,
     fetchModels: fetchProviderModels,
   } = useProviders();
-  const [model, setModel] = useState<ModelSelection>({ providerId: "", modelId: "" });
+  const [model, setModel] = useState<ModelSelection>(
+    () => readStoredModel() ?? { providerId: "", modelId: "" },
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [providerDialog, setProviderDialog] = useState<{
     capability?: ProviderCapability;
@@ -141,6 +189,11 @@ export default function Shell() {
   const activeSession = sessions.find((session) => session.id === activeId) ?? null;
   const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
 
+  // Each CLI harness's own account limits (cmd's 5-hour/weekly windows, …).
+  const { limits, loading: limitsLoading, refresh: refreshLimits } = useLimits(tab === "code");
+  const limitsByHarness = new Map(limits.map((entry) => [entry.harness, entry]));
+  const runHarness = activeSession?.agent ?? "shell";
+
   // ---- Git tab: the real snapshot ----
   const branches = snapshot?.branches ?? [];
   const commits = [...(snapshot?.commits ?? [])].sort((a, b) =>
@@ -154,30 +207,50 @@ export default function Shell() {
   const activeCommitTags = (snapshot?.tags ?? []).filter((tag) => tag.commit_id === activeCommit?.id);
 
   // Chat conversations are the repo's real branches — but only the ones that are
-  // conversations. Run/terminal branches (owned by a session) and empty scratch
-  // branches belong to the Code tab, not here.
+  // conversations. Terminal-run branches (owned by a terminal session) belong to
+  // the Code tab; chat sessions are conversations and stay here.
   const chatBranchHead =
     branches.find((branch) => branch.name === chatBranch)?.head_commit_id ?? null;
-  const sessionBranches = new Set(sessions.map((session) => session.branch));
+  const terminalSessionBranches = new Set(
+    sessions.filter((session) => session.kind !== "chat").map((session) => session.branch),
+  );
+  const chatSessionsByBranch = new Map(
+    sessions
+      .filter((session) => session.kind === "chat")
+      .map((session) => [session.branch, session]),
+  );
+  const modeOf = (name: string): ConversationMode => {
+    const prefix = name.split("/")[0];
+    return (CONVERSATION_PREFIXES as readonly string[]).includes(prefix)
+      ? (prefix as ConversationMode)
+      : "other";
+  };
   const chatConversations: ChatConversation[] = branches
     .map((branch) => {
       const list = commitsOnBranch(commits, branch.head_commit_id);
+      const session = chatSessionsByBranch.get(branch.name);
       return {
         name: branch.name,
         head: branch.head_commit_id,
         messages: list.reduce((total, commit) => total + commit.messages.length, 0),
         tokens: list.reduce((total, commit) => total + commit.token_count, 0),
         updatedAt: list[0]?.created_at ?? "",
+        mode: modeOf(branch.name),
+        pending: session ? (chatStaging[session.id]?.length ?? 0) : 0,
+        deletable: branch.name !== snapshot?.current_branch && branch.name !== "main",
       };
     })
     .filter(
       (conversation) =>
-        !sessionBranches.has(conversation.name) &&
+        !terminalSessionBranches.has(conversation.name) &&
         (conversation.messages > 0 ||
-          conversation.name.startsWith("chat/") ||
+          conversation.mode !== "other" ||
           conversation.name === snapshot?.current_branch),
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  const chatSession = chatSessionsByBranch.get(chatBranch) ?? null;
+  const chatSessionId = chatSession?.id ?? null;
 
   // Keep the chat branch valid; default to the repo's current branch.
   useEffect(() => {
@@ -209,11 +282,24 @@ export default function Shell() {
     );
   }, [snapshot, selectedBranch]);
 
-  // Pick a working default once the registry loads: prefer a configured,
-  // non-mock provider; fall back to the offline mock; never leave a stale pick.
+  // Keep the user's last model while it is still valid; otherwise pick a working
+  // default once the registry loads (a configured, non-mock provider wins; the
+  // offline mock is the fallback).
   useEffect(() => {
     if (providers.length === 0) return;
     setModel((current) => {
+      // Honour a restored/saved pick as long as its provider and model exist.
+      if (current.providerId) {
+        const existing = providers.find((provider) => provider.id === current.providerId);
+        if (
+          existing &&
+          (existing.models.length === 0 ||
+            existing.models.includes(current.modelId) ||
+            current.modelId === existing.default_model)
+        ) {
+          return current;
+        }
+      }
       const ready = providers.filter(
         (provider) =>
           provider.capability === "chat" && isReady(provider) && provider.models.length > 0,
@@ -227,7 +313,6 @@ export default function Shell() {
       // A connected provider wins; the mock is only the offline fallback.
       const pick = ready.find((provider) => provider.kind !== "local") ?? ready[0] ?? mocks[0];
       if (!pick) return current;
-      if (pick.id === current.providerId && pick.models.includes(current.modelId)) return current;
       const preferred =
         pick.default_model && pick.models.includes(pick.default_model)
           ? pick.default_model
@@ -235,6 +320,16 @@ export default function Shell() {
       return { providerId: pick.id, modelId: preferred };
     });
   }, [providers]);
+
+  // Remember the pick so a refresh or reopen keeps the user's model.
+  useEffect(() => {
+    if (!model.providerId) return;
+    try {
+      window.localStorage.setItem(MODEL_KEY, JSON.stringify(model));
+    } catch {
+      // storage can be unavailable; the selection still applies this session
+    }
+  }, [model]);
 
   // Real context size of the chat branch (refresh after each committed turn).
   useEffect(() => {
@@ -266,23 +361,72 @@ export default function Shell() {
     if (head) setCommitId(head);
   };
 
-  /** Start a new conversation: a real branch forked from the current one. */
-  const newConversation = useCallback(async () => {
-    const head =
-      snapshot?.branches.find((branch) => branch.name === snapshot.current_branch)
-        ?.head_commit_id ?? null;
-    if (!head) return;
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    const name = `chat/${stamp}`;
-    try {
-      await api.createBranch(name, head);
-      await refreshRepo();
-      setChatBranch(name);
-      setBarError(null);
-    } catch (cause) {
-      setBarError(cause instanceof Error ? cause.message : "Could not create the conversation");
-    }
-  }, [snapshot, refreshRepo]);
+  /**
+   * Create an isolated conversation: a branch forked from the repo **root** (so
+   * no other conversation's messages leak in) plus a chat session that owns its
+   * staging buffer. Optionally seed a summary imported from another conversation.
+   */
+  const createConversation = useCallback(
+    async (input: NewConversationInput) => {
+      const root = commits.find((commit) => commit.parent_ids.length === 0)?.id ?? null;
+      if (!root) throw new Error("Repository has no root commit");
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const name = `${input.mode}/${input.label || stamp}`;
+      try {
+        await api.createBranch(name, root);
+        await api.createSession({ name, kind: "chat", branch: name, autoCommit: false });
+        if (input.seedFrom) {
+          const sourceHead =
+            branches.find((branch) => branch.name === input.seedFrom)?.head_commit_id ?? null;
+          const summaries = sourceHead
+            ? commitsOnBranch(commits, sourceHead)
+                .map((commit) => commit.summary)
+                .filter((summary): summary is string => Boolean(summary))
+                .reverse()
+            : [];
+          if (summaries.length > 0) {
+            await api.commit({
+              messages: [
+                {
+                  role: "system",
+                  content: `Imported from ${input.seedFrom}:\n${summaries.join("\n")}`,
+                },
+              ],
+              branch: name,
+              summary: `import from ${input.seedFrom}`,
+            });
+          }
+        }
+        await Promise.all([refreshRepo(), refresh()]);
+        setChatBranch(name);
+        setChatFilter("all");
+        setBarError(null);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not create the conversation");
+        throw cause;
+      }
+    },
+    [commits, branches, refreshRepo, refresh],
+  );
+
+  /** Delete a conversation's pointer and its chat session; commits survive. */
+  const deleteConversation = useCallback(
+    async (name: string) => {
+      const session = sessions.find(
+        (entry) => entry.kind === "chat" && entry.branch === name,
+      );
+      try {
+        if (session) await api.deleteSession(session.id);
+        await api.deleteBranch(name);
+        if (chatBranch === name) setChatBranch(snapshot?.current_branch ?? "");
+        await Promise.all([refreshRepo(), refresh()]);
+        setBarError(null);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not delete the conversation");
+      }
+    },
+    [sessions, chatBranch, snapshot, refreshRepo, refresh],
+  );
 
   /** Switch the repo's current branch, then reload so HEAD-derived state follows. */
   const checkoutBranch = async (name: string) => {
@@ -314,6 +458,29 @@ export default function Shell() {
       alive = false;
     };
   }, [activeSession, revision]);
+
+  // Load staged (uncommitted) messages for every chat conversation, so the rail
+  // can show a pending count and the dock can list what is about to be committed.
+  const chatSessionIds = sessions
+    .filter((session) => session.kind === "chat")
+    .map((session) => session.id);
+  const chatSessionKey = chatSessionIds.join(",");
+  useEffect(() => {
+    const ids = chatSessionKey ? chatSessionKey.split(",") : [];
+    if (ids.length === 0) {
+      setChatStaging({});
+      return;
+    }
+    let alive = true;
+    void Promise.all(ids.map((id) => api.staging(id).then((items) => [id, items] as const)))
+      .then((entries) => {
+        if (alive) setChatStaging(Object.fromEntries(entries));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [chatSessionKey, budgetTick, revision]);
 
   const openSession = useCallback((session: Session) => {
     setOpenIds((current) => (current.includes(session.id) ? current : [...current, session.id]));
@@ -622,6 +789,7 @@ export default function Shell() {
     { id: "code", label: "Code" },
     { id: "agent", label: "Agent" },
     { id: "git", label: "Git" },
+    { id: "usage", label: "Usage" },
   ];
 
   const rail = () => {
@@ -631,8 +799,11 @@ export default function Shell() {
           <ChatRail
             conversations={chatConversations}
             selectedBranch={chatBranch}
+            filter={chatFilter}
+            onFilter={setChatFilter}
             onSelect={setChatBranch}
-            onNew={() => void newConversation()}
+            onNew={() => setNewConversationOpen(true)}
+            onDelete={(name) => setConversationToDelete(name)}
           />
         );
       case "code":
@@ -646,10 +817,11 @@ export default function Shell() {
           />
         ) : (
           <AgentRail
-            sessions={sessions}
+            sessions={sessions.filter((session) => session.kind === "terminal")}
             fleet={fleet}
             openIds={openIds}
             activeId={activeId}
+            limits={Object.fromEntries(limitsByHarness)}
             onSelect={openSession}
             onNew={startRun}
             onDelete={(session) => void deleteRun(session)}
@@ -676,9 +848,26 @@ export default function Shell() {
             onSelectBranch={chooseBranch}
             onCheckout={(name) => void checkoutBranch(name)}
             onDelete={(name) => setBranchToDelete(name)}
-            filter={filter}
-            onFilter={setFilter}
           />
+        );
+      case "usage":
+        return (
+          <nav className="cg-rail" aria-label="Usage period">
+            <div className="cg-rail-head">
+              <h2>Period</h2>
+            </div>
+            {USAGE_PERIODS.map((period) => (
+              <button
+                key={period.label}
+                type="button"
+                className="cg-row"
+                aria-current={usageDays === period.days}
+                onClick={() => setUsageDays(period.days)}
+              >
+                <span className="cg-row-title">{period.label}</span>
+              </button>
+            ))}
+          </nav>
         );
     }
   };
@@ -691,10 +880,12 @@ export default function Shell() {
             selection={model}
             providers={providers}
             branch={chatBranch}
+            sessionId={chatSessionId}
             commitId={chatBranchHead}
             onPickModel={() => setPickerOpen(true)}
             onAddProvider={openProviderDialog}
             onCommitted={() => setBudgetTick((value) => value + 1)}
+            onStaged={() => setBudgetTick((value) => value + 1)}
             readyChatCount={readyChatCount}
             readyImageCount={readyImageCount}
             readySearchCount={readySearchCount}
@@ -726,11 +917,14 @@ export default function Shell() {
             selectedId={activeCommit?.id ?? null}
             onSelect={(commit) => setCommitId(commit.id)}
             filter={filter}
+            onFilter={setFilter}
             tags={snapshot?.tags ?? []}
             loading={repoLoading}
             onRefresh={() => void refreshRepo()}
           />
         );
+      case "usage":
+        return <UsageView days={usageDays} providers={providers} />;
       default:
         return null;
     }
@@ -781,6 +975,14 @@ export default function Shell() {
               budget={20_000}
               messages={budget?.messages ?? 0}
               commits={governorCommits}
+            />
+            <PendingChanges
+              sessionId={chatSessionId}
+              staged={chatSessionId ? (chatStaging[chatSessionId] ?? []) : []}
+              onChanged={() => {
+                setBudgetTick((value) => value + 1);
+                void refreshRepo();
+              }}
             />
             <section className="cg-prov" aria-label="Provenance">
               <header className="cg-block-head">
@@ -934,6 +1136,12 @@ export default function Shell() {
                 Delete run
               </button>
             </div>
+            <HarnessLimitsPanel
+              harness={runHarness}
+              limits={limitsByHarness.get(runHarness)}
+              loading={limitsLoading}
+              onRefresh={refreshLimits}
+            />
           </>
         ) : (
           <p className="cg-empty-note">Select a run to inspect it.</p>
@@ -1251,7 +1459,7 @@ export default function Shell() {
             </div>
           )}
         </main>
-        {dockOpen && (
+        {dockOpen && tab !== "usage" && (
           <Dock title={dockTitle} onClose={() => setDockOpen(false)}>
             {dock()}
           </Dock>
@@ -1339,6 +1547,23 @@ export default function Shell() {
             void refreshRepo();
           }}
           onClose={() => setBranchToDelete(null)}
+        />
+      )}
+
+      {newConversationOpen && (
+        <NewConversationDialog
+          defaultMode="chat"
+          sources={chatConversations.map((conversation) => conversation.name)}
+          onCreate={createConversation}
+          onClose={() => setNewConversationOpen(false)}
+        />
+      )}
+
+      {conversationToDelete && (
+        <DeleteConversationDialog
+          name={conversationToDelete}
+          onConfirm={() => deleteConversation(conversationToDelete)}
+          onClose={() => setConversationToDelete(null)}
         />
       )}
 

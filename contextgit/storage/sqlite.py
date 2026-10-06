@@ -41,6 +41,9 @@ from contextgit.core.models import (
     TeamEvent,
     TeamMessage,
     TeamMessageKind,
+    UsageEvent,
+    UsageSource,
+    UsageSurface,
 )
 
 _MIGRATIONS_DIR = "migrations"
@@ -789,6 +792,54 @@ class SqliteStorage:
         with self._conn:
             cur = self._conn.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
         return cur.rowcount > 0
+
+    # ---------- usage (token accounting) ----------
+
+    @staticmethod
+    def _row_to_usage(row: sqlite3.Row) -> UsageEvent:
+        return UsageEvent(
+            provider=row["provider"],
+            model=row["model"],
+            surface=cast("UsageSurface", row["surface"]),
+            source=cast("UsageSource", row["source"]),
+            prompt_tokens=row["prompt_tokens"],
+            completion_tokens=row["completion_tokens"],
+            total_tokens=row["total_tokens"],
+            session_id=row["session_id"],
+            branch=row["branch"],
+            created_at=row["created_at"],
+        )
+
+    def insert_usage(self, event: UsageEvent) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO usage_events"
+                " (provider, model, surface, source, prompt_tokens, completion_tokens,"
+                " total_tokens, session_id, branch, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    event.provider,
+                    event.model,
+                    event.surface,
+                    event.source,
+                    event.prompt_tokens,
+                    event.completion_tokens,
+                    event.total_tokens,
+                    event.session_id,
+                    event.branch,
+                    event.created_at.isoformat(),
+                ),
+            )
+
+    def list_usage(self, since: str | None = None) -> list[UsageEvent]:
+        """Every usage event, or only those created at/after an ISO timestamp."""
+        if since is None:
+            rows = self._conn.execute("SELECT * FROM usage_events ORDER BY id").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM usage_events WHERE created_at >= ? ORDER BY id", (since,)
+            ).fetchall()
+        return [self._row_to_usage(row) for row in rows]
 
     # ---------- repo state (HEAD) ----------
 

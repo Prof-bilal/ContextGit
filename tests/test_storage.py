@@ -53,11 +53,12 @@ class TestSchema:
             "task_deps",
             "team_messages",
             "team_events",
+            "usage_events",
         } <= tables
 
     def test_migration_recorded_once(self, storage: SqliteStorage) -> None:
         versions = [r[0] for r in storage._conn.execute("SELECT version FROM schema_version")]
-        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     def test_reopen_does_not_reapply(self, tmp_path: Path) -> None:
         db = tmp_path / "again.db"
@@ -65,7 +66,7 @@ class TestSchema:
         s2 = SqliteStorage(db)
         versions = [r[0] for r in s2._conn.execute("SELECT version FROM schema_version")]
         s2.close()
-        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 class TestCommits:

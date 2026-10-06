@@ -6,14 +6,15 @@ import os
 import threading
 import time
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 import anyio
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from contextgit.api.schemas import (
     BranchRequest,
@@ -27,6 +28,7 @@ from contextgit.api.schemas import (
     CompareRequest,
     CompareResult,
     CouncilRequest,
+    DocumentRequest,
     EnqueueMergeRequest,
     ImageRequest,
     InitRequest,
@@ -75,8 +77,30 @@ from contextgit.core.errors import (
     TeamNotFound,
     WorkInProgressLimit,
 )
-from contextgit.core.models import Message, ProviderCapability, ProviderRecord, utcnow
+from contextgit.core.models import (
+    Message,
+    ProviderCapability,
+    ProviderRecord,
+    UsageSummary,
+    utcnow,
+)
 from contextgit.core.repo import Repo
+from contextgit.documents import (
+    DocumentFormat,
+    DocumentInfo,
+    MissingRenderer,
+    RenderedDocument,
+    build_document,
+    document_prompt,
+    filename_for,
+    list_documents,
+    metadata_for,
+    path_for,
+    render,
+    save,
+)
+from contextgit.limits.models import HarnessLimits
+from contextgit.limits.registry import all_limits
 from contextgit.llm import (
     BUILTIN_BY_ID,
     AsyncLLMProvider,
@@ -94,7 +118,16 @@ from contextgit.llm import (
     provider_info,
     resolve_provider,
 )
+from contextgit.llm.base import UsageSink
 from contextgit.research import Fetcher, ResearchStore, extract_claims, run_research
+
+# Content types for a rendered document download.
+_DOCUMENT_MEDIA: dict[str, str] = {
+    "md": "text/markdown; charset=utf-8",
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
 
 
 def create_app(
@@ -115,6 +148,10 @@ def create_app(
         allow_origins=os.getenv(
             "CONTEXTGIT_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
         ).split(","),
+        # The desktop dev server and the packaged app talk to this API from a
+        # local origin on a shifting port (Vite :5173, file://, …). Allow any
+        # localhost origin so a manually-started backend is not blocked by CORS.
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -669,6 +706,144 @@ def create_app(
         current.save_provider(record)
         return ProviderModelsResult(models=models, source=source)
 
+    # ---------- usage (merged token accounting across every surface) ----------
+
+    @app.get("/api/v1/usage", response_model=UsageSummary)
+    def usage(days: int | None = None, current: Repo = repo_dep) -> UsageSummary:
+        """Merged token usage across every surface, optionally the last `days`."""
+        since = utcnow() - timedelta(days=days) if days else None
+        return current.usage_summary(since)
+
+    # ---------- harness limits (each CLI's own account limits) ----------
+
+    @app.get("/api/v1/limits", response_model=list[HarnessLimits])
+    def limits(refresh: bool = False) -> list[HarnessLimits]:
+        """Usage limits for the CLI harnesses that report them (cmd, cline)."""
+        return all_limits(refresh=refresh)
+
+    # ---------- documents (Chat "Document" mode: generate a file) ----------
+
+    @app.post("/api/v1/documents/stream")
+    def documents_stream(body: DocumentRequest, current: Repo = repo_dep) -> StreamingResponse:
+        """Generate a document on a topic, render it, and stream progress."""
+        session = current.get_session(body.session_id) if body.session_id else None
+        branch = body.branch or (session.branch if session else current.current_branch())
+        auto_commit = (
+            body.auto_commit
+            if body.auto_commit is not None
+            else (session.auto_commit if session else True)
+        )
+        secret: str | None = None
+        if body.provider:
+            active_llm, resolved = build_for(body.provider, current.list_providers())
+            secret = resolved.api_key
+            model = body.model or resolved.model or "gpt-4o-mini"
+        else:
+            active_llm = llm
+            model = body.model or "gpt-4o-mini"
+        messages = document_prompt(body.prompt, body.format, body.template)
+        usage_box, usage_sink = _usage_collector()
+
+        async def events() -> AsyncIterator[str]:
+            parts: list[str] = []
+            try:
+                yield _sse("step", {"label": "Generating", "detail": f"{body.format} document"})
+                async for chunk in _stream_tokens(
+                    active_llm, messages, model=model, usage_sink=usage_sink
+                ):
+                    parts.append(chunk)
+                    yield _sse("token", {"text": chunk})
+                markdown = "".join(parts).strip() or "(empty document)"
+                yield _sse("step", {"label": "Rendering", "detail": body.format})
+                document = build_document(markdown, body.format, body.template)
+                try:
+                    data = render(document, body.format)
+                except MissingRenderer as exc:
+                    yield _sse("error", {"error": str(exc)})
+                    return
+                document_id = uuid4().hex[:12]
+                filename = filename_for(document.title, document_id, body.format)
+                save(current.root, document_id, body.format, filename, document.title, data)
+                rendered = RenderedDocument(
+                    id=document_id,
+                    filename=filename,
+                    format=body.format,
+                    size=len(data),
+                    title=document.title,
+                    markdown=markdown,
+                )
+                if usage_box:
+                    prompt_tokens, completion_tokens = usage_box[-1]
+                    usage_source: Literal["provider", "estimate"] = "provider"
+                else:
+                    prompt_tokens = sum(_estimate_text(m.content) for m in messages)
+                    completion_tokens = _estimate_text(markdown)
+                    usage_source = "estimate"
+                current.record_usage(
+                    body.provider or "default",
+                    model,
+                    "chat",
+                    source=usage_source,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    session_id=session.id if session else None,
+                    branch=branch,
+                )
+                turn = [
+                    Message(role="user", content=body.prompt),
+                    Message(role="assistant", content=markdown),
+                ]
+                if session is not None and not auto_commit:
+                    staged = current.stage(session.id, turn)
+                    yield _sse("document", rendered.model_dump(mode="json"))
+                    yield _sse(
+                        "done",
+                        {
+                            "commit_id": None,
+                            "branch": branch,
+                            "staged": True,
+                            "staged_count": len(staged),
+                        },
+                    )
+                    return
+                commit = current.commit(
+                    turn,
+                    model=model,
+                    summary=f"document: {document.title[:100]}",
+                    branch=branch,
+                )
+                if session is not None:
+                    current.set_session_status(session.id, "done")
+                yield _sse("document", rendered.model_dump(mode="json"))
+                yield _sse("done", {"commit_id": commit.id, "branch": branch, "staged": False})
+            except Exception as exc:
+                yield _sse("error", {"error": _redact(str(exc), secret)})
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/v1/documents", response_model=list[DocumentInfo])
+    def list_generated_documents(current: Repo = repo_dep) -> list[DocumentInfo]:
+        """Every document generated in this repository, newest first."""
+        return list_documents(current.root)
+
+    @app.get("/api/v1/documents/{document_id}")
+    def download_document(
+        document_id: str, format: str = "pdf", current: Repo = repo_dep
+    ) -> FileResponse:
+        """Download a previously generated document."""
+        if format not in _DOCUMENT_MEDIA:
+            raise HTTPException(status_code=422, detail=f"unknown format: {format}")
+        path = path_for(current.root, document_id, cast("DocumentFormat", format))
+        if path is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        meta = metadata_for(current.root, document_id) or {}
+        filename = meta.get("filename", path.name)
+        return FileResponse(path, filename=filename, media_type=_DOCUMENT_MEDIA[format])
+
     # ---------- council (same prompt, several providers) ----------
 
     @app.post("/api/v1/council/stream")
@@ -708,13 +883,33 @@ def create_app(
                     )
                 )
                 parts: list[str] = []
+                usage_box, usage_sink = _usage_collector()
                 try:
-                    async for chunk in _stream_tokens(adapter, request_messages, model=model):
+                    async for chunk in _stream_tokens(
+                        adapter, request_messages, model=model, usage_sink=usage_sink
+                    ):
                         parts.append(chunk)
                         await queue.put(("token", {"index": index, "text": chunk}))
                     await queue.put(("member_done", {"index": index, "answer": "".join(parts)}))
                 except Exception as exc:
                     await queue.put(("error", {"index": index, "error": _redact(str(exc), secret)}))
+                # One usage row per council member (real when reported).
+                if usage_box:
+                    member_prompt, member_completion = usage_box[-1]
+                    member_source: Literal["provider", "estimate"] = "provider"
+                else:
+                    member_prompt = sum(_estimate_text(m.content) for m in request_messages)
+                    member_completion = _estimate_text("".join(parts))
+                    member_source = "estimate"
+                current.record_usage(
+                    provider_id,
+                    model,
+                    "council",
+                    source=member_source,
+                    prompt_tokens=member_prompt,
+                    completion_tokens=member_completion,
+                    branch=branch,
+                )
 
             tasks = [asyncio.create_task(run_member(*entry)) for entry in members]
             try:
@@ -739,8 +934,14 @@ def create_app(
 
     @app.post("/api/v1/images/stream")
     def images_stream(body: ImageRequest, current: Repo = repo_dep) -> StreamingResponse:
-        """Render a prompt and commit the prompt as the versioned artifact."""
-        branch = body.branch or current.current_branch()
+        """Render a prompt and commit (or stage) the prompt as the versioned artifact."""
+        session = current.get_session(body.session_id) if body.session_id else None
+        branch = body.branch or (session.branch if session else current.current_branch())
+        auto_commit = (
+            body.auto_commit
+            if body.auto_commit is not None
+            else (session.auto_commit if session else True)
+        )
         transport, resolved = build_images_for(body.provider, current.list_providers())
         model = body.model or resolved.model or "image"
         secret = resolved.api_key
@@ -763,14 +964,28 @@ def create_app(
                 tiles = await anyio.to_thread.run_sync(render)
                 for tile in tiles:
                     yield _sse("image", tile.model_dump(mode="json"))
+                turn = [
+                    Message(role="user", content=body.prompt),
+                    Message(
+                        role="assistant",
+                        content=f"[image] {model} · {body.aspect} · {len(tiles)} tile(s)",
+                    ),
+                ]
+                if session is not None and not auto_commit:
+                    staged = current.stage(session.id, turn)
+                    yield _sse(
+                        "done",
+                        {
+                            "commit_id": None,
+                            "branch": branch,
+                            "tiles": len(tiles),
+                            "staged": True,
+                            "staged_count": len(staged),
+                        },
+                    )
+                    return
                 commit = current.commit(
-                    [
-                        Message(role="user", content=body.prompt),
-                        Message(
-                            role="assistant",
-                            content=f"[image] {model} · {body.aspect} · {len(tiles)} tile(s)",
-                        ),
-                    ],
+                    turn,
                     model=model,
                     summary=f"image: {body.prompt[:100]}",
                     branch=branch,
@@ -778,7 +993,12 @@ def create_app(
                 )
                 yield _sse(
                     "done",
-                    {"commit_id": commit.id, "branch": branch, "tiles": len(tiles)},
+                    {
+                        "commit_id": commit.id,
+                        "branch": branch,
+                        "tiles": len(tiles),
+                        "staged": False,
+                    },
                 )
             except Exception as exc:
                 yield _sse("error", {"error": _redact(str(exc), secret)})
@@ -797,6 +1017,11 @@ def create_app(
         session = current.get_session(body.session_id) if body.session_id else None
         branch = body.branch or (session.branch if session else current.current_branch())
         head = body.commit_id or current.log(branch)[0].id
+        auto_commit = (
+            body.auto_commit
+            if body.auto_commit is not None
+            else (session.auto_commit if session else True)
+        )
         records = current.list_providers()
         secret: str | None = None
         if body.provider:
@@ -815,7 +1040,10 @@ def create_app(
             try:
                 claims: list[str] | None = None
                 if body.mode == "verify":
-                    context = "\n".join(m.content for m in current.build_context(head))
+                    verify_context = current.build_context(head)
+                    if session is not None and not auto_commit:
+                        verify_context = [*verify_context, *current.staged(session.id)]
+                    context = "\n".join(m.content for m in verify_context)
                     if context.strip():
                         claims = await extract_claims(active_llm, context[-6000:])
                 artifact = ""
@@ -839,13 +1067,38 @@ def create_app(
                     if name == "source":
                         sources.append(data)
                     yield _sse(name, data)
+                turn = [
+                    Message(role="user", content=body.prompt),
+                    Message(role="assistant", content=artifact or "(no artifact produced)"),
+                ]
+                # The research engine calls the provider internally, so record a
+                # single estimate for the whole run.
+                current.record_usage(
+                    body.provider or "default",
+                    model,
+                    "research",
+                    source="estimate",
+                    prompt_tokens=_estimate_text(body.prompt),
+                    completion_tokens=_estimate_text(turn[1].content),
+                    session_id=session.id if session else None,
+                    branch=branch,
+                )
+                if session is not None and not auto_commit:
+                    staged = current.stage(session.id, turn)
+                    yield _sse(
+                        "done",
+                        {
+                            "commit_id": None,
+                            "branch": branch,
+                            "sources": sources,
+                            "run_id": run_id,
+                            "staged": True,
+                            "staged_count": len(staged),
+                        },
+                    )
+                    return
                 commit = current.commit(
-                    [
-                        Message(role="user", content=body.prompt),
-                        Message(
-                            role="assistant", content=artifact or "(no artifact produced)"
-                        ),
-                    ],
+                    turn,
                     model=model,
                     summary=f"{body.mode} research: {body.prompt[:100]}",
                     branch=branch,
@@ -857,6 +1110,7 @@ def create_app(
                         "branch": branch,
                         "sources": sources,
                         "run_id": run_id,
+                        "staged": False,
                     },
                 )
             except Exception as exc:
@@ -876,12 +1130,16 @@ def create_app(
         branch = body.branch or (session.branch if session else current.current_branch())
         head = body.commit_id or current.log(branch)[0].id
         context_messages = current.build_context(head)
-        request_messages = [*context_messages, Message(role="user", content=body.prompt)]
         auto_commit = (
             body.auto_commit
             if body.auto_commit is not None
             else (session.auto_commit if session else True)
         )
+        # Uncommitted (staged) turns are part of the conversation too: a user who
+        # commits on demand still expects the next turn to see the previous one.
+        if session is not None and not auto_commit:
+            context_messages = [*context_messages, *current.staged(session.id)]
+        request_messages = [*context_messages, Message(role="user", content=body.prompt)]
         secret: str | None = None
         if body.provider:
             active_llm, resolved = build_for(body.provider, current.list_providers())
@@ -891,16 +1149,39 @@ def create_app(
             active_llm = llm
             model = body.model or "gpt-4o-mini"
 
+        usage_box, usage_sink = _usage_collector()
+
         async def events() -> AsyncIterator[str]:
             parts: list[str] = []
             try:
-                async for chunk in _stream_tokens(active_llm, request_messages, model=model):
+                async for chunk in _stream_tokens(
+                    active_llm, request_messages, model=model, usage_sink=usage_sink
+                ):
                     parts.append(chunk)
                     yield _sse("token", {"text": chunk})
                 turn = [
                     Message(role="user", content=body.prompt),
                     Message(role="assistant", content="".join(parts)),
                 ]
+                # Record the call's token usage: real when the provider reported
+                # it, otherwise the ~4-chars estimate.
+                if usage_box:
+                    prompt_tokens, completion_tokens = usage_box[-1]
+                    usage_source: Literal["provider", "estimate"] = "provider"
+                else:
+                    prompt_tokens = sum(_estimate_text(m.content) for m in request_messages)
+                    completion_tokens = _estimate_text(turn[1].content)
+                    usage_source = "estimate"
+                current.record_usage(
+                    body.provider or "default",
+                    model,
+                    "chat",
+                    source=usage_source,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    session_id=session.id if session else None,
+                    branch=branch,
+                )
                 if session is not None and not auto_commit:
                     staged = current.stage(session.id, turn)
                     yield _sse(
@@ -965,15 +1246,34 @@ def _sse(event: str, data: object) -> str:
 
 
 async def _stream_tokens(
-    provider: LLMProvider, messages: list[Message], *, model: str
+    provider: LLMProvider,
+    messages: list[Message],
+    *,
+    model: str,
+    usage_sink: UsageSink | None = None,
 ) -> AsyncIterator[str]:
     """Prefer a provider's async stream; fall back to its synchronous one."""
     if isinstance(provider, AsyncLLMProvider):
-        async for chunk in provider.astream(messages, model=model):
+        async for chunk in provider.astream(messages, model=model, usage_sink=usage_sink):
             yield chunk
         return
-    for chunk in provider.stream(messages, model=model):
+    for chunk in provider.stream(messages, model=model, usage_sink=usage_sink):
         yield chunk
+
+
+def _estimate_text(text: str) -> int:
+    """The repository's ~4-chars-per-token heuristic for one string."""
+    return (len(text) + 3) // 4 if text else 0
+
+
+def _usage_collector() -> tuple[list[tuple[int, int]], UsageSink]:
+    """A mutable box plus the sink adapters report real usage into."""
+    box: list[tuple[int, int]] = []
+
+    def sink(prompt_tokens: int, completion_tokens: int) -> None:
+        box.append((prompt_tokens, completion_tokens))
+
+    return box, sink
 
 
 def _slug(text: str) -> str:

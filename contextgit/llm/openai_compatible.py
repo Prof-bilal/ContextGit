@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from contextgit.core.models import AuthStyle, Message
+from contextgit.llm.base import UsageSink
 from contextgit.llm.http_error import (
     ProviderHTTPError,
     describe_payload,
@@ -35,6 +36,7 @@ class OpenAICompatibleProvider:
         auth: AuthStyle = "bearer",
         timeout: float = 60.0,
         retries: int = 2,
+        include_usage: bool = True,
     ) -> None:
         self.api_key = api_key if api_key is not None else os.getenv("CTX_LLM_API_KEY", "")
         resolved = base_url or os.getenv("CTX_LLM_BASE_URL") or "https://api.openai.com/v1"
@@ -43,6 +45,9 @@ class OpenAICompatibleProvider:
         self.auth = auth
         self.timeout = timeout
         self.retries = max(0, retries)
+        # Ask the provider to include the usage frame on streamed replies. Providers
+        # that reject `stream_options` set this false (usage falls back to estimates).
+        self.include_usage = include_usage
 
     # ---------- request shaping ----------
 
@@ -71,6 +76,8 @@ class OpenAICompatibleProvider:
         payload.update(opts)
         if stream:
             payload["stream"] = True
+            if self.include_usage:
+                payload.setdefault("stream_options", {"include_usage": True})
         return payload
 
     @staticmethod
@@ -78,9 +85,22 @@ class OpenAICompatibleProvider:
         if response.status_code >= 400:
             raise ProviderHTTPError(response.status_code, describe_response(response))
 
+    @staticmethod
+    def _report_usage(usage: object, usage_sink: UsageSink | None) -> None:
+        """Forward a provider `usage` object to the sink, when present."""
+        if usage_sink is None or not isinstance(usage, dict):
+            return
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if prompt is None and completion is None:
+            return
+        usage_sink(int(prompt or 0), int(completion or 0))
+
     # ---------- completions ----------
 
-    def complete(self, messages: list[Message], **opts: object) -> str:
+    def complete(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> str:
         """Send messages and return the assistant response text."""
         payload = self._payload(messages, stream=False, opts=dict(opts))
         url = f"{self.base_url}/chat/completions"
@@ -98,6 +118,7 @@ class OpenAICompatibleProvider:
                     # A 200 whose body is not a completion (some gateways return
                     # errors this way); surface the provider's reason, not a KeyError.
                     raise ProviderHTTPError(200, describe_payload(data))
+                self._report_usage(data.get("usage"), usage_sink)
                 message = choices[0].get("message") or {}
                 return str(message.get("content") or "")
             except Exception as exc:
@@ -107,7 +128,9 @@ class OpenAICompatibleProvider:
                 time.sleep(min(0.25 * (2**attempt), 2.0))
         raise RuntimeError(f"LLM request failed: {last}") from last
 
-    def _iter_sse_deltas(self, lines: Iterator[str]) -> Iterator[str]:
+    def _iter_sse_deltas(
+        self, lines: Iterator[str], usage_sink: UsageSink | None = None
+    ) -> Iterator[str]:
         for line in lines:
             line = line.strip()
             if not line or line.startswith(":"):
@@ -121,9 +144,14 @@ class OpenAICompatibleProvider:
                 event = json.loads(data)
             except ValueError:
                 continue
-            if isinstance(event, dict) and event.get("error"):
+            if not isinstance(event, dict):
+                continue
+            if event.get("error"):
                 # Providers stream mid-stream failures as an error frame.
                 raise ProviderHTTPError(200, describe_payload(event))
+            # With `stream_options.include_usage` the final frame carries only a
+            # `usage` object (no choices); report it before skipping the frame.
+            self._report_usage(event.get("usage"), usage_sink)
             choices = event.get("choices") or []
             if not choices:
                 continue
@@ -132,7 +160,9 @@ class OpenAICompatibleProvider:
             if text:
                 yield text
 
-    def stream(self, messages: list[Message], **opts: object) -> Iterator[str]:
+    def stream(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> Iterator[str]:
         """Stream the reply chunk by chunk over a real SSE connection."""
         payload = self._payload(messages, stream=True, opts=dict(opts))
         url = f"{self.base_url}/chat/completions"
@@ -142,11 +172,13 @@ class OpenAICompatibleProvider:
                     "POST", url, headers=self._headers(), params=self._params(), json=payload
                 ) as response:
                     self._raise_for_status(response)
-                    yield from self._iter_sse_deltas(response.iter_lines())
+                    yield from self._iter_sse_deltas(response.iter_lines(), usage_sink)
         except Exception as exc:
             raise RuntimeError(f"LLM stream failed: {exc}") from exc
 
-    async def astream(self, messages: list[Message], **opts: object) -> AsyncIterator[str]:
+    async def astream(
+        self, messages: list[Message], *, usage_sink: UsageSink | None = None, **opts: object
+    ) -> AsyncIterator[str]:
         """Async streaming for the SSE route (never blocks the event loop)."""
         payload = self._payload(messages, stream=True, opts=dict(opts))
         url = f"{self.base_url}/chat/completions"
@@ -160,7 +192,7 @@ class OpenAICompatibleProvider:
                     ) as response:
                         self._raise_for_status(response)
                         async for line in response.aiter_lines():
-                            for delta in self._iter_sse_deltas(iter([line])):
+                            for delta in self._iter_sse_deltas(iter([line]), usage_sink):
                                 sent = True
                                 yield delta
                 return
