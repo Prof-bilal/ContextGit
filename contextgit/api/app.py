@@ -16,7 +16,18 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from contextgit.agents.asset_agent import (
+    SYSTEM_PROMPT as ASSET_AGENT_SYSTEM,
+)
+from contextgit.agents.asset_agent import (
+    build_prompt as build_asset_prompt,
+)
+from contextgit.agents.asset_agent import (
+    parse_actions as parse_asset_actions,
+)
 from contextgit.api.schemas import (
+    AssetAgentRequest,
+    AssetAgentResponse,
     BranchRequest,
     ChatRequest,
     CheckoutRequest,
@@ -708,8 +719,108 @@ def create_app(
         current.save_provider(record)
         return ProviderModelsResult(models=models, source=source)
 
-    # ---------- usage (merged token accounting across every surface) ----------
+    # ---------- agent providers (the asset agent's isolated credential store) ----------
 
+    @app.get("/api/v1/agent-providers", response_model=list[ProviderInfo])
+    def agent_providers(
+        capability: ProviderCapability | None = None, current: Repo = repo_dep
+    ) -> list[ProviderInfo]:
+        """The asset agent's own provider catalog, separate from Chat's."""
+        return all_provider_infos(current.list_agent_providers(), capability=capability)
+
+    @app.post("/api/v1/agent-providers", status_code=201, response_model=ProviderInfo)
+    def add_agent_provider(body: ProviderUpsertRequest, current: Repo = repo_dep) -> ProviderInfo:
+        """Add or enable an asset-agent provider; stored apart from Chat's."""
+        provider_id = body.id or _slug(body.label or "")
+        if not provider_id:
+            raise ProviderConfigError("a provider needs an id or a label")
+        existing = current.get_agent_provider(provider_id)
+        saved = current.save_agent_provider(_provider_record(body, provider_id, existing))
+        return provider_info(effective_spec(saved), saved, is_builtin=saved.id in BUILTIN_BY_ID)
+
+    @app.delete("/api/v1/agent-providers/{provider_id}", status_code=204)
+    def remove_agent_provider(provider_id: str, current: Repo = repo_dep) -> None:
+        """Forget a stored agent provider; a built-in reverts to unconfigured."""
+        current.delete_agent_provider(provider_id)
+
+    @app.post("/api/v1/agent-providers/{provider_id}/test", response_model=ProviderTestResult)
+    def test_agent_provider(provider_id: str, current: Repo = repo_dep) -> ProviderTestResult:
+        """A tiny completion against the agent's provider — a bad key fails here."""
+        records = current.list_agent_providers()
+        resolved = resolve_provider(provider_id, records)
+        started = time.perf_counter()
+        try:
+            adapter, _ = build_for(provider_id, records)
+            adapter.complete(
+                [Message(role="user", content="ping")],
+                model=resolved.model or "default",
+                max_tokens=1,
+            )
+        except Exception as exc:
+            latency = int((time.perf_counter() - started) * 1000)
+            return ProviderTestResult(
+                ok=False,
+                latency_ms=latency,
+                model=resolved.model,
+                error=_redact(str(exc), resolved.api_key),
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+        return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
+
+    @app.post(
+        "/api/v1/agent-providers/{provider_id}/models", response_model=ProviderModelsResult
+    )
+    def fetch_agent_provider_models(
+        provider_id: str, current: Repo = repo_dep
+    ) -> ProviderModelsResult:
+        """`GET {base}/models` when supported, else the static list; persists it."""
+        adapter, resolved = build_for(provider_id, current.list_agent_providers())
+        models = resolved.spec.models
+        source: Literal["live", "static"] = "static"
+        lister = getattr(adapter, "list_models", None)
+        if resolved.spec.models_endpoint and callable(lister):
+            try:
+                models = list(lister())
+                source = "live"
+            except Exception:
+                models = resolved.spec.models
+                source = "static"
+        record = current.get_agent_provider(provider_id) or _record_from_spec(resolved.spec)
+        record.models = models
+        record.updated_at = utcnow()
+        current.save_agent_provider(record)
+        return ProviderModelsResult(models=models, source=source)
+
+    # ---------- assets agent (plan actions over the asset library) ----------
+
+    @app.post("/api/v1/assets/agent", response_model=AssetAgentResponse)
+    def assets_agent(body: AssetAgentRequest, current: Repo = repo_dep) -> AssetAgentResponse:
+        """Plan asset actions from an instruction, using the agent's own provider."""
+        records = current.list_agent_providers()
+        adapter, resolved = build_for(body.provider_id, records)
+        model = body.model or resolved.model or "gpt-4o-mini"
+        messages = [
+            Message(role="system", content=ASSET_AGENT_SYSTEM),
+            Message(
+                role="user",
+                content=build_asset_prompt(
+                    [asset.model_dump() for asset in body.catalog.assets],
+                    body.catalog.folders,
+                    body.instruction,
+                ),
+            ),
+        ]
+        try:
+            text = adapter.complete(messages, model=model, temperature=0)
+        except Exception as exc:
+            raise ProviderConfigError(_redact(str(exc), resolved.api_key)) from exc
+        try:
+            actions = parse_asset_actions(text)
+        except ValueError as exc:
+            raise ProviderConfigError(str(exc)) from exc
+        return AssetAgentResponse(actions=actions)
+
+    # ---------- usage (merged token accounting across every surface) ----------
     @app.get("/api/v1/usage", response_model=UsageSummary)
     def usage(days: int | None = None, current: Repo = repo_dep) -> UsageSummary:
         """Merged token usage across every surface, optionally the last `days`."""

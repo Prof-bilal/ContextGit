@@ -61,6 +61,35 @@ contextBridge.exposeInMainWorld("contextgit", {
   // ---------- File save (document export) ----------
   saveFile: (options: { defaultName: string; data: ArrayBuffer }) =>
     ipcRenderer.invoke("ctx:save-file", options) as Promise<string | null>,
+  // ---------- Assets tab (app-level asset library) ----------
+  assetsCatalog: () =>
+    ipcRenderer.invoke("ctx:assets-catalog") as Promise<import("../shared/assets").AssetCatalog>,
+  assetsImport: () =>
+    ipcRenderer.invoke("ctx:assets-import") as Promise<
+      import("../shared/assets").AssetImportResult
+    >,
+  assetsImportFolder: () =>
+    ipcRenderer.invoke("ctx:assets-import-folder") as Promise<
+      import("../shared/assets").AssetImportResult
+    >,
+  assetsCreateFolder: (folder: string) =>
+    ipcRenderer.invoke("ctx:assets-create-folder", folder) as Promise<string>,
+  assetsMove: (ids: string[], folder: string) =>
+    ipcRenderer.invoke("ctx:assets-move", ids, folder) as Promise<number>,
+  assetsUpdate: (id: string, patch: import("../shared/assets").AssetPatch) =>
+    ipcRenderer.invoke("ctx:assets-update", id, patch) as Promise<
+      import("../shared/assets").Asset | null
+    >,
+  assetsDelete: (id: string) =>
+    ipcRenderer.invoke("ctx:assets-delete", id) as Promise<boolean>,
+  assetsApply: (actions: import("../shared/assets").AgentAction[]) =>
+    ipcRenderer.invoke("ctx:assets-apply", actions) as Promise<
+      import("../shared/assets").AgentActionResult[]
+    >,
+  assetsReveal: (id: string) =>
+    ipcRenderer.invoke("ctx:assets-reveal", id) as Promise<boolean>,
+  /** Stable URL for an asset's bytes (served through the ctxasset:// scheme). */
+  assetUrl: (id: string) => `ctxasset://a/${encodeURIComponent(id)}`,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

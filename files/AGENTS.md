@@ -11,6 +11,7 @@ Python core library, a CLI, and a FastAPI + React web UI.
 | data-model.md | Touching commits, branches, storage, hashing. |
 | backend.md | Working on core library, CLI, or API. |
 | desktop.md | Working on the Electron desktop app. |
+| workspace-architecture.md | Working on the dockable panel canvas, editor, browser, files, API/DB panels. |
 | frontend.md | Working on the web UI. |
 | merge-engine.md | Working on diff, merge, or summarization. |
 | testing.md | Writing or running tests. |

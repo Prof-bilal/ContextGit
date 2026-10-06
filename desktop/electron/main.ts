@@ -3,11 +3,12 @@
  * PyInstaller binary when packaged), health-gates the window on it, and
  * pushes backend status to the renderer.
  */
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net as enet, protocol, shell } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { PTY_PRESETS, PtyManager } from "./pty";
 import {
@@ -20,11 +21,24 @@ import {
 import { HARNESS_BY_ID } from "../shared/harnesses";
 import type { BackendStatus } from "../shared/status";
 import type { Workspace } from "../shared/workspace";
+import { AssetLibrary } from "./library";
+import type { AssetPatch } from "../shared/assets";
 
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(app.getAppPath(), "..");
 const backendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
 const apiBase = `http://127.0.0.1:${backendPort}`;
+
+/**
+ * Asset bytes (thumbnails, previews, video) are served to the renderer through
+ * this scheme — the renderer only ever names an asset id, never a path.
+ */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "ctxasset",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+  },
+]);
 
 let backend: ChildProcess | null = null;
 let status: BackendStatus = { state: "starting" };
@@ -152,9 +166,18 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
   });
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    try {
+      await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    } catch (error) {
+      // A fast reload can abort the initial load; the backend must still start.
+      console.error("Initial window load was interrupted:", error);
+    }
   } else {
-    await mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+    try {
+      await mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+    } catch (error) {
+      console.error("Initial window load was interrupted:", error);
+    }
   }
 }
 
@@ -341,6 +364,63 @@ ipcMain.handle(
   },
 );
 
+// ---------- Assets tab (app-level asset library) ----------
+
+let assetLibrary: AssetLibrary | null = null;
+
+/** The library lives beside the app's other user data, independent of projects. */
+function assets(): AssetLibrary {
+  if (!assetLibrary) {
+    assetLibrary = new AssetLibrary(path.join(app.getPath("userData"), "assets"));
+  }
+  return assetLibrary;
+}
+
+ipcMain.handle("ctx:assets-catalog", () => assets().catalog());
+
+ipcMain.handle("ctx:assets-import", async () => {
+  const options: Electron.OpenDialogOptions = {
+    title: "Import assets",
+    buttonLabel: "Import",
+    defaultPath: app.getPath("pictures"),
+    properties: ["openFile", "multiSelections"],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) {
+    return { imported: [], skipped: [] };
+  }
+  return assets().importFiles(result.filePaths);
+});
+
+ipcMain.handle("ctx:assets-import-folder", async () => {
+  const options: Electron.OpenDialogOptions = {
+    title: "Import a folder (recursively)",
+    buttonLabel: "Import folder",
+    defaultPath: app.getPath("pictures"),
+    properties: ["openDirectory"],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) {
+    return { imported: [], skipped: [] };
+  }
+  return assets().importFolder(result.filePaths[0]);
+});
+
+ipcMain.handle("ctx:assets-create-folder", (_event, folder: string) => assets().createFolder(folder));
+ipcMain.handle("ctx:assets-move", (_event, ids: string[], folder: string) => assets().move(ids, folder));
+ipcMain.handle("ctx:assets-update", (_event, id: string, patch: AssetPatch) => assets().update(id, patch));
+ipcMain.handle("ctx:assets-delete", (_event, id: string) => assets().remove(id));
+ipcMain.handle("ctx:assets-apply", (_event, actions) => assets().applyActions(actions));
+ipcMain.handle("ctx:assets-reveal", (_event, id: string) => {
+  const file = assets().filePath(id);
+  if (file) shell.showItemInFolder(file);
+  return Boolean(file);
+});
+
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 const ptys = new PtyManager(
@@ -442,6 +522,13 @@ ipcMain.handle("ctx:restart-backend", async () => {
 });
 
 app.whenReady().then(async () => {
+  protocol.handle("ctxasset", async (request) => {
+    const url = new URL(request.url);
+    const id = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    const file = assets().filePath(id);
+    if (!file) return new Response("Not found", { status: 404 });
+    return enet.fetch(pathToFileURL(file).toString());
+  });
   // Window first so the user sees the "starting" screen while the backend boots.
   await createWindow();
   await spawnBackend();

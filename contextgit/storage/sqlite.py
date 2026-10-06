@@ -758,11 +758,11 @@ class SqliteStorage:
             updated_at=row["updated_at"],
         )
 
-    def upsert_provider(self, record: ProviderRecord) -> ProviderRecord:
+    def _upsert_provider_row(self, table: str, record: ProviderRecord) -> ProviderRecord:
         """Insert or replace a provider row; `api_key=None` clears a stored key."""
         with self._conn:
             self._conn.execute(
-                "INSERT INTO providers"
+                f"INSERT INTO {table}"
                 " (id, label, vendor, kind, capability, base_url, auth_style, api_key,"
                 " default_model, models_json, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -787,22 +787,54 @@ class SqliteStorage:
                     record.updated_at.isoformat(),
                 ),
             )
-        return self.get_provider_row(record.id)  # type: ignore[return-value]
+        return self._get_provider_row(table, record.id)  # type: ignore[return-value]
 
-    def get_provider_row(self, provider_id: str) -> ProviderRecord | None:
+    def _get_provider_row(self, table: str, provider_id: str) -> ProviderRecord | None:
         row = self._conn.execute(
-            "SELECT * FROM providers WHERE id = ?", (provider_id,)
+            f"SELECT * FROM {table} WHERE id = ?", (provider_id,)
         ).fetchone()
         return self._row_to_provider(row) if row is not None else None
 
-    def list_provider_rows(self) -> list[ProviderRecord]:
-        rows = self._conn.execute("SELECT * FROM providers ORDER BY id").fetchall()
+    def _list_provider_rows(self, table: str) -> list[ProviderRecord]:
+        rows = self._conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
         return [self._row_to_provider(row) for row in rows]
 
-    def delete_provider_row(self, provider_id: str) -> bool:
+    def _delete_provider_row(self, table: str, provider_id: str) -> bool:
         with self._conn:
-            cur = self._conn.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
+            cur = self._conn.execute(f"DELETE FROM {table} WHERE id = ?", (provider_id,))
         return cur.rowcount > 0
+
+    def upsert_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or replace a Chat provider row."""
+        return self._upsert_provider_row("providers", record)
+
+    def get_provider_row(self, provider_id: str) -> ProviderRecord | None:
+        """One stored Chat provider row, or None."""
+        return self._get_provider_row("providers", provider_id)
+
+    def list_provider_rows(self) -> list[ProviderRecord]:
+        """Every stored Chat provider row."""
+        return self._list_provider_rows("providers")
+
+    def delete_provider_row(self, provider_id: str) -> bool:
+        """Remove a Chat provider row."""
+        return self._delete_provider_row("providers", provider_id)
+
+    def upsert_agent_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or replace an asset-agent provider row (its own store)."""
+        return self._upsert_provider_row("agent_providers", record)
+
+    def get_agent_provider_row(self, provider_id: str) -> ProviderRecord | None:
+        """One stored asset-agent provider row, or None."""
+        return self._get_provider_row("agent_providers", provider_id)
+
+    def list_agent_provider_rows(self) -> list[ProviderRecord]:
+        """Every stored asset-agent provider row."""
+        return self._list_provider_rows("agent_providers")
+
+    def delete_agent_provider_row(self, provider_id: str) -> bool:
+        """Remove an asset-agent provider row."""
+        return self._delete_provider_row("agent_providers", provider_id)
 
     # ---------- usage (token accounting) ----------
 

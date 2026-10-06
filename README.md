@@ -72,6 +72,11 @@ that history a mergeable artefact alongside your code.
   the project on launch. The board *file* (`.contextgit/team.md` plus the managed
   `AGENTS.md` block) works with every CLI, MCP or not.
 - **Run isolation** — a private local `PORT` per run and a work-in-progress cap.
+- **All-in-one workbench** *(planned)* — the editor, in-app browser, file explorer and
+  HTTP/database clients added as **new tabs** in the existing workbench (same UI and
+  layout, no redesign). Design:
+  [`files/all-in-one-landscape.md`](files/all-in-one-landscape.md),
+  [`files/workspace-architecture.md`](files/workspace-architecture.md).
 
 ## Team mode (Single | Team)
 

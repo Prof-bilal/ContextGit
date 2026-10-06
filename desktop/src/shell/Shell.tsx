@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "react-icons/lu";
 
 import {
@@ -10,6 +10,7 @@ import {
   type Task,
 } from "@/lib/api";
 import { NAMED_AGENTS, type NamedAgent } from "../mock/fixtures";
+import type { Asset } from "../../shared/assets";
 import { ROLE_BY_ID, roleFor, roleSkills } from "../../shared/roles";
 import { agentLabel } from "./agents";
 import AgentDialog from "./agent/AgentDialog";
@@ -52,6 +53,14 @@ import { useTeam } from "./team/useTeam";
 import AgentView from "./views/AgentView";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
+import AssetsRail, { type AssetFilter } from "./rail/AssetsRail";
+import AssetsView from "./views/AssetsView";
+import AssetDetails from "./assets/AssetDetails";
+import AssetPreview from "./assets/AssetPreview";
+import DeleteAssetDialog from "./assets/DeleteAssetDialog";
+import AssetAgentPanel from "./assets/AssetAgentPanel";
+import NewFolderDialog from "./assets/NewFolderDialog";
+import { useAssets } from "./assets/useAssets";
 import GitView, { type CommitFilter } from "./views/GitView";
 import TeamView from "./views/TeamView";
 import UsageView from "./views/UsageView";
@@ -60,7 +69,7 @@ import { useProjects } from "./workspace/useProjects";
 
 type Theme = "dark" | "light";
 
-const TAB_IDS: TabId[] = ["chat", "code", "agent", "git", "usage"];
+const TAB_IDS: TabId[] = ["chat", "code", "assets", "agent", "git", "usage"];
 
 /** Time windows for the Usage tab. */
 const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
@@ -146,6 +155,17 @@ export default function Shell() {
 
   // ---- Chat operates on a real branch; Agent still reads fixtures ----
   const [chatBranch, setChatBranch] = useState("");
+  // ---- Assets tab: the app-level asset library ----
+  const assets = useAssets();
+  const [assetId, setAssetId] = useState<string | null>(null);
+  const [assetKind, setAssetKind] = useState<AssetFilter>("all");
+  const [assetQuery, setAssetQuery] = useState("");
+  const [assetTag, setAssetTag] = useState<string | null>(null);
+  const [assetPreview, setAssetPreview] = useState<Asset | null>(null);
+  const [assetDelete, setAssetDelete] = useState<Asset | null>(null);
+  const [assetFolder, setAssetFolder] = useState<string | null>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [chatFilter, setChatFilter] = useState<ConversationMode | "all">("all");
   /** Usage tab time window: undefined = all time. */
   const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
@@ -820,10 +840,69 @@ export default function Shell() {
   const tabs: TabDef[] = [
     { id: "chat", label: "Chat" },
     { id: "code", label: "Code" },
+    { id: "assets", label: "Assets" },
     { id: "agent", label: "Agent" },
     { id: "git", label: "Git" },
     { id: "usage", label: "Usage" },
   ];
+
+  // ---- Assets tab: counts, folders, tags and the filtered gallery ----
+  const assetCounts = useMemo<Record<AssetFilter, number>>(() => {
+    const counts: Record<AssetFilter, number> = {
+      all: assets.assets.length,
+      image: 0,
+      video: 0,
+      audio: 0,
+      doc: 0,
+      other: 0,
+    };
+    for (const asset of assets.assets) counts[asset.kind] += 1;
+    return counts;
+  }, [assets.assets]);
+
+  const assetTags = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const asset of assets.assets) {
+      for (const tag of asset.tags) map.set(tag, (map.get(tag) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [assets.assets]);
+
+  const folderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const folder of assets.folders) {
+      counts[folder] = assets.assets.filter(
+        (asset) => asset.folder === folder || asset.folder.startsWith(`${folder}/`),
+      ).length;
+    }
+    return counts;
+  }, [assets.assets, assets.folders]);
+
+  const filteredAssets = useMemo(() => {
+    const query = assetQuery.trim().toLowerCase();
+    return assets.assets.filter((asset) => {
+      if (
+        assetFolder !== null &&
+        !(asset.folder === assetFolder || asset.folder.startsWith(`${assetFolder}/`))
+      ) {
+        return false;
+      }
+      if (assetKind !== "all" && asset.kind !== assetKind) return false;
+      if (assetTag && !asset.tags.includes(assetTag)) return false;
+      if (
+        query &&
+        !asset.name.toLowerCase().includes(query) &&
+        !asset.tags.some((tag) => tag.toLowerCase().includes(query))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [assets.assets, assetFolder, assetKind, assetTag, assetQuery]);
+
+  const selectedAsset = assets.assets.find((asset) => asset.id === assetId) ?? null;
 
   const rail = () => {
     switch (tab) {
@@ -863,6 +942,24 @@ export default function Shell() {
             onUseProject={(path) => void useProject(path)}
             onForgetProject={(path) => void forgetProject(path)}
             onChooseProject={() => setProjectOpen(true)}
+          />
+        );
+      case "assets":
+        return (
+          <AssetsRail
+            counts={assetCounts}
+            kind={assetKind}
+            onKind={setAssetKind}
+            query={assetQuery}
+            onQuery={setAssetQuery}
+            folders={assets.folders}
+            folderCounts={folderCounts}
+            folder={assetFolder}
+            onFolder={setAssetFolder}
+            onNewFolder={() => setNewFolderOpen(true)}
+            tags={assetTags}
+            activeTag={assetTag}
+            onTag={setAssetTag}
           />
         );
       case "agent":
@@ -929,6 +1026,21 @@ export default function Shell() {
             readySearchCount={readySearchCount}
             offlineOk={offlineOk}
             onUseOffline={() => setOfflineOk(true)}
+          />
+        );
+      case "assets":
+        return (
+          <AssetsView
+            items={filteredAssets}
+            selectedId={assetId}
+            loading={assets.loading}
+            error={assets.error}
+            folder={assetFolder}
+            onSelect={setAssetId}
+            onOpen={setAssetPreview}
+            onImport={assets.importAssets}
+            onImportFolder={assets.importFolder}
+            onAgent={() => setAgentOpen(true)}
           />
         );
       case "agent":
@@ -1184,6 +1296,18 @@ export default function Shell() {
         ) : (
           <p className="cg-empty-note">Select a run to inspect it.</p>
         );
+      case "assets":
+        return selectedAsset ? (
+          <AssetDetails
+            asset={selectedAsset}
+            folders={assets.folders}
+            onUpdate={(patch) => assets.update(selectedAsset.id, patch)}
+            onReveal={() => void window.contextgit?.assetsReveal(selectedAsset.id)}
+            onDelete={() => setAssetDelete(selectedAsset)}
+          />
+        ) : (
+          <p className="cg-empty-note">Select an asset to inspect it.</p>
+        );
       case "agent":
         return (
           <>
@@ -1260,6 +1384,10 @@ export default function Shell() {
   };
 
   const bottomBar = () => {
+    if (tab === "assets") {
+      // No commit bar: the gallery is the bottom edge.
+      return null;
+    }
     if (tab === "agent") {
       return (
         <footer className="cg-bottombar">
@@ -1386,7 +1514,9 @@ export default function Shell() {
         ? "Conversation"
         : tab === "agent"
           ? "Agent"
-          : "Commit";
+          : tab === "assets"
+            ? "Asset"
+            : "Commit";
 
   const notice =
     sessionsError ??
@@ -1614,6 +1744,38 @@ export default function Shell() {
             void refreshRepo();
           }}
           onClose={() => setMergeOpen(false)}
+        />
+      )}
+
+      {assetPreview && (
+        <AssetPreview asset={assetPreview} onClose={() => setAssetPreview(null)} />
+      )}
+
+      {assetDelete && (
+        <DeleteAssetDialog
+          asset={assetDelete}
+          onConfirm={() => {
+            const id = assetDelete.id;
+            setAssetDelete(null);
+            if (assetId === id) setAssetId(null);
+            void assets.remove(id);
+          }}
+          onClose={() => setAssetDelete(null)}
+        />
+      )}
+
+      {newFolderOpen && (
+        <NewFolderDialog
+          onCreate={(folder) => assets.createFolder(folder)}
+          onClose={() => setNewFolderOpen(false)}
+        />
+      )}
+
+      {agentOpen && (
+        <AssetAgentPanel
+          assets={assets.assets}
+          onChanged={assets.refresh}
+          onClose={() => setAgentOpen(false)}
         />
       )}
     </div>

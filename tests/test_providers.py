@@ -269,3 +269,71 @@ def test_chat_stream_defaults_to_injected_provider(tmp_path: Path) -> None:
         if line.startswith("data: ") and '"text"' in line
     ]
     assert "".join(chunks) == "injected"
+
+
+# ---------- asset agent (its own isolated provider store) ----------
+
+
+def test_agent_providers_are_isolated_from_chat(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    client = client_for(repo)
+
+    created = client.post(
+        "/api/v1/agent-providers",
+        json={"id": "mock", "label": "Mock", "capability": "chat"},
+    )
+    assert created.status_code == 201
+    # The row lands in the agent's store, never in Chat's.
+    assert repo.get_agent_provider("mock") is not None
+    assert repo.get_provider("mock") is None
+
+    # Removing it from the agent store leaves Chat untouched.
+    assert client.delete("/api/v1/agent-providers/mock").status_code == 204
+    assert repo.get_agent_provider("mock") is None
+
+
+def test_asset_agent_returns_a_validated_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextgit.api import app as app_module
+
+    repo = Repo.init(tmp_path / "repo")
+    plan = '{"actions":[{"type":"create_folder","path":"Logos"},{"type":"nope"}]}'
+    fake = FakeProvider(default=plan)
+    resolved = resolve_provider("mock", [])
+    monkeypatch.setattr(app_module, "build_for", lambda *_a, **_k: (fake, resolved))
+    client = TestClient(create_app(repo=repo))
+
+    response = client.post(
+        "/api/v1/assets/agent",
+        json={
+            "provider_id": "mock",
+            "instruction": "make a Logos folder",
+            "catalog": {
+                "assets": [{"id": "a1", "name": "logo.png", "kind": "image"}],
+                "folders": [],
+            },
+        },
+    )
+    assert response.status_code == 200
+    # The unknown action is dropped; the valid one survives.
+    assert response.json()["actions"] == [{"type": "create_folder", "path": "Logos"}]
+
+
+def test_asset_agent_reports_a_non_json_reply(tmp_path: Path) -> None:
+    """The offline mock replies with prose, so the agent must say so, not crash."""
+    repo = Repo.init(tmp_path / "repo")
+    client = client_for(repo)
+    response = client.post(
+        "/api/v1/assets/agent",
+        json={"provider_id": "mock", "instruction": "tidy up"},
+    )
+    assert response.status_code == 422
+    assert "valid JSON" in response.json()["error"]
+
+
+def test_asset_agent_parser_drops_unknown_actions() -> None:
+    from contextgit.agents.asset_agent import parse_actions
+
+    text = '```json\n{"actions":[{"type":"rename","id":"a","name":"x"},{"type":"bogus"}]}\n```'
+    assert parse_actions(text) == [{"type": "rename", "id": "a", "name": "x"}]

@@ -1797,6 +1797,22 @@ class Repo:
         """Remove a stored provider row; a built-in reverts to unconfigured."""
         return self._storage.delete_provider_row(provider_id)
 
+    def list_agent_providers(self) -> list[ProviderRecord]:
+        """The asset agent's provider rows (a store separate from Chat's)."""
+        return self._storage.list_agent_provider_rows()
+
+    def get_agent_provider(self, provider_id: str) -> ProviderRecord | None:
+        """One stored asset-agent provider row, or None."""
+        return self._storage.get_agent_provider_row(provider_id)
+
+    def save_agent_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or update an asset-agent provider row."""
+        return self._storage.upsert_agent_provider(record)
+
+    def delete_agent_provider(self, provider_id: str) -> bool:
+        """Remove an asset-agent provider row."""
+        return self._storage.delete_agent_provider_row(provider_id)
+
     @staticmethod
     def _check_ref_name(name: str) -> None:
         forbidden = " \t\n~^:?*[\\"

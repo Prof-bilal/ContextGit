@@ -75,3 +75,8 @@ npm run test:e2e
 | `files/chat-sessions.md` | Chat tab: conversations as isolated sessions, staging + commit, the pending diff |
 | `files/chat-documents.md` | Chat's Docs tab: generate + download md/pdf/docx/pptx, with a library |
 | `files/usage.md` | Token usage: real-vs-estimated capture, the event log and the Usage tab |
+| `files/all-in-one-landscape.md` | All-in-one workbench, round 1: the category, the competitor and the surface catalog |
+| `files/workspace-architecture.md` | All-in-one workbench, round 2: the dockable canvas and process architecture |
+| `files/editor-integration.md` | All-in-one workbench, round 3: the embedded VS Code (code-server) editor |
+| `files/browser-embedding.md` | All-in-one workbench, round 4: the in-app browser (`WebContentsView`) |
+| `files/api-db-clients.md` | All-in-one workbench: the HTTP and database client panels |

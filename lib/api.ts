@@ -151,6 +151,27 @@ const base = bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
 export type SessionKind = "chat" | "terminal";
 export type SessionStatus = "idle" | "running" | "done" | "error";
 
+/** Ask the asset agent for a plan through one of its own providers. */
+export interface AssetAgentInput {
+  provider_id: string;
+  model?: string;
+  instruction: string;
+  catalog: {
+    assets: { id: string; name: string; kind: string; folder: string; tags: string[] }[];
+    folders: string[];
+  };
+}
+
+/** A planned asset-agent action (shape validated on the backend). */
+export interface AssetAgentAction {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface AssetAgentResponse {
+  actions: AssetAgentAction[];
+}
+
 export interface Session {
   id: string;
   name: string;
@@ -544,6 +565,28 @@ export const api = {
   fetchProviderModels: (id: string) =>
     request<ProviderModelsResult>(`/api/v1/providers/${encodeURIComponent(id)}/models`, {
       method: "POST",
+    }),
+  // ---------- asset agent (its own isolated provider store) ----------
+  agentProviders: () => request<ProviderInfo[]>("/api/v1/agent-providers"),
+  addAgentProvider: (input: ProviderInput) =>
+    request<ProviderInfo>("/api/v1/agent-providers", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  deleteAgentProvider: (id: string) =>
+    request<void>(`/api/v1/agent-providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testAgentProvider: (id: string) =>
+    request<ProviderTestResult>(`/api/v1/agent-providers/${encodeURIComponent(id)}/test`, {
+      method: "POST",
+    }),
+  fetchAgentProviderModels: (id: string) =>
+    request<ProviderModelsResult>(`/api/v1/agent-providers/${encodeURIComponent(id)}/models`, {
+      method: "POST",
+    }),
+  assetAgent: (input: AssetAgentInput) =>
+    request<AssetAgentResponse>("/api/v1/assets/agent", {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),

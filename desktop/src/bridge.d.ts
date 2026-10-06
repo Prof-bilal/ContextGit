@@ -33,6 +33,24 @@ export interface ContextGitBridge {
   createWorkspace: (parent: string, name: string) => Promise<import("../shared/workspace").Workspace>;
   /** Native Save dialog; returns the written path or null when cancelled. */
   saveFile: (options: { defaultName: string; data: ArrayBuffer }) => Promise<string | null>;
+  /** Assets tab: the app-level asset library (files live under the app's userData). */
+  assetsCatalog: () => Promise<import("../shared/assets").AssetCatalog>;
+  assetsImport: () => Promise<import("../shared/assets").AssetImportResult>;
+  assetsImportFolder: () => Promise<import("../shared/assets").AssetImportResult>;
+  assetsCreateFolder: (folder: string) => Promise<string>;
+  assetsMove: (ids: string[], folder: string) => Promise<number>;
+  assetsUpdate: (
+    id: string,
+    patch: import("../shared/assets").AssetPatch,
+  ) => Promise<import("../shared/assets").Asset | null>;
+  assetsDelete: (id: string) => Promise<boolean>;
+  /** Execute an asset-agent plan (rename/move/folder/tag/note/delete). */
+  assetsApply: (
+    actions: import("../shared/assets").AgentAction[],
+  ) => Promise<import("../shared/assets").AgentActionResult[]>;
+  assetsReveal: (id: string) => Promise<boolean>;
+  /** Stable URL for an asset's bytes (served via the ctxasset:// scheme). */
+  assetUrl: (id: string) => string;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

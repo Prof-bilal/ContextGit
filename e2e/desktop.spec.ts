@@ -18,6 +18,10 @@ import {
  */
 let app: ElectronApplication;
 
+/** A 1x1 PNG, seeded into the asset library so the gallery has an image to render. */
+const SEED_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 /** Top-nav tab (scoped: the composer's mode switch is also role=tab). */
 const nav = (page: Page, name: string) => page.locator(".cg-segmented").getByRole("tab", { name });
 /** Composer mode switch. */
@@ -54,9 +58,53 @@ test.beforeAll(async () => {
   git("add", "-A");
   git("commit", "-q", "-m", "init");
 
+  // A private userData dir keeps the e2e out of the developer's real app data
+  // (projects, theme, asset library). Seed the asset library so the Assets tab
+  // has content to render without going through a native import dialog.
+  const userData = path.join(root, ".playwright-userdata");
+  fs.rmSync(userData, { recursive: true, force: true });
+  const libraryFiles = path.join(userData, "assets", "files");
+  fs.mkdirSync(libraryFiles, { recursive: true });
+  const png = Buffer.from(SEED_PNG, "base64");
+  fs.writeFileSync(path.join(libraryFiles, "seed-png.png"), png);
+  fs.writeFileSync(path.join(libraryFiles, "seed-txt.txt"), "hello from e2e\n");
+  fs.writeFileSync(
+    path.join(userData, "assets", "assets.json"),
+    `${JSON.stringify(
+      [
+        {
+          id: "seed-png",
+          name: "seeded.png",
+          ext: ".png",
+          kind: "image",
+          mime: "image/png",
+          size: png.length,
+          added: 1,
+          tags: ["seed"],
+          note: "",
+          source: "e2e",
+        },
+        {
+          id: "seed-txt",
+          name: "notes.txt",
+          ext: ".txt",
+          kind: "doc",
+          mime: "text/plain",
+          size: 16,
+          added: 2,
+          tags: [],
+          note: "",
+          source: "e2e",
+        },
+      ],
+      null,
+      2,
+    )}\n`,
+  );
+
   app = await electron.launch({
     executablePath: path.join(root, "desktop/node_modules/electron/dist/electron"),
-    args: [path.join(root, "desktop"), "--no-sandbox"],
+    args: [path.join(root, "desktop"), "--no-sandbox", `--user-data-dir=${userData}`],
     env: {
       ...process.env,
       CONTEXTGIT_REPO: contextgitRepo,
@@ -87,6 +135,88 @@ test("workspace shell renders with the top nav", async () => {
   await expect(nav(page, "Code")).toBeVisible();
   await expect(nav(page, "Agent")).toBeVisible();
   await expect(nav(page, "Git")).toBeVisible();
+});
+
+test("the Assets tab renders the gallery and its controls", async () => {
+  const page = await openShell();
+  await nav(page, "Assets").click();
+
+  await expect(page.locator('.cg-view[data-active="true"] .cg-view-toolbar h1')).toHaveText(
+    "Assets",
+  );
+  await expect(page.getByRole("button", { name: "Import", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Import folder" })).toBeVisible();
+  // The type filters and search live in the rail.
+  await expect(
+    page.getByRole("tablist", { name: "Asset type" }).getByRole("tab", { name: /Images/ }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Search assets")).toBeVisible();
+});
+
+test("the Assets gallery shows seeded assets and serves thumbnails", async () => {
+  const page = await openShell();
+  await nav(page, "Assets").click();
+
+  const pngCard = page.locator(".cg-card", { hasText: "seeded.png" });
+  await expect(pngCard).toBeVisible();
+  await expect(page.locator(".cg-card", { hasText: "notes.txt" })).toBeVisible();
+
+  // The image loads through the ctxasset:// scheme (main-process protocol).
+  const naturalWidth = await pngCard
+    .locator("img")
+    .evaluate((img) => (img as HTMLImageElement).naturalWidth);
+  expect(naturalWidth).toBeGreaterThan(0);
+
+  // Selecting a card fills the inspector with its metadata + editable fields.
+  await pngCard.click();
+  await expect(page.locator(".cg-dock")).toContainText("image/png");
+  await expect(page.locator("#cg-asset-name")).toHaveValue("seeded.png");
+});
+
+test("assets can be organised into folders", async () => {
+  const page = await openShell();
+  await nav(page, "Assets").click();
+
+  // Create a folder from the rail.
+  await page.getByRole("button", { name: "New folder" }).click();
+  const dialog = page.getByRole("dialog", { name: "New folder" });
+  await dialog.getByLabel("Folder name").fill("Logos");
+  await dialog.getByRole("button", { name: "Create folder" }).click();
+  const folderRow = page.locator(".cg-rail .cg-row", { hasText: "Logos" });
+  await expect(folderRow).toBeVisible();
+
+  // Move the seeded image into it via the inspector.
+  await page.locator(".cg-card", { hasText: "seeded.png" }).click();
+  await page.locator("#cg-asset-folder").selectOption("Logos");
+  await page.locator(".cg-dock").getByRole("button", { name: "Save" }).click();
+
+  // Filtering by the folder shows only its assets.
+  await folderRow.click();
+  await expect(page.locator(".cg-card", { hasText: "seeded.png" })).toBeVisible();
+  await expect(page.locator(".cg-card", { hasText: "notes.txt" })).toHaveCount(0);
+});
+
+test("the asset agent uses the provider connector, isolated from Chat", async () => {
+  const page = await openShell();
+  await nav(page, "Assets").click();
+
+  await page.getByRole("button", { name: "AI agent" }).click();
+  const dialog = page.getByRole("dialog", { name: "Asset agent" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Provider")).toBeVisible();
+  await expect(dialog.getByLabel("Model")).toBeVisible();
+
+  // The agent's connector is the same proven modal, scoped to its own store.
+  await dialog.getByRole("button", { name: "Connect provider…" }).click();
+  const connector = page.getByRole("dialog", { name: "Connect the asset agent" });
+  await expect(connector).toBeVisible();
+  await expect(connector.getByLabel("Provider")).toBeVisible();
+  await expect(connector.getByLabel("API key")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(connector).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("switch to the Git tab and toggle list/graph", async () => {

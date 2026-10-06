@@ -154,6 +154,38 @@ class ProviderModelsResult(BaseModel):
     source: Literal["live", "static"]
 
 
+class AssetAgentAsset(BaseModel):
+    """One asset in the slim catalog sent to the asset agent."""
+
+    id: str
+    name: str
+    kind: str = "other"
+    folder: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class AssetAgentCatalog(BaseModel):
+    """The catalog the asset agent sees (no paths, mime or sizes)."""
+
+    assets: list[AssetAgentAsset] = Field(default_factory=list)
+    folders: list[str] = Field(default_factory=list)
+
+
+class AssetAgentRequest(BaseModel):
+    """Ask the asset agent for a plan, through one of its own providers."""
+
+    provider_id: str
+    model: str | None = None
+    instruction: str = Field(min_length=1)
+    catalog: AssetAgentCatalog = Field(default_factory=AssetAgentCatalog)
+
+
+class AssetAgentResponse(BaseModel):
+    """The validated plan of actions (rename/move/folder/tag/note/delete)."""
+
+    actions: list[dict[str, object]] = Field(default_factory=list)
+
+
 class CompareRequest(BaseModel):
     """Prompt to send to two branches for side-by-side comparison."""
 

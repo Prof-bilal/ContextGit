@@ -30,6 +30,7 @@ export default function AddProviderDialog({
   providers,
   initialId,
   capability,
+  title,
   add,
   remove,
   test,
@@ -42,6 +43,8 @@ export default function AddProviderDialog({
   initialId?: string;
   /** Only offer presets of this capability. */
   capability?: ProviderCapability;
+  /** Override the dialog title (e.g. the asset agent's own connector). */
+  title?: string;
   add: (input: ProviderInput) => Promise<ProviderInfo>;
   remove: (id: string) => Promise<void>;
   test: (id: string) => Promise<ProviderTestResult>;
@@ -154,11 +157,12 @@ export default function AddProviderDialog({
   return (
     <Modal
       title={
-        capability === "image"
+        title ??
+        (capability === "image"
           ? "Add an image provider"
           : capability === "search"
             ? "Add a search provider"
-            : "Add a model provider"
+            : "Add a model provider")
       }
       subtitle="Local key · never echoed back"
       onClose={onClose}
