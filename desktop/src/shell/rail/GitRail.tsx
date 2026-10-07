@@ -87,8 +87,8 @@ export default function GitRail({
             <button
               type="button"
               className="cg-icon-btn cg-row-delete"
-              aria-label={`Delete branch ${branch.name}`}
-              title="Delete branch (commits are kept)"
+              aria-label={`Move branch ${branch.name} to Storage`}
+              title="Move to Storage (restorable)"
               onClick={() => onDelete(branch.name)}
             >
               <LuX aria-hidden="true" />

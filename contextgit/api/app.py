@@ -64,8 +64,11 @@ from contextgit.api.schemas import (
     TeamGateRequest,
     TeamMessageRequest,
 )
+from contextgit.apiclient.client import send_request
+from contextgit.apiclient.store import CollectionStore
 from contextgit.core.errors import (
     BranchNotFound,
+    CollectionNotFound,
     CommitNotFound,
     ContextGitError,
     GateNotConfigured,
@@ -89,6 +92,11 @@ from contextgit.core.errors import (
     WorkInProgressLimit,
 )
 from contextgit.core.models import (
+    EndpointGraph,
+    HttpCollection,
+    HttpHistoryEntry,
+    HttpRequestSpec,
+    HttpResponseResult,
     Message,
     ProviderCapability,
     ProviderRecord,
@@ -110,6 +118,7 @@ from contextgit.documents import (
     render,
     save,
 )
+from contextgit.endpoints.provenance import graph_with_provenance
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -198,6 +207,7 @@ def create_app(
                 SessionNotFound,
                 TaskNotFound,
                 TeamNotFound,
+                CollectionNotFound,
             ),
         ):
             status = 404
@@ -258,12 +268,21 @@ def create_app(
         return current.branch(body.name, body.from_commit).model_dump(mode="json")
 
     @app.delete("/api/v1/branches", status_code=204)
-    def delete_branch(name: str, current: Repo = repo_dep) -> None:
-        """Delete a branch pointer. Commits survive; the current branch is refused.
+    def delete_branch(name: str, permanent: bool = False, current: Repo = repo_dep) -> None:
+        """Move a branch pointer to Storage. Commits survive; the current branch is refused.
 
-        `name` is a query param because branch names contain '/'.
+        `name` is a query param because branch names contain '/'. Pass
+        `permanent=true` to drop the pointer instead of trashing it.
         """
-        current.delete_branch(name)
+        if permanent:
+            current.purge_branch(name)
+        else:
+            current.delete_branch(name)
+
+    @app.post("/api/v1/branches/restore")
+    def restore_branch(name: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Bring a branch back from Storage. `name` is a query param."""
+        return current.restore_branch(name).model_dump(mode="json")
 
     @app.post("/api/v1/checkout")
     def checkout(body: CheckoutRequest, current: Repo = repo_dep) -> dict[str, str]:
@@ -399,8 +418,31 @@ def create_app(
         return session.model_dump(mode="json")
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
-    def delete_session(session_id: str, current: Repo = repo_dep) -> None:
-        current.delete_session(session_id)
+    def delete_session(
+        session_id: str, permanent: bool = False, current: Repo = repo_dep
+    ) -> None:
+        """Move a run to Storage. Pass `permanent=true` to delete it for good."""
+        if permanent:
+            current.delete_session(session_id)
+        else:
+            current.trash_session(session_id)
+
+    @app.post("/api/v1/sessions/{session_id}/restore")
+    def restore_session(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Bring a run back from Storage."""
+        return current.restore_session(session_id).model_dump(mode="json")
+
+    @app.get("/api/v1/trash")
+    def trash(current: Repo = repo_dep) -> dict[str, object]:
+        """The Storage view: trashed runs/conversations and trashed branches."""
+        return {
+            "sessions": [
+                session.model_dump(mode="json") for session in current.list_trashed_sessions()
+            ],
+            "branches": [
+                branch.model_dump(mode="json") for branch in current.list_trashed_branches()
+            ],
+        }
 
     @app.get("/api/v1/sessions/{session_id}/workspace")
     def session_workspace(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
@@ -819,6 +861,62 @@ def create_app(
         except ValueError as exc:
             raise ProviderConfigError(str(exc)) from exc
         return AssetAgentResponse(actions=actions)
+
+    # ---------- endpoint graph (the Endpoints tab) ----------
+
+    @app.get("/api/v1/endpoints", response_model=EndpointGraph)
+    def endpoints(project_path: str | None = None, current: Repo = repo_dep) -> EndpointGraph:
+        """Every endpoint of the project, with the change that produced each one."""
+        root = Path(project_path).expanduser() if project_path else current.root
+        return graph_with_provenance(current, root)
+
+    @app.post("/api/v1/endpoints/refresh", response_model=EndpointGraph)
+    def endpoints_refresh(
+        project_path: str | None = None, current: Repo = repo_dep
+    ) -> EndpointGraph:
+        """Re-scan the project (the graph is always read fresh, so this is a re-read)."""
+        root = Path(project_path).expanduser() if project_path else current.root
+        return graph_with_provenance(current, root)
+
+    # ---------- HTTP client (the API tab) ----------
+
+    @app.post("/api/v1/http/request", response_model=HttpResponseResult)
+    def http_request(body: HttpRequestSpec, current: Repo = repo_dep) -> HttpResponseResult:
+        """Send one composed request and record it in the history."""
+        result = send_request(body)
+        current.record_http_history(
+            body.method.upper() or "GET",
+            result.url or body.url,
+            result.status,
+            result.elapsed_ms,
+            result.size,
+        )
+        return result
+
+    @app.get("/api/v1/http/collections", response_model=list[str])
+    def http_collections(current: Repo = repo_dep) -> list[str]:
+        """The names of the collections stored in the repo."""
+        return CollectionStore(current.root).list()
+
+    @app.get("/api/v1/http/collections/{name}", response_model=HttpCollection)
+    def http_collection(name: str, current: Repo = repo_dep) -> HttpCollection:
+        return CollectionStore(current.root).get(name)
+
+    @app.put("/api/v1/http/collections/{name}", response_model=HttpCollection)
+    def http_save_collection(
+        name: str, body: HttpCollection, current: Repo = repo_dep
+    ) -> HttpCollection:
+        """Create or replace a collection (stored as a file beside the history)."""
+        return CollectionStore(current.root).save(body.model_copy(update={"name": name}))
+
+    @app.delete("/api/v1/http/collections/{name}", status_code=204)
+    def http_delete_collection(name: str, current: Repo = repo_dep) -> None:
+        CollectionStore(current.root).delete(name)
+
+    @app.get("/api/v1/http/history", response_model=list[HttpHistoryEntry])
+    def http_history(limit: int = 50, current: Repo = repo_dep) -> list[HttpHistoryEntry]:
+        """Recently sent requests, newest first."""
+        return current.list_http_history(limit)
 
     # ---------- usage (merged token accounting across every surface) ----------
     @app.get("/api/v1/usage", response_model=UsageSummary)

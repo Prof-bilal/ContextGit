@@ -62,6 +62,42 @@ class TestSessions:
         assert repo.get_branch(branch).head_commit_id == commit.id
         assert repo.get_commit(commit.id).messages[0].content == "hello"
 
+    def test_trash_and_restore_hides_then_reveals(self, repo: Repo) -> None:
+        kept = repo.create_session("keep")
+        trashed = repo.create_session("hush")
+        branch = trashed.branch
+        repo.trash_session(trashed.id)
+        assert trashed.id not in {item.id for item in repo.list_sessions()}
+        assert trashed.id in {item.id for item in repo.list_trashed_sessions()}
+        # The branch and its commits survive while the run sits in Storage.
+        assert repo.get_branch(branch).head_commit_id
+        restored = repo.restore_session(trashed.id)
+        assert restored.deleted_at is None
+        assert {kept.id, trashed.id} <= {item.id for item in repo.list_sessions()}
+        assert trashed.id not in {item.id for item in repo.list_trashed_sessions()}
+
+    def test_restoring_a_conversation_brings_both_halves_back(self, repo: Repo) -> None:
+        session = repo.create_session("chat pair", kind="chat", branch="chat/pair")
+        repo.trash_session(session.id)
+        repo.delete_branch("chat/pair")
+        # Restoring the branch also restores the chat session bound to it.
+        repo.restore_branch("chat/pair")
+        assert repo.get_session(session.id).deleted_at is None
+        # The other direction: restoring the session restores its branch too.
+        repo.trash_session(session.id)
+        repo.delete_branch("chat/pair")
+        repo.restore_session(session.id)
+        assert not repo._storage.branch_is_trashed("chat/pair")
+
+    def test_create_session_reuses_trashed_branch_name(self, repo: Repo) -> None:
+        original = repo.create_session("naming", branch="named-branch")
+        repo.trash_session(original.id)
+        repo.delete_branch("named-branch")
+        assert repo._storage.branch_is_trashed("named-branch")
+        fresh = repo.create_session("naming again", branch="named-branch")
+        assert fresh.branch == "named-branch"
+        assert not repo._storage.branch_is_trashed("named-branch")
+
     def test_status_and_auto_commit_updates(self, repo: Repo) -> None:
         session = repo.create_session("runner")
         running = repo.set_session_status(session.id, "running")

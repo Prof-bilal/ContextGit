@@ -44,6 +44,7 @@ from contextgit.core.models import (
     UsageEvent,
     UsageSource,
     UsageSurface,
+    utcnow,
 )
 
 _MIGRATIONS_DIR = "migrations"
@@ -163,18 +164,54 @@ class SqliteStorage:
                 (branch.name, branch.head_commit_id),
             )
 
+    @staticmethod
+    def _row_to_branch(row: sqlite3.Row) -> Branch:
+        return Branch(
+            name=row["name"],
+            head_commit_id=row["head_commit_id"],
+            deleted_at=row["deleted_at"],
+        )
+
     def get_branch(self, name: str) -> Branch:
-        sql = "SELECT name, head_commit_id FROM branches WHERE name = ?"
-        row = self._conn.execute(sql, (name,)).fetchone()
+        row = self._conn.execute("SELECT * FROM branches WHERE name = ?", (name,)).fetchone()
         if row is None:
             raise BranchNotFound(f"branch '{name}' not found")
-        return Branch(name=row["name"], head_commit_id=row["head_commit_id"])
+        return self._row_to_branch(row)
 
-    def list_branches(self) -> list[Branch]:
+    def list_branches(self, include_deleted: bool = False) -> list[Branch]:
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
+        rows = self._conn.execute(f"SELECT * FROM branches{where} ORDER BY name").fetchall()
+        return [self._row_to_branch(row) for row in rows]
+
+    def list_trashed_branches(self) -> list[Branch]:
+        """Branches moved to Storage (trash), newest first."""
         rows = self._conn.execute(
-            "SELECT name, head_commit_id FROM branches ORDER BY name"
+            "SELECT * FROM branches WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
         ).fetchall()
-        return [Branch(name=r["name"], head_commit_id=r["head_commit_id"]) for r in rows]
+        return [self._row_to_branch(row) for row in rows]
+
+    def soft_delete_branch(self, name: str, deleted_at: str) -> None:
+        """Move a branch to Storage without dropping its pointer."""
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE branches SET deleted_at = ? WHERE name = ?", (deleted_at, name)
+            )
+            if cur.rowcount == 0:
+                raise BranchNotFound(f"branch '{name}' not found")
+
+    def restore_branch(self, name: str) -> None:
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE branches SET deleted_at = NULL WHERE name = ?", (name,)
+            )
+            if cur.rowcount == 0:
+                raise BranchNotFound(f"branch '{name}' not found")
+
+    def branch_is_trashed(self, name: str) -> bool:
+        row = self._conn.execute(
+            "SELECT deleted_at FROM branches WHERE name = ?", (name,)
+        ).fetchone()
+        return row is not None and row["deleted_at"] is not None
 
     def update_branch_head(self, name: str, head_commit_id: str) -> None:
         with self._conn:
@@ -233,6 +270,7 @@ class SqliteStorage:
             role=row["role"],
             skills=json.loads(row["skills"]) if row["skills"] else [],
             port=row["port"],
+            deleted_at=row["deleted_at"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -243,8 +281,8 @@ class SqliteStorage:
                 "INSERT INTO sessions"
                 " (id, name, kind, branch, status, agent, auto_commit, worktree_path,"
                 " git_branch, base_ref, base_commit, project_path, task, scope, role,"
-                " skills, port, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " skills, port, deleted_at, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.name,
@@ -263,6 +301,7 @@ class SqliteStorage:
                     session.role,
                     json.dumps(session.skills),
                     session.port,
+                    session.deleted_at.isoformat() if session.deleted_at else None,
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
@@ -274,8 +313,16 @@ class SqliteStorage:
             raise SessionNotFound(f"session '{session_id[:12]}' not found")
         return self._row_to_session(row)
 
-    def list_sessions(self) -> list[Session]:
-        rows = self._conn.execute("SELECT * FROM sessions ORDER BY created_at").fetchall()
+    def list_sessions(self, include_deleted: bool = False) -> list[Session]:
+        where = "" if include_deleted else " WHERE deleted_at IS NULL"
+        rows = self._conn.execute(f"SELECT * FROM sessions{where} ORDER BY created_at").fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def list_trashed_sessions(self) -> list[Session]:
+        """Sessions moved to Storage (trash), newest first."""
+        rows = self._conn.execute(
+            "SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+        ).fetchall()
         return [self._row_to_session(row) for row in rows]
 
     def update_session(self, session: Session) -> None:
@@ -285,7 +332,7 @@ class SqliteStorage:
                 "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
                 " auto_commit = ?, worktree_path = ?, git_branch = ?, base_ref = ?,"
                 " base_commit = ?, project_path = ?, task = ?, scope = ?, role = ?,"
-                " skills = ?, port = ?, updated_at = ? WHERE id = ?",
+                " skills = ?, port = ?, deleted_at = ?, updated_at = ? WHERE id = ?",
                 (
                     session.name,
                     session.branch,
@@ -302,6 +349,7 @@ class SqliteStorage:
                     session.role,
                     json.dumps(session.skills),
                     session.port,
+                    session.deleted_at.isoformat() if session.deleted_at else None,
                     session.updated_at.isoformat(),
                     session.id,
                 ),
@@ -310,7 +358,7 @@ class SqliteStorage:
                 raise SessionNotFound(f"session '{session.id[:12]}' not found")
 
     def delete_session(self, session_id: str) -> None:
-        """Delete a session and its staged messages; commits/branches survive."""
+        """Permanently delete a session and its staged messages; commits/branches survive."""
         with self._conn:
             cur = self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             if cur.rowcount == 0:
@@ -835,6 +883,27 @@ class SqliteStorage:
     def delete_agent_provider_row(self, provider_id: str) -> bool:
         """Remove an asset-agent provider row."""
         return self._delete_provider_row("agent_providers", provider_id)
+
+    # ---------- API tab history ----------
+
+    def record_http_history(
+        self, method: str, url: str, status: int, elapsed_ms: int, size: int
+    ) -> None:
+        """Append one executed request to the history."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO http_history (method, url, status, elapsed_ms, size, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (method, url, status, elapsed_ms, size, utcnow().isoformat()),
+            )
+
+    def list_http_history(self, limit: int = 50) -> list[sqlite3.Row]:
+        """The most recent executed requests, newest first."""
+        return self._conn.execute(
+            "SELECT id, method, url, status, elapsed_ms, size, created_at FROM http_history"
+            " ORDER BY id DESC LIMIT ?",
+            (max(1, min(limit, 500)),),
+        ).fetchall()
 
     # ---------- usage (token accounting) ----------
 

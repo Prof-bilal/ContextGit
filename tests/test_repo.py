@@ -171,6 +171,22 @@ class TestBranches:
         with pytest.raises(InvalidRefName):
             repo.delete_branch("main")
 
+    def test_delete_branch_trashes_and_restore_brings_back(self, repo: Repo) -> None:
+        repo.branch("temp")
+        repo.delete_branch("temp")
+        assert "temp" not in {b.name for b in repo.list_branches()}
+        assert "temp" in {b.name for b in repo.list_trashed_branches()}
+        restored = repo.restore_branch("temp")
+        assert restored.name == "temp"
+        assert "temp" in {b.name for b in repo.list_branches()}
+        assert "temp" not in {b.name for b in repo.list_trashed_branches()}
+
+    def test_purge_branch_drops_pointer(self, repo: Repo) -> None:
+        repo.branch("temp")
+        repo.purge_branch("temp")
+        assert "temp" not in {b.name for b in repo.list_branches()}
+        assert "temp" not in {b.name for b in repo.list_trashed_branches()}
+
 
 class TestTags:
     def test_tag_head_and_by_commit(self, repo: Repo) -> None:

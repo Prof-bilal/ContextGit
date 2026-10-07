@@ -37,6 +37,7 @@ from contextgit.core.models import (
     Branch,
     Commit,
     CommitKind,
+    HttpHistoryEntry,
     MergeQueueEntry,
     Message,
     ProviderRecord,
@@ -500,6 +501,10 @@ class Repo:
         branch_name = branch or self._unique_branch_name(name)
         if not self._branch_exists(branch_name):
             self.branch(branch_name, from_commit=from_commit)
+        elif self._storage.branch_is_trashed(branch_name):
+            # Reusing a name that is sitting in Storage: bring the branch back
+            # rather than binding this run to a hidden pointer.
+            self._storage.restore_branch(branch_name)
         session = Session(
             id=uuid4().hex,
             name=name,
@@ -553,6 +558,10 @@ class Repo:
         self._backfill_session_projects()
         return self._storage.list_sessions()
 
+    def list_trashed_sessions(self) -> list[Session]:
+        """Runs and conversations currently in Storage (trash)."""
+        return self._storage.list_trashed_sessions()
+
     def _backfill_session_projects(self) -> None:
         """Fill project_path for runs recorded before it existed (from their worktree)."""
         if self._projects_backfilled:
@@ -590,11 +599,39 @@ class Repo:
         self._storage.update_session(session)
         return session
 
+    def trash_session(self, session_id: str) -> Session:
+        """Move a run to Storage (trash): hidden from listings, restorable.
+
+        The worktree and commits are left untouched, so nothing is lost while
+        the run sits in Storage.
+        """
+        session = self._storage.get_session(session_id)
+        now = utcnow()
+        session.deleted_at = now
+        session.status = "idle"
+        session.updated_at = now
+        self._storage.update_session(session)
+        return session
+
+    def restore_session(self, session_id: str) -> Session:
+        """Bring a trashed run back into the normal listings.
+
+        A conversation's branch is restored with it, so the pair comes back whole.
+        """
+        session = self._storage.get_session(session_id)
+        session.deleted_at = None
+        session.updated_at = utcnow()
+        self._storage.update_session(session)
+        if self._storage.branch_is_trashed(session.branch):
+            self._storage.restore_branch(session.branch)
+        return session
+
     def delete_session(self, session_id: str, *, remove_worktree: bool = True) -> None:
-        """Delete a session and its staged messages. Commits/branches survive.
+        """Permanently delete a session and its staged messages. Commits/branches survive.
 
         The session's git worktree is removed when clean; a worktree with
-        uncommitted changes is kept so no work is lost.
+        uncommitted changes is kept so no work is lost. Callers that want to
+        keep the run recoverable should use `trash_session` instead.
         """
         session = self._storage.get_session(session_id)
         if remove_worktree and session.worktree_path:
@@ -1729,7 +1766,7 @@ class Repo:
     def checkout(self, name_or_id: str) -> str:
         """Switch HEAD to a branch, or to a commit (detached: updates main's
         pointer only via `commit(branch=...)`; returns the resolved ref)."""
-        if self._branch_exists(name_or_id):
+        if self._branch_exists(name_or_id) and not self._storage.branch_is_trashed(name_or_id):
             self._storage.set_current_branch(name_or_id)
             return name_or_id
         if self._storage.has_commit(name_or_id):
@@ -1739,9 +1776,29 @@ class Repo:
         raise BranchNotFound(f"no branch or commit '{name_or_id[:12]}'")
 
     def delete_branch(self, name: str) -> None:
-        """Delete a branch pointer. Commits are never deleted."""
+        """Move a branch to Storage (trash). Commits are never deleted."""
         if name == self._storage.get_current_branch():
             raise InvalidRefName("cannot delete the current branch")
+        self._storage.soft_delete_branch(name, utcnow().isoformat())
+
+    def restore_branch(self, name: str) -> Branch:
+        """Bring a trashed branch back into the normal listings.
+
+        A conversation's chat session is restored with it, so the pair comes back
+        whole (a run's branch is normally not trashed, so this is a no-op there).
+        """
+        self._storage.restore_branch(name)
+        for session in self._storage.list_trashed_sessions():
+            if session.branch == name:
+                session.deleted_at = None
+                session.updated_at = utcnow()
+                self._storage.update_session(session)
+        return self._storage.get_branch(name)
+
+    def purge_branch(self, name: str) -> None:
+        """Permanently drop a branch pointer. Commits are never deleted."""
+        if name == self._storage.get_current_branch():
+            raise InvalidRefName("cannot purge the current branch")
         self._storage.delete_branch(name)
 
     def get_branch(self, name: str) -> Branch:
@@ -1750,6 +1807,10 @@ class Repo:
 
     def list_branches(self) -> list[Branch]:
         return self._storage.list_branches()
+
+    def list_trashed_branches(self) -> list[Branch]:
+        """Branches currently in Storage (trash)."""
+        return self._storage.list_trashed_branches()
 
     def current_branch(self) -> str:
         return self._storage.get_current_branch()
@@ -1812,6 +1873,29 @@ class Repo:
     def delete_agent_provider(self, provider_id: str) -> bool:
         """Remove an asset-agent provider row."""
         return self._storage.delete_agent_provider_row(provider_id)
+
+    # ---------- HTTP / API client ----------
+
+    def record_http_history(
+        self, method: str, url: str, status: int, elapsed_ms: int, size: int
+    ) -> None:
+        """Remember one executed request (the API tab's history)."""
+        self._storage.record_http_history(method, url, status, elapsed_ms, size)
+
+    def list_http_history(self, limit: int = 50) -> list[HttpHistoryEntry]:
+        """Recent executed requests, newest first."""
+        return [
+            HttpHistoryEntry(
+                id=row["id"],
+                method=row["method"],
+                url=row["url"],
+                status=row["status"],
+                elapsed_ms=row["elapsed_ms"],
+                size=row["size"],
+                created_at=row["created_at"],
+            )
+            for row in self._storage.list_http_history(limit)
+        ]
 
     @staticmethod
     def _check_ref_name(name: str) -> None:

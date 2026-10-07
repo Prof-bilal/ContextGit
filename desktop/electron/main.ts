@@ -457,8 +457,18 @@ ipcMain.on("ctx:view-destroy", (_event, id: string) => views().destroy(id));
 /** The code-server binary: bundled under resources (packaged) or build/editor (dev). */
 function resolveEditorBinary(): string | null {
   if (!isDev) {
-    const packaged = path.join(process.resourcesPath, "editor", "bin", "code-server");
-    return fs.existsSync(packaged) ? packaged : null;
+    // Packaged: resources/editor/<code-server-*> (or .../bin directly).
+    const root = path.join(process.resourcesPath, "editor");
+    const direct = path.join(root, "bin", "code-server");
+    if (fs.existsSync(direct)) return direct;
+    try {
+      const entry = fs
+        .readdirSync(root)
+        .find((name) => fs.existsSync(path.join(root, name, "bin", "code-server")));
+      return entry ? path.join(root, entry, "bin", "code-server") : null;
+    } catch {
+      return null;
+    }
   }
   try {
     const root = path.join(app.getAppPath(), "build", "editor");
@@ -484,7 +494,65 @@ function editor(): EditorSidecar {
 }
 
 ipcMain.handle("ctx:editor-status", () => editor().status());
-ipcMain.handle("ctx:editor-start", () => editor().start(currentWorkspace()?.path ?? null));
+
+/** The built extensions, shipped beside the app (packaged) or in build/ (dev). */
+function bundledExtensionsDir(): string {
+  return isDev ? path.join(app.getAppPath(), "build", "extension") : path.join(process.resourcesPath, "extension");
+}
+
+/**
+ * Install the bundled extensions into the sidecar and point them at the backend.
+ * VS Code identifies an installed extension by its folder name
+ * ("<publisher>.<name>-<version>"), and it caches the scan, so the caches are
+ * cleared to force a rescan.
+ */
+function prepareEditorExtensions(): void {
+  const extensionsDir = path.join(app.getPath("userData"), "editor", "extensions");
+  const source = bundledExtensionsDir();
+  try {
+    fs.mkdirSync(extensionsDir, { recursive: true });
+    if (fs.existsSync(source)) {
+      for (const name of fs.readdirSync(source)) {
+        const manifestPath = path.join(source, name, "package.json");
+        if (!fs.existsSync(manifestPath)) continue;
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+          publisher?: string;
+          name?: string;
+          version?: string;
+        };
+        const folder = `${manifest.publisher ?? "contextgit"}.${manifest.name ?? name}-${manifest.version ?? "0.1.0"}`;
+        const target = path.join(extensionsDir, folder);
+        fs.rmSync(target, { recursive: true, force: true });
+        fs.cpSync(path.join(source, name), target, { recursive: true });
+      }
+    }
+    fs.rmSync(path.join(extensionsDir, ".obsolete"), { force: true });
+    fs.rmSync(path.join(extensionsDir, "extensions.json"), { force: true });
+  } catch {
+    // best effort: the editor still runs without our extensions
+  }
+  try {
+    const settingsPath = path.join(app.getPath("userData"), "editor", "user-data", "User", "settings.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    let settings: Record<string, unknown> = {};
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+    } catch {
+      // fresh settings file
+    }
+    settings["contextgitGraph.backendUrl"] = apiBase;
+    fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  } catch {
+    // best effort
+  }
+}
+
+ipcMain.handle("ctx:editor-start", async () => {
+  prepareEditorExtensions();
+  // Same augmented PATH the terminals get, so VS Code finds git/other tooling.
+  const path = await augmentedPath();
+  return editor().start(currentWorkspace()?.path ?? null, { PATH: path });
+});
 ipcMain.handle("ctx:editor-stop", () => {
   editor().stop();
   return editor().status();

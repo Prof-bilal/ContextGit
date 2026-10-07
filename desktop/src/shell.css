@@ -159,7 +159,10 @@
 
 .cg-kicker {
   margin: 0;
-  font: 500 0.62rem/1 "Martian Mono", ui-monospace, monospace;
+  font:
+    500 0.62rem/1 "Martian Mono",
+    ui-monospace,
+    monospace;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -193,7 +196,10 @@
   font-weight: 800;
 }
 .cg-brand small {
-  font: 500 0.56rem/1 "Martian Mono", ui-monospace, monospace;
+  font:
+    500 0.56rem/1 "Martian Mono",
+    ui-monospace,
+    monospace;
   letter-spacing: 0.16em;
   color: var(--cg-ink-3);
 }
@@ -211,6 +217,13 @@
   background: var(--cg-bg);
   border: 1px solid var(--cg-line);
   border-radius: 10px;
+  /* Nine tabs must never push the titlebar actions off-screen: scroll instead. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cg-segmented::-webkit-scrollbar {
+  display: none;
 }
 
 .cg-segment {
@@ -218,14 +231,18 @@
   border: 0;
   background: transparent;
   color: var(--cg-ink-3);
-  font: 600 0.8rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.8rem/1 "Schibsted Grotesk",
+    sans-serif;
   padding: 0.35rem 0.7rem;
   border-radius: 7px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  transition: color 120ms var(--cg-ease), background-color 120ms var(--cg-ease);
+  transition:
+    color 120ms var(--cg-ease),
+    background-color 120ms var(--cg-ease);
 }
 .cg-segment:hover {
   color: var(--cg-ink-2);
@@ -254,7 +271,9 @@
   border-radius: 7px;
   background: transparent;
   color: var(--cg-ink-3);
-  font: 500 0.72rem/1 "Martian Mono", monospace;
+  font:
+    500 0.72rem/1 "Martian Mono",
+    monospace;
   cursor: pointer;
 }
 .cg-command-hint:hover {
@@ -288,7 +307,9 @@
   background: transparent;
   color: var(--cg-ink-2);
   padding: 0.35rem 0.6rem;
-  font: 600 0.72rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.72rem/1 "Schibsted Grotesk",
+    sans-serif;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -339,7 +360,9 @@
 }
 .cg-rail-head .cg-count {
   margin-left: auto;
-  font: 500 0.68rem/1 "Martian Mono", monospace;
+  font:
+    500 0.68rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -353,7 +376,9 @@
   border-radius: 8px;
   background: transparent;
   color: var(--cg-ink-2);
-  font: 600 0.8rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.8rem/1 "Schibsted Grotesk",
+    sans-serif;
   cursor: pointer;
   text-align: left;
 }
@@ -373,7 +398,9 @@
   border-radius: 8px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 400 0.8rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.8rem/1 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-rail-search input::placeholder {
   color: var(--cg-ink-3);
@@ -479,13 +506,22 @@
   gap: 0.6rem;
   padding: 0.9rem;
 }
-.cg-board-col { display: grid; align-content: start; gap: 0.45rem; min-width: 0; }
+.cg-board-col {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-width: 0;
+}
 .cg-board-head {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   color: var(--cg-ink-3);
-  font: 500 0.62rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    500 0.62rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -500,12 +536,26 @@
   color: var(--cg-ink);
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms var(--cg-ease), background-color 120ms var(--cg-ease);
+  transition:
+    border-color 120ms var(--cg-ease),
+    background-color 120ms var(--cg-ease);
 }
-.cg-board-card:hover { border-color: var(--cg-line-strong); background: var(--cg-surface-3); }
-.cg-board-card[aria-current="true"] { border-color: var(--cg-signal); }
-.cg-board-card-top { display: flex; align-items: center; gap: 0.35rem; }
-.cg-board-title { font-weight: 600; font-size: 0.82rem; }
+.cg-board-card:hover {
+  border-color: var(--cg-line-strong);
+  background: var(--cg-surface-3);
+}
+.cg-board-card[aria-current="true"] {
+  border-color: var(--cg-signal);
+}
+.cg-board-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.cg-board-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
 .cg-board-card-meta {
   display: flex;
   align-items: center;
@@ -513,12 +563,31 @@
   color: var(--cg-ink-3);
   font-size: 0.68rem;
 }
-.cg-board-role { letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.6rem; }
-.cg-board-scope { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.cg-board-blocked { color: var(--cg-warn); font-size: 0.68rem; }
-.cg-board-col[data-status="done"] .cg-board-card { opacity: 0.7; }
+.cg-board-role {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+}
+.cg-board-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.cg-board-blocked {
+  color: var(--cg-warn);
+  font-size: 0.68rem;
+}
+.cg-board-col[data-status="done"] .cg-board-card {
+  opacity: 0.7;
+}
 
-.cg-feed { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
+.cg-feed {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .cg-feed li {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
@@ -530,26 +599,52 @@
 }
 .cg-feed-kind {
   color: var(--cg-ink-3);
-  font: 500 0.6rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    500 0.6rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.cg-feed-who { color: var(--cg-ink-2); }
-.cg-feed-body { min-width: 0; color: var(--cg-ink); }
-.cg-feed-time { color: var(--cg-ink-3); font-size: 0.64rem; }
-.cg-feed li[data-kind="handoff"] .cg-feed-kind { color: var(--cg-ok); }
-.cg-feed li[data-kind="system"] .cg-feed-kind { color: var(--cg-signal); }
-.cg-feed li[data-kind="review"] .cg-feed-kind { color: var(--cg-warn); }
-.cg-feed li[data-kind="gate"] .cg-feed-kind { color: var(--cg-signal-hot); }
+.cg-feed-who {
+  color: var(--cg-ink-2);
+}
+.cg-feed-body {
+  min-width: 0;
+  color: var(--cg-ink);
+}
+.cg-feed-time {
+  color: var(--cg-ink-3);
+  font-size: 0.64rem;
+}
+.cg-feed li[data-kind="handoff"] .cg-feed-kind {
+  color: var(--cg-ok);
+}
+.cg-feed li[data-kind="system"] .cg-feed-kind {
+  color: var(--cg-signal);
+}
+.cg-feed li[data-kind="review"] .cg-feed-kind {
+  color: var(--cg-warn);
+}
+.cg-feed li[data-kind="gate"] .cg-feed-kind {
+  color: var(--cg-signal-hot);
+}
 
-.cg-board-col[data-status="review"] .cg-board-card { border-color: color-mix(in srgb, var(--cg-warn) 45%, transparent); }
+.cg-board-col[data-status="review"] .cg-board-card {
+  border-color: color-mix(in srgb, var(--cg-warn) 45%, transparent);
+}
 .cg-gate-command {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--cg-ink-2);
-  font: 400 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    400 0.72rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 .cg-gate-output {
   margin: 0;
@@ -560,17 +655,44 @@
   border-radius: 8px;
   background: var(--cg-bg);
   color: var(--cg-ink-2);
-  font: 400 0.72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    400 0.72rem/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   white-space: pre-wrap;
 }
 
-.cg-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-.cg-form-row > span { display: grid; gap: 0.2rem; }
-textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inherit; }
-.cg-row-flat { width: 100%; }
-.cg-inline-form { display: flex; align-items: center; gap: 0.5rem; max-width: 26rem; }
-.cg-inline-form .cg-text-input { flex: 1 1 auto; }
-.cg-doc h2 { margin: 0 0 0.4rem; font-size: 1rem; }
+.cg-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.cg-form-row > span {
+  display: grid;
+  gap: 0.2rem;
+}
+textarea.cg-text-input {
+  min-height: 4.5rem;
+  resize: vertical;
+  font-family: inherit;
+}
+.cg-row-flat {
+  width: 100%;
+}
+.cg-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 26rem;
+}
+.cg-inline-form .cg-text-input {
+  flex: 1 1 auto;
+}
+.cg-doc h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
 
 /* New-run form in the rail */
 .cg-form {
@@ -583,7 +705,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   background: var(--cg-surface-2);
 }
 .cg-form label {
-  font: 500 0.58rem/1 "Martian Mono", monospace;
+  font:
+    500 0.58rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -595,7 +719,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   border-radius: 7px;
   background: var(--cg-surface);
   color: var(--cg-ink);
-  font: 400 0.82rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.82rem/1.3 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-form p {
   margin: 0;
@@ -628,7 +754,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   border: 1px solid var(--cg-line);
   border-radius: 999px;
   background: var(--cg-surface-2);
-  font: 500 0.68rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.68rem/1.3 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-role-skills li::before {
@@ -671,7 +799,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   font-size: 0.8rem;
 }
 .cg-group-version {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -704,7 +834,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   color: var(--cg-signal);
 }
 .cg-project-active {
-  font: 500 0.52rem/1 "Martian Mono", monospace;
+  font:
+    500 0.52rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cg-signal);
@@ -746,7 +878,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   border-radius: 8px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 500 0.78rem/1.2 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.78rem/1.2 "Schibsted Grotesk",
+    sans-serif;
   cursor: pointer;
 }
 .cg-project-menu:hover {
@@ -803,7 +937,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   color: var(--cg-ink);
   cursor: pointer;
   text-align: left;
-  font: 500 0.78rem/1.2 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.78rem/1.2 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-project-pop-pick > svg {
   flex: none;
@@ -852,7 +988,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   color: var(--cg-ink-2);
   cursor: pointer;
   text-align: left;
-  font: 500 0.76rem/1.2 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.76rem/1.2 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-project-pop-add:hover {
   border-color: var(--cg-signal);
@@ -901,7 +1039,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font: 400 0.62rem/1.3 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.3 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -914,7 +1054,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
 }
 
 .cg-row-tokens {
-  font: 500 0.6rem/1 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   flex: none;
 }
@@ -956,7 +1098,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   width: 1.15rem;
   height: 1.15rem;
   flex: none;
-  font: 700 0.95rem/1 "Martian Mono", monospace;
+  font:
+    700 0.95rem/1 "Martian Mono",
+    monospace;
 }
 .cg-mark svg {
   width: 1em;
@@ -978,7 +1122,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
   border: 1px solid var(--cg-line);
   background: color-mix(in srgb, var(--cg-surface-2) 60%, transparent);
   color: var(--cg-ink-2);
-  font: 500 0.62rem/1.4 "Martian Mono", monospace;
+  font:
+    500 0.62rem/1.4 "Martian Mono",
+    monospace;
   white-space: nowrap;
 }
 .cg-chip svg {
@@ -1011,7 +1157,9 @@ textarea.cg-text-input { min-height: 4.5rem; resize: vertical; font-family: inhe
    form a pointer and a hover that reads as clickable. */
 button.cg-chip {
   cursor: pointer;
-  transition: border-color 120ms var(--cg-ease), color 120ms var(--cg-ease);
+  transition:
+    border-color 120ms var(--cg-ease),
+    color 120ms var(--cg-ease);
 }
 button.cg-chip:hover {
   border-color: var(--cg-line-strong);
@@ -1057,7 +1205,9 @@ button.cg-chip[aria-pressed="true"] {
   padding: 0.45rem 0.9rem;
   background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
   color: var(--cg-bad);
-  font: 400 0.74rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.74rem/1.4 "Martian Mono",
+    monospace;
   border-bottom: 1px solid var(--cg-line);
 }
 
@@ -1077,7 +1227,9 @@ button.cg-chip[aria-pressed="true"] {
   font-weight: 700;
 }
 .cg-view-toolbar .cg-view-sub {
-  font: 400 0.68rem/1 "Martian Mono", monospace;
+  font:
+    400 0.68rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-toolbar-spacer {
@@ -1094,7 +1246,10 @@ button.cg-chip[aria-pressed="true"] {
   background: var(--cg-bg);
   color: var(--cg-ink-2);
   cursor: pointer;
-  font: 500 0.72rem/1 "Martian Mono", ui-monospace, monospace;
+  font:
+    500 0.72rem/1 "Martian Mono",
+    ui-monospace,
+    monospace;
 }
 .cg-project-btn:hover {
   border-color: var(--cg-line-strong);
@@ -1121,7 +1276,10 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-path {
   word-break: break-all;
-  font: 400 0.72rem/1.4 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.72rem/1.4 "Martian Mono",
+    ui-monospace,
+    monospace;
   color: var(--cg-ink-2);
 }
 
@@ -1137,7 +1295,9 @@ button.cg-chip[aria-pressed="true"] {
   border: 0;
   background: transparent;
   color: var(--cg-ink-3);
-  font: 600 0.72rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.72rem/1 "Schibsted Grotesk",
+    sans-serif;
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
   cursor: pointer;
@@ -1157,7 +1317,9 @@ button.cg-chip[aria-pressed="true"] {
   color: var(--cg-ink);
   border-radius: 7px;
   padding: 0.38rem 0.7rem;
-  font: 600 0.76rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.76rem/1 "Schibsted Grotesk",
+    sans-serif;
   cursor: pointer;
 }
 .cg-btn:hover {
@@ -1241,7 +1403,9 @@ button.cg-chip[aria-pressed="true"] {
   padding: 0.35rem 0.55rem;
   background: var(--cg-surface-2);
   border-bottom: 1px solid var(--cg-line);
-  font: 500 0.66rem/1 "Martian Mono", monospace;
+  font:
+    500 0.66rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-2);
 }
 .cg-pane-head .cg-pane-cwd {
@@ -1262,16 +1426,29 @@ button.cg-chip[aria-pressed="true"] {
   padding: 0.7rem 0.85rem;
   background: var(--cg-term-bg);
   color: var(--cg-term-ink);
-  font: 400 0.74rem/1.55 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.74rem/1.55 "Martian Mono",
+    ui-monospace,
+    monospace;
   white-space: pre-wrap;
   word-break: break-word;
   tab-size: 2;
 }
-.cg-term .t-dim { color: var(--cg-term-dim); }
-.cg-term .t-accent { color: var(--cg-signal); }
-.cg-term .t-add { color: var(--cg-ok); }
-.cg-term .t-del { color: var(--cg-bad); }
-.cg-term .t-prompt { color: var(--cg-signal); }
+.cg-term .t-dim {
+  color: var(--cg-term-dim);
+}
+.cg-term .t-accent {
+  color: var(--cg-signal);
+}
+.cg-term .t-add {
+  color: var(--cg-ok);
+}
+.cg-term .t-del {
+  color: var(--cg-bad);
+}
+.cg-term .t-prompt {
+  color: var(--cg-signal);
+}
 
 .cg-pane-empty {
   display: grid;
@@ -1311,7 +1488,9 @@ button.cg-chip[aria-pressed="true"] {
   font-size: 0.7rem;
 }
 .cg-pane-staged {
-  font: 400 0.62rem/1 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-pane-exited {
@@ -1322,7 +1501,9 @@ button.cg-chip[aria-pressed="true"] {
   padding: 0.3rem 0.7rem;
   background: color-mix(in srgb, var(--cg-warn) 12%, transparent);
   color: var(--cg-warn);
-  font: 400 0.66rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.66rem/1.4 "Martian Mono",
+    monospace;
 }
 .cg-pane-exited .cg-btn {
   margin-left: auto;
@@ -1333,7 +1514,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 7px;
   background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
   color: var(--cg-bad);
-  font: 400 0.68rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.68rem/1.4 "Martian Mono",
+    monospace;
 }
 /* On-demand harness install — fills the pane in place of the terminal. */
 .cg-install {
@@ -1357,12 +1540,16 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-install-copy h3 {
   margin: 0;
-  font: 600 0.95rem/1.2 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.95rem/1.2 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-install-copy p {
   margin: 0;
-  font: 400 0.78rem/1.35 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.78rem/1.35 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink-3);
   overflow-wrap: anywhere;
 }
@@ -1370,13 +1557,22 @@ button.cg-chip[aria-pressed="true"] {
   transition: width 0.5s var(--cg-ease);
 }
 .cg-install-bar[data-active="true"] > span {
-  background: linear-gradient(90deg, var(--cg-signal), var(--cg-signal-hot), var(--cg-signal));
+  background: linear-gradient(
+    90deg,
+    var(--cg-signal),
+    var(--cg-signal-hot),
+    var(--cg-signal)
+  );
   background-size: 200% 100%;
   animation: cg-install-shimmer 1.2s linear infinite;
 }
 @keyframes cg-install-shimmer {
-  from { background-position: 0% 0; }
-  to { background-position: 200% 0; }
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
 }
 .cg-install-foot {
   display: flex;
@@ -1385,7 +1581,9 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-install-phase {
   margin-right: auto;
-  font: 400 0.62rem/1.2 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.2 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   overflow-wrap: anywhere;
 }
@@ -1412,7 +1610,9 @@ button.cg-chip[aria-pressed="true"] {
   background: var(--cg-surface);
 }
 .cg-usage-card strong {
-  font: 600 1.5rem/1.1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 1.5rem/1.1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-usage-section {
@@ -1436,7 +1636,9 @@ button.cg-chip[aria-pressed="true"] {
   background: var(--cg-surface-2);
 }
 .cg-usage-name {
-  font: 500 0.86rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.86rem/1.3 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
   min-width: 0;
   overflow: hidden;
@@ -1444,12 +1646,16 @@ button.cg-chip[aria-pressed="true"] {
   white-space: nowrap;
 }
 .cg-usage-calls {
-  font: 400 0.66rem/1 "Martian Mono", monospace;
+  font:
+    400 0.66rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   white-space: nowrap;
 }
 .cg-usage-tokens {
-  font: 600 0.78rem/1 "Martian Mono", monospace;
+  font:
+    600 0.78rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink);
   white-space: nowrap;
 }
@@ -1481,14 +1687,18 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-usage-streak[data-active="true"] .cg-usage-streak-flame {
   color: var(--cg-signal-hot);
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--cg-signal) 55%, transparent));
+  filter: drop-shadow(
+    0 0 10px color-mix(in srgb, var(--cg-signal) 55%, transparent)
+  );
 }
 .cg-usage-streak-count {
   display: grid;
   gap: 0.1rem;
 }
 .cg-usage-streak-count strong {
-  font: 700 2rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    700 2rem/1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-usage-streak-stats {
@@ -1501,7 +1711,9 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.15rem;
 }
 .cg-usage-streak-stats strong {
-  font: 600 1.35rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 1.35rem/1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-usage-streak > .cg-view-sub {
@@ -1528,7 +1740,9 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.5rem;
 }
 .cg-limit-label {
-  font: 600 0.78rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.78rem/1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-limit-foot {
@@ -1546,18 +1760,24 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.1rem;
 }
 .cg-limit-credits dt {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   text-transform: uppercase;
 }
 .cg-limit-credits dd {
   margin: 0;
-  font: 600 0.9rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.9rem/1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-group-limits {
   margin-left: auto;
-  font: 500 0.6rem/1 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   white-space: nowrap;
 }
@@ -1569,7 +1789,9 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-doc-title {
   margin: 0;
-  font: 600 1rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    600 1rem/1.3 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
 }
 .cg-doc-preview {
@@ -1581,7 +1803,10 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 9px;
   background: var(--cg-term-bg);
   color: var(--cg-term-ink);
-  font: 400 0.76rem/1.55 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.76rem/1.55 "Martian Mono",
+    ui-monospace,
+    monospace;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1630,7 +1855,9 @@ button.cg-chip[aria-pressed="true"] {
   min-width: 0;
 }
 .cg-doclib-title {
-  font: 500 0.88rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.88rem/1.3 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1639,7 +1866,9 @@ button.cg-chip[aria-pressed="true"] {
 .cg-form-warn {
   margin: 0;
   color: var(--cg-warn);
-  font: 400 0.66rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.66rem/1.4 "Martian Mono",
+    monospace;
 }
 
 /* ----------------------------------------------------------- chat view ---- */
@@ -1694,7 +1923,9 @@ button.cg-chip[aria-pressed="true"] {
   align-items: center;
   gap: 0.5rem;
   color: var(--cg-ink-3);
-  font: 400 0.74rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.74rem/1.4 "Martian Mono",
+    monospace;
 }
 .cg-thinking-dots {
   display: inline-flex;
@@ -1744,7 +1975,9 @@ button.cg-chip[aria-pressed="true"] {
   }
 }
 .cg-msg-role {
-  font: 500 0.6rem/1 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -1781,7 +2014,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 10px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 400 0.9rem/1.5 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.9rem/1.5 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-composer textarea::placeholder {
   color: var(--cg-ink-3);
@@ -1822,7 +2057,9 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.6rem;
 }
 .cg-composer-row span {
-  font: 400 0.68rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.68rem/1.4 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-composer-row .cg-toolbar-spacer {
@@ -1864,7 +2101,9 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-section > h2 {
   margin: 0;
-  font: 500 0.66rem/1 "Martian Mono", monospace;
+  font:
+    500 0.66rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -1930,7 +2169,9 @@ button.cg-chip[aria-pressed="true"] {
   margin: 0;
 }
 .cg-run-stats dt {
-  font: 500 0.58rem/1.3 "Martian Mono", monospace;
+  font:
+    500 0.58rem/1.3 "Martian Mono",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -1956,7 +2197,9 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-runlog-at,
 .cg-runlog-kind {
-  font: 400 0.62rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.4 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-runlog-kind {
@@ -2019,7 +2262,9 @@ button.cg-chip[aria-pressed="true"] {
   align-items: baseline;
 }
 .cg-diff-sign {
-  font: 600 0.8rem/1.4 "Martian Mono", monospace;
+  font:
+    600 0.8rem/1.4 "Martian Mono",
+    monospace;
   text-align: center;
 }
 .cg-diff li[data-change="added"] .cg-diff-sign {
@@ -2032,7 +2277,9 @@ button.cg-chip[aria-pressed="true"] {
   color: var(--cg-bad);
 }
 .cg-diff-kind {
-  font: 400 0.6rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1.4 "Martian Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -2106,7 +2353,9 @@ button.cg-chip[aria-pressed="true"] {
   padding: 0.9rem;
 }
 .cg-routine-code {
-  font: 500 0.82rem/1 "Martian Mono", monospace;
+  font:
+    500 0.82rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-signal);
 }
 .cg-routine-next {
@@ -2135,7 +2384,9 @@ button.cg-chip[aria-pressed="true"] {
   font-weight: 600;
 }
 .cg-run-copy span {
-  font: 400 0.64rem/1.3 "Martian Mono", monospace;
+  font:
+    400 0.64rem/1.3 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -2177,11 +2428,19 @@ button.cg-chip[aria-pressed="true"] {
   flex: none;
   border-radius: 7px;
   border: 1px solid var(--cg-line);
-  font: 600 0.72rem/1 "Martian Mono", monospace;
+  font:
+    600 0.72rem/1 "Martian Mono",
+    monospace;
 }
-.cg-commit .cg-kind[data-kind="merge"] { color: var(--cg-signal); }
-.cg-commit .cg-kind[data-kind="note"] { color: var(--cg-warn); }
-.cg-commit .cg-kind[data-kind="root"] { color: var(--cg-ink-3); }
+.cg-commit .cg-kind[data-kind="merge"] {
+  color: var(--cg-signal);
+}
+.cg-commit .cg-kind[data-kind="note"] {
+  color: var(--cg-warn);
+}
+.cg-commit .cg-kind[data-kind="root"] {
+  color: var(--cg-ink-3);
+}
 .cg-commit-copy {
   display: grid;
   gap: 0.2rem;
@@ -2201,17 +2460,23 @@ button.cg-chip[aria-pressed="true"] {
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
-  font: 400 0.62rem/1.3 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.3 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-commit-hash {
-  font: 500 0.66rem/1 "Martian Mono", monospace;
+  font:
+    500 0.66rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-commit-time {
   flex: none;
   white-space: nowrap;
-  font: 500 0.66rem/1 "Martian Mono", monospace;
+  font:
+    500 0.66rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -2224,8 +2489,12 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.4rem;
   text-align: center;
   color: var(--cg-ink-3);
-  background:
-    radial-gradient(circle at 1px 1px, var(--cg-line) 1px, transparent 0) 0 0 / 22px 22px;
+  background: radial-gradient(
+      circle at 1px 1px,
+      var(--cg-line) 1px,
+      transparent 0
+    )
+    0 0 / 22px 22px;
 }
 
 /* Real commit DAG (React Flow) */
@@ -2257,16 +2526,22 @@ button.cg-chip[aria-pressed="true"] {
   box-shadow: 0 0 0 1px var(--cg-signal);
 }
 .cg-graph-kind {
-  font: 500 0.55rem/1 "Martian Mono", monospace;
+  font:
+    500 0.55rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
 }
 .cg-graph-id {
-  font: 500 0.72rem/1 "Martian Mono", monospace;
+  font:
+    500 0.72rem/1 "Martian Mono",
+    monospace;
 }
 .cg-graph-branches {
-  font: 400 0.58rem/1.3 "Martian Mono", monospace;
+  font:
+    400 0.58rem/1.3 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-graph .react-flow__controls-button {
@@ -2294,7 +2569,8 @@ button.cg-chip[aria-pressed="true"] {
   border: 1px solid var(--cg-line);
   border-radius: 10px;
   background:
-    radial-gradient(circle at 1px 1px, var(--cg-line) 1px, transparent 0) 0 0 / 22px 22px,
+    radial-gradient(circle at 1px 1px, var(--cg-line) 1px, transparent 0) 0 0 /
+      22px 22px,
     var(--cg-bg);
 }
 .cg-lane-edge {
@@ -2309,7 +2585,9 @@ button.cg-chip[aria-pressed="true"] {
   opacity: 0.6;
 }
 .cg-lane-label {
-  font: 600 0.62rem/1 "Martian Mono", monospace;
+  font:
+    600 0.62rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.04em;
   text-anchor: middle;
 }
@@ -2325,10 +2603,18 @@ button.cg-chip[aria-pressed="true"] {
   stroke-width: 3;
   transition: r 160ms var(--cg-ease);
 }
-.cg-lane-node[data-kind="root"] .cg-lane-dot { fill: var(--cg-ink-3); }
-.cg-lane-node[data-kind="merge"] .cg-lane-dot { fill: var(--cg-signal); }
-.cg-lane-node[data-kind="note"] .cg-lane-dot { fill: var(--cg-warn); }
-.cg-lane-node:hover .cg-lane-dot { r: 12; }
+.cg-lane-node[data-kind="root"] .cg-lane-dot {
+  fill: var(--cg-ink-3);
+}
+.cg-lane-node[data-kind="merge"] .cg-lane-dot {
+  fill: var(--cg-signal);
+}
+.cg-lane-node[data-kind="note"] .cg-lane-dot {
+  fill: var(--cg-warn);
+}
+.cg-lane-node:hover .cg-lane-dot {
+  r: 12;
+}
 .cg-lane-sel {
   fill: none;
   stroke-width: 2;
@@ -2345,7 +2631,9 @@ button.cg-chip[aria-pressed="true"] {
   opacity: 1;
 }
 .cg-lane-id {
-  font: 500 0.62rem/1 "Martian Mono", monospace;
+  font:
+    500 0.62rem/1 "Martian Mono",
+    monospace;
   fill: var(--cg-ink-3);
   text-anchor: middle;
 }
@@ -2371,7 +2659,9 @@ button.cg-chip[aria-pressed="true"] {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font: 400 0.62rem/1 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-heat-swatch {
@@ -2380,11 +2670,21 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 3px;
   border: 1px solid var(--cg-line);
 }
-.cg-heat-swatch[data-level="0"] { background: var(--cg-surface-3); }
-.cg-heat-swatch[data-level="1"] { background: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3)); }
-.cg-heat-swatch[data-level="2"] { background: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3)); }
-.cg-heat-swatch[data-level="3"] { background: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3)); }
-.cg-heat-swatch[data-level="4"] { background: var(--cg-ok); }
+.cg-heat-swatch[data-level="0"] {
+  background: var(--cg-surface-3);
+}
+.cg-heat-swatch[data-level="1"] {
+  background: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3));
+}
+.cg-heat-swatch[data-level="2"] {
+  background: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3));
+}
+.cg-heat-swatch[data-level="3"] {
+  background: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3));
+}
+.cg-heat-swatch[data-level="4"] {
+  background: var(--cg-ok);
+}
 .cg-heat-scroll {
   overflow-x: auto;
 }
@@ -2394,12 +2694,22 @@ button.cg-chip[aria-pressed="true"] {
 .cg-heat-cell {
   fill: var(--cg-surface-3);
 }
-.cg-heat-cell[data-level="1"] { fill: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3)); }
-.cg-heat-cell[data-level="2"] { fill: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3)); }
-.cg-heat-cell[data-level="3"] { fill: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3)); }
-.cg-heat-cell[data-level="4"] { fill: var(--cg-ok); }
+.cg-heat-cell[data-level="1"] {
+  fill: color-mix(in srgb, var(--cg-ok) 28%, var(--cg-surface-3));
+}
+.cg-heat-cell[data-level="2"] {
+  fill: color-mix(in srgb, var(--cg-ok) 50%, var(--cg-surface-3));
+}
+.cg-heat-cell[data-level="3"] {
+  fill: color-mix(in srgb, var(--cg-ok) 72%, var(--cg-surface-3));
+}
+.cg-heat-cell[data-level="4"] {
+  fill: var(--cg-ok);
+}
 .cg-heat-axis {
-  font: 500 0.6rem/1 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1 "Martian Mono",
+    monospace;
   fill: var(--cg-ink-3);
 }
 
@@ -2413,7 +2723,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 9px;
 }
 .cg-conflict legend {
-  font: 500 0.6rem/1.4 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1.4 "Martian Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -2475,7 +2787,9 @@ button.cg-chip[aria-pressed="true"] {
   align-items: baseline;
 }
 .cg-field dt {
-  font: 500 0.58rem/1.35 "Martian Mono", monospace;
+  font:
+    500 0.58rem/1.35 "Martian Mono",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -2516,11 +2830,15 @@ button.cg-chip[aria-pressed="true"] {
   font-weight: 600;
 }
 .cg-model-card-copy span {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-model-card-action {
-  font: 500 0.64rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.64rem/1 "Schibsted Grotesk",
+    sans-serif;
   color: var(--cg-signal);
 }
 
@@ -2587,7 +2905,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 50%;
   background: var(--cg-ink-2);
   transform: translateY(-50%);
-  transition: left 140ms var(--cg-ease), background-color 140ms var(--cg-ease);
+  transition:
+    left 140ms var(--cg-ease),
+    background-color 140ms var(--cg-ease);
 }
 .cg-toggle input:checked {
   background: var(--cg-signal);
@@ -2613,12 +2933,18 @@ button.cg-chip[aria-pressed="true"] {
   height: 100%;
   background: var(--cg-signal);
 }
-.cg-burn-bar[data-tone="warn"] > span { background: var(--cg-warn); }
-.cg-burn-bar[data-tone="bad"] > span { background: var(--cg-bad); }
+.cg-burn-bar[data-tone="warn"] > span {
+  background: var(--cg-warn);
+}
+.cg-burn-bar[data-tone="bad"] > span {
+  background: var(--cg-bad);
+}
 .cg-burn-label {
   display: flex;
   justify-content: space-between;
-  font: 400 0.62rem/1 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -2638,7 +2964,9 @@ button.cg-chip[aria-pressed="true"] {
   color: var(--cg-ok);
 }
 .cg-context-chip span {
-  font: 400 0.62rem/1.35 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.35 "Martian Mono",
+    monospace;
   color: var(--cg-ink-2);
 }
 
@@ -2674,7 +3002,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 8px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 400 0.85rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.85rem/1 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-bottombar input::placeholder {
   color: var(--cg-ink-3);
@@ -2726,7 +3056,9 @@ button.cg-chip[aria-pressed="true"] {
   font-weight: 600;
 }
 .cg-model-btn-provider {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-model-btn-caret {
@@ -2735,7 +3067,9 @@ button.cg-chip[aria-pressed="true"] {
 }
 
 .cg-composer-model {
-  font: 400 0.68rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.68rem/1.4 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -2777,7 +3111,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 7px;
   background: var(--cg-bg);
   color: var(--cg-ink);
-  font: 400 0.82rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.82rem/1 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-picker-search::placeholder {
   color: var(--cg-ink-3);
@@ -2847,7 +3183,9 @@ button.cg-chip[aria-pressed="true"] {
   text-overflow: ellipsis;
 }
 .cg-picker-item-meta {
-  font: 400 0.62rem/1.3 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.3 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -2859,7 +3197,9 @@ button.cg-chip[aria-pressed="true"] {
   gap: 0.9rem;
   padding: 0.5rem 0.85rem;
   border-top: 1px solid var(--cg-line);
-  font: 400 0.66rem/1 "Martian Mono", monospace;
+  font:
+    400 0.66rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-picker-foot kbd {
@@ -2898,7 +3238,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 7px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 500 0.72rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.72rem/1 "Schibsted Grotesk",
+    sans-serif;
 }
 /* Council: a free/paid filter plus three model dropdowns. */
 .cg-council-pick {
@@ -2948,7 +3290,9 @@ button.cg-chip[aria-pressed="true"] {
   flex-wrap: wrap;
 }
 .cg-block-head .cg-view-sub {
-  font: 400 0.64rem/1 "Martian Mono", monospace;
+  font:
+    400 0.64rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -3019,13 +3363,17 @@ button.cg-chip[aria-pressed="true"] {
   background: var(--cg-ok);
 }
 .cg-step-label {
-  font: 500 0.62rem/1.4 "Martian Mono", monospace;
+  font:
+    500 0.62rem/1.4 "Martian Mono",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cg-ink-2);
 }
 .cg-step-detail {
-  font: 400 0.68rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.68rem/1.4 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-research-report {
@@ -3063,7 +3411,9 @@ button.cg-chip[aria-pressed="true"] {
   border-radius: 4px;
   background: color-mix(in srgb, var(--cg-signal) 14%, transparent);
   color: var(--cg-signal);
-  font: 500 0.62rem/1.4 "Martian Mono", monospace;
+  font:
+    500 0.62rem/1.4 "Martian Mono",
+    monospace;
 }
 .cg-version-copy {
   display: grid;
@@ -3077,7 +3427,9 @@ button.cg-chip[aria-pressed="true"] {
   color: var(--cg-ink);
 }
 .cg-version-copy span {
-  font: 400 0.62rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.62rem/1.4 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-tiles {
@@ -3095,8 +3447,16 @@ button.cg-chip[aria-pressed="true"] {
   border: 1px solid var(--cg-line);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--cg-signal) 40%, transparent), transparent 60%),
-    radial-gradient(circle at 75% 70%, color-mix(in srgb, var(--cg-ok) 35%, transparent), transparent 55%),
+    radial-gradient(
+      circle at 30% 25%,
+      color-mix(in srgb, var(--cg-signal) 40%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 75% 70%,
+      color-mix(in srgb, var(--cg-ok) 35%, transparent),
+      transparent 55%
+    ),
     linear-gradient(160deg, var(--cg-surface-3), var(--cg-bg));
 }
 img.cg-tile-art {
@@ -3105,7 +3465,9 @@ img.cg-tile-art {
   object-fit: cover;
 }
 .cg-tile figcaption {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 
@@ -3125,7 +3487,9 @@ img.cg-tile-art {
   border-radius: 6px;
   background: var(--cg-surface-2);
   color: var(--cg-ink-3);
-  font: 400 0.6rem/1.4 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1.4 "Martian Mono",
+    monospace;
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms var(--cg-ease);
@@ -3187,7 +3551,9 @@ img.cg-tile-art {
   border-radius: 9px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 400 0.86rem/1.55 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.86rem/1.55 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-textarea:focus-visible {
   border-color: var(--cg-signal);
@@ -3246,17 +3612,39 @@ img.cg-tile-art {
 .cg-hue[aria-pressed="true"] {
   border-color: var(--cg-ink);
 }
-.cg-hue[data-agent="claude"] { background: var(--cg-agent-claude); }
-.cg-hue[data-agent="codex"] { background: var(--cg-agent-codex); }
-.cg-hue[data-agent="opencode"] { background: var(--cg-agent-opencode); }
-.cg-hue[data-agent="gemini"] { background: var(--cg-agent-gemini); }
-.cg-hue[data-agent="aider"] { background: var(--cg-agent-aider); }
-.cg-hue[data-agent="ollama"] { background: var(--cg-agent-ollama); }
-.cg-hue[data-agent="freebuff"] { background: var(--cg-agent-freebuff); }
-.cg-hue[data-agent="cline"] { background: var(--cg-agent-cline); }
-.cg-hue[data-agent="pi"] { background: var(--cg-agent-pi); }
-.cg-hue[data-agent="kilo"] { background: var(--cg-agent-kilo); }
-.cg-hue[data-agent="commandcode"] { background: var(--cg-agent-commandcode); }
+.cg-hue[data-agent="claude"] {
+  background: var(--cg-agent-claude);
+}
+.cg-hue[data-agent="codex"] {
+  background: var(--cg-agent-codex);
+}
+.cg-hue[data-agent="opencode"] {
+  background: var(--cg-agent-opencode);
+}
+.cg-hue[data-agent="gemini"] {
+  background: var(--cg-agent-gemini);
+}
+.cg-hue[data-agent="aider"] {
+  background: var(--cg-agent-aider);
+}
+.cg-hue[data-agent="ollama"] {
+  background: var(--cg-agent-ollama);
+}
+.cg-hue[data-agent="freebuff"] {
+  background: var(--cg-agent-freebuff);
+}
+.cg-hue[data-agent="cline"] {
+  background: var(--cg-agent-cline);
+}
+.cg-hue[data-agent="pi"] {
+  background: var(--cg-agent-pi);
+}
+.cg-hue[data-agent="kilo"] {
+  background: var(--cg-agent-kilo);
+}
+.cg-hue[data-agent="commandcode"] {
+  background: var(--cg-agent-commandcode);
+}
 .cg-text-input {
   width: 100%;
   padding: 0.55rem 0.7rem;
@@ -3264,7 +3652,9 @@ img.cg-tile-art {
   border-radius: 9px;
   background: var(--cg-surface-2);
   color: var(--cg-ink);
-  font: 400 0.9rem/1.4 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.9rem/1.4 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-text-input:focus-visible {
   border-color: var(--cg-signal);
@@ -3288,7 +3678,9 @@ img.cg-tile-art {
   border-bottom: 0;
 }
 .cg-receipt-kind {
-  font: 500 0.56rem/1.3 "Martian Mono", monospace;
+  font:
+    500 0.56rem/1.3 "Martian Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -3312,18 +3704,24 @@ img.cg-tile-art {
   color: var(--cg-ink);
 }
 .cg-receipt-copy span {
-  font: 400 0.6rem/1.35 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1.35 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
 }
 .cg-receipt-lock {
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-bad);
 }
 .cg-pin {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font: 400 0.6rem/1 "Martian Mono", monospace;
+  font:
+    400 0.6rem/1 "Martian Mono",
+    monospace;
   color: var(--cg-ink-3);
   cursor: pointer;
 }
@@ -3397,7 +3795,9 @@ img.cg-tile-art {
 }
 .cg-matrix thead th {
   color: var(--cg-ink-3);
-  font: 500 0.6rem/1.2 "Martian Mono", monospace;
+  font:
+    500 0.6rem/1.2 "Martian Mono",
+    monospace;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -3509,20 +3909,27 @@ img.cg-tile-art {
 }
 
 .cg-card-name {
-  font: 500 0.76rem/1.3 "Schibsted Grotesk", sans-serif;
+  font:
+    500 0.76rem/1.3 "Schibsted Grotesk",
+    sans-serif;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cg-card-meta {
-  font: 400 0.62rem/1 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.62rem/1 "Martian Mono",
+    ui-monospace,
+    monospace;
   color: var(--cg-ink-3);
 }
 
 .cg-field-label {
   display: block;
   margin: 0.7rem 0 0.3rem;
-  font: 600 0.62rem/1 "Martian Mono", monospace;
+  font:
+    600 0.62rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
@@ -3535,7 +3942,9 @@ img.cg-tile-art {
   background: var(--cg-bg);
   color: var(--cg-ink);
   padding: 0.4rem 0.55rem;
-  font: 400 0.78rem/1.4 "Schibsted Grotesk", sans-serif;
+  font:
+    400 0.78rem/1.4 "Schibsted Grotesk",
+    sans-serif;
   resize: vertical;
 }
 .cg-input:focus {
@@ -3582,7 +3991,10 @@ img.cg-tile-art {
   border: 1px solid var(--cg-line);
   border-radius: 9px;
   background: var(--cg-bg);
-  font: 400 0.75rem/1.4 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.75rem/1.4 "Martian Mono",
+    ui-monospace,
+    monospace;
   color: var(--cg-ink-2);
   max-height: 14rem;
   overflow: auto;
@@ -3622,7 +4034,10 @@ img.cg-tile-art {
   background: var(--cg-bg);
   color: var(--cg-ink);
   padding: 0.32rem 0.6rem;
-  font: 400 0.76rem/1.4 "Martian Mono", ui-monospace, monospace;
+  font:
+    400 0.76rem/1.4 "Martian Mono",
+    ui-monospace,
+    monospace;
 }
 .cg-browser-address input:focus {
   outline: none;
@@ -3634,7 +4049,9 @@ img.cg-tile-art {
   border-radius: 999px;
   background: var(--cg-surface-3);
   color: var(--cg-ink-3);
-  font: 600 0.62rem/1 "Martian Mono", monospace;
+  font:
+    600 0.62rem/1 "Martian Mono",
+    monospace;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -3684,7 +4101,9 @@ img.cg-tile-art {
   background: var(--cg-surface);
   color: var(--cg-ink);
   cursor: pointer;
-  font: 600 0.85rem/1 "Schibsted Grotesk", sans-serif;
+  font:
+    600 0.85rem/1 "Schibsted Grotesk",
+    sans-serif;
 }
 .cg-browser-tile:hover {
   border-color: var(--cg-signal);
@@ -3719,4 +4138,171 @@ img.cg-tile-art {
 .cg-editor-start h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+
+/* ------------------------------------------------------------------- API -- */
+
+.cg-api {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem 1.1rem;
+}
+
+.cg-api-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cg-api-method {
+  flex: 0 0 auto;
+  width: 7.2rem;
+  font-family: "Martian Mono", ui-monospace, monospace;
+}
+
+.cg-api-url {
+  flex: 1 1 auto;
+  font-family: "Martian Mono", ui-monospace, monospace;
+}
+
+.cg-api-editor,
+.cg-api-kv,
+.cg-api-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.cg-api-kv-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cg-api-kv-row .cg-input {
+  flex: 1 1 0;
+}
+
+.cg-api-textarea {
+  min-height: 9rem;
+  font-family: "Martian Mono", ui-monospace, monospace;
+}
+
+.cg-api-save {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.cg-api-response {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.cg-api-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.cg-api-code {
+  font-weight: 600;
+}
+
+.cg-api-pre {
+  margin: 0;
+  padding: 0.75rem;
+  max-height: 38vh;
+  overflow: auto;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  background: var(--cg-bg);
+  color: var(--cg-ink);
+  font:
+    400 0.78rem/1.5 "Martian Mono",
+    ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cg-api-error {
+  margin: 0;
+  color: var(--cg-bad);
+  font-size: 0.82rem;
+}
+
+.cg-api-ok {
+  color: var(--cg-ok);
+}
+
+.cg-api-warn {
+  color: var(--cg-signal);
+}
+
+.cg-api-bad {
+  color: var(--cg-bad);
+}
+
+/* --------------------------------------------------------------- endpoints -- */
+
+.cg-ep-filter {
+  margin: 0 0.6rem 0.5rem;
+}
+
+.cg-ep-dot {
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.42rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cg-ep {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1.1rem;
+}
+
+.cg-ep-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cg-ep-method {
+  font-weight: 600;
+}
+
+.cg-ep-path {
+  font-size: 1rem;
+}
+
+.cg-ep-operation {
+  margin: 0;
+  color: var(--cg-ink);
+  font-size: 0.9rem;
+}
+
+.cg-ep-h2 {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cg-ink-3);
+}
+
+.cg-ep-excerpt {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border-left: 2px solid var(--cg-line);
+  color: var(--cg-ink-3);
+  font-size: 0.85rem;
 }

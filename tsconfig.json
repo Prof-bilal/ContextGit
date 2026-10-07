@@ -37,7 +37,9 @@
   ],
   "exclude": [
     "node_modules",
+    "tests/fixtures",
     "desktop/build",
+    "desktop/extensions",
     "desktop/dist",
     "desktop/dist-electron",
     "desktop/release"

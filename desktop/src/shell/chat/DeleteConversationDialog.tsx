@@ -29,7 +29,7 @@ export default function DeleteConversationDialog({
 
   return (
     <Modal
-      title="Delete conversation"
+      title="Move conversation to Storage"
       subtitle={name}
       onClose={onClose}
       footer={
@@ -44,14 +44,15 @@ export default function DeleteConversationDialog({
             disabled={busy}
             onClick={() => void remove()}
           >
-            {busy ? "Deleting…" : "Delete conversation"}
+            {busy ? "Moving…" : "Move to Storage"}
           </button>
         </>
       }
     >
       <p className="cg-empty-note">
-        This removes the <strong>{name}</strong> conversation and its staging buffer. Every commit
-        stays in the repository and is still reachable from other branches.
+        This moves the <strong>{name}</strong> conversation and its staging buffer to Storage —
+        restore it any time from the Storage tab. Every commit stays in the repository and is still
+        reachable from other branches.
       </p>
       {error && <p className="cg-pane-error">{error}</p>}
     </Modal>

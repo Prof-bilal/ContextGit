@@ -28,6 +28,8 @@ export interface CommitResponse {
 export interface Branch {
   name: string;
   head_commit_id: string;
+  /** Set when the branch is in Storage (trash); null/absent means live. */
+  deleted_at?: string | null;
 }
 
 export interface RepoSnapshot {
@@ -142,10 +144,14 @@ export interface ProviderModelsResult {
 }
 
 // Electron preload injects the backend port; the web build falls back to env/default.
-const bridge = typeof window !== "undefined"
-  ? (window as { contextgit?: { apiBase?: string } }).contextgit
-  : undefined;
-const envBase = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_CONTEXTGIT_API : undefined;
+const bridge =
+  typeof window !== "undefined"
+    ? (window as { contextgit?: { apiBase?: string } }).contextgit
+    : undefined;
+const envBase =
+  typeof process !== "undefined"
+    ? process.env.NEXT_PUBLIC_CONTEXTGIT_API
+    : undefined;
 const base = bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
 
 export type SessionKind = "chat" | "terminal";
@@ -157,7 +163,13 @@ export interface AssetAgentInput {
   model?: string;
   instruction: string;
   catalog: {
-    assets: { id: string; name: string; kind: string; folder: string; tags: string[] }[];
+    assets: {
+      id: string;
+      name: string;
+      kind: string;
+      folder: string;
+      tags: string[];
+    }[];
     folders: string[];
   };
 }
@@ -193,8 +205,16 @@ export interface Session {
   skills: string[];
   /** A private local port for this run's dev server. */
   port: number | null;
+  /** Set when the run is in Storage (trash); null means live. */
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** The Storage view payload: trashed runs/conversations and trashed branches. */
+export interface TrashSnapshot {
+  sessions: Session[];
+  branches: Branch[];
 }
 
 /** Code state of one run's worktree (`GET /sessions/{id}/workspace`). */
@@ -272,7 +292,8 @@ export interface MergeQueueEntry {
 
 // ---------- team mode ----------
 
-export type TaskStatus = "todo" | "blocked" | "working" | "review" | "done" | "failed";
+export type TaskStatus =
+  "todo" | "blocked" | "working" | "review" | "done" | "failed";
 export type TeamMessageKind =
   | "update"
   | "question"
@@ -488,10 +509,146 @@ export interface BlameEntry {
   created_at: string;
 }
 
+// ---------- HTTP client (the API tab) ----------
+
+export type HttpBodyKind = "none" | "json" | "text" | "form";
+export type HttpAuthKind = "none" | "bearer" | "basic" | "api-key";
+
+export interface HttpKeyValue {
+  name: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface HttpRequestSpec {
+  method: string;
+  url: string;
+  params: HttpKeyValue[];
+  headers: HttpKeyValue[];
+  body_kind: HttpBodyKind;
+  body: string;
+  auth_kind: HttpAuthKind;
+  auth_value: string;
+  timeout_s: number;
+  verify_tls: boolean;
+  follow_redirects: boolean;
+}
+
+export interface HttpResponseResult {
+  status: number;
+  reason: string;
+  headers: Record<string, string>;
+  body: string;
+  truncated: boolean;
+  elapsed_ms: number;
+  size: number;
+  url: string;
+}
+
+export interface HttpSavedRequest {
+  name: string;
+  spec: HttpRequestSpec;
+}
+
+export interface HttpCollection {
+  name: string;
+  requests: HttpSavedRequest[];
+}
+
+export interface HttpHistoryEntry {
+  id: number;
+  method: string;
+  url: string;
+  status: number;
+  elapsed_ms: number;
+  size: number;
+  created_at: string;
+}
+
+/** A blank request, so the view always has a complete spec to edit. */
+export function emptyHttpRequest(): HttpRequestSpec {
+  return {
+    method: "GET",
+    url: "",
+    params: [],
+    headers: [],
+    body_kind: "none",
+    body: "",
+    auth_kind: "none",
+    auth_value: "",
+    timeout_s: 30,
+    verify_tls: true,
+    follow_redirects: true,
+  };
+}
+
+// ---------- endpoint graph (the Endpoints tab) ----------
+
+export type EndpointSourceKind =
+  "openapi" | "python" | "django" | "javascript" | "go" | "manual";
+export type Confidence = "high" | "medium" | "low";
+export type FieldLocation = "path" | "query" | "header" | "cookie" | "body";
+
+export interface EndpointSource {
+  kind: EndpointSourceKind;
+  file: string | null;
+  line: number | null;
+  confidence: Confidence;
+}
+
+export interface EndpointField {
+  name: string;
+  location: FieldLocation;
+  type: string | null;
+  required: boolean;
+}
+
+/** Where an endpoint came from: the commit, the run, and its conversation. */
+export interface EndpointProvenance {
+  tracked: boolean;
+  code_commit: string | null;
+  code_commit_summary: string | null;
+  author: string | null;
+  committed_at: string | null;
+  run_id: string | null;
+  run_name: string | null;
+  agent: string | null;
+  model: string | null;
+  context_commit: string | null;
+  context_branch: string | null;
+  summary: string | null;
+  excerpt: string | null;
+  decisions: string[];
+  dead_ends: string[];
+  open_questions: string[];
+}
+
+export interface Endpoint {
+  id: string;
+  method: string;
+  path: string;
+  operation: string | null;
+  tags: string[];
+  auth: boolean;
+  request_fields: EndpointField[];
+  response_status: number | null;
+  source: EndpointSource;
+  provenance: EndpointProvenance | null;
+}
+
+export interface EndpointGraph {
+  project_path: string;
+  generated_at: string;
+  scanned_files: number;
+  endpoints: Endpoint[];
+}
+
 export const api = {
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
   branchBudget: (name: string) =>
-    request<BranchBudget>(`/api/v1/branches/${encodeURIComponent(name)}/budget`),
+    request<BranchBudget>(
+      `/api/v1/branches/${encodeURIComponent(name)}/budget`,
+    ),
   usage: (days?: number) =>
     request<UsageSummary>(`/api/v1/usage${days ? `?days=${days}` : ""}`),
   limits: (refresh = false) =>
@@ -500,20 +657,36 @@ export const api = {
   branchBlame: (name: string) =>
     request<BlameEntry[]>(`/api/v1/branches/${encodeURIComponent(name)}/blame`),
   commits: (branch: string) =>
-    request<CommitResponse[]>(`/api/v1/commits?branch=${encodeURIComponent(branch)}`),
+    request<CommitResponse[]>(
+      `/api/v1/commits?branch=${encodeURIComponent(branch)}`,
+    ),
   context: (commitId: string) =>
-    request<Message[]>(`/api/v1/context?commit_id=${encodeURIComponent(commitId)}`),
+    request<Message[]>(
+      `/api/v1/context?commit_id=${encodeURIComponent(commitId)}`,
+    ),
   branchContext: (name: string) =>
     request<Message[]>(`/api/v1/context?branch=${encodeURIComponent(name)}`),
   diff: (a: string, b: string) =>
-    request<Diff>(`/api/v1/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
+    request<Diff>(
+      `/api/v1/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
+    ),
   createBranch: (name: string, fromCommit: string) =>
     request<Branch>("/api/v1/branches", {
       method: "POST",
       body: JSON.stringify({ name, from_commit: fromCommit }),
     }),
-  deleteBranch: (name: string) =>
-    request<void>(`/api/v1/branches?name=${encodeURIComponent(name)}`, { method: "DELETE" }),
+  deleteBranch: (name: string, permanent = false) =>
+    request<void>(
+      `/api/v1/branches?name=${encodeURIComponent(name)}${permanent ? "&permanent=true" : ""}`,
+      { method: "DELETE" },
+    ),
+  restoreBranch: (name: string) =>
+    request<Branch>(
+      `/api/v1/branches/restore?name=${encodeURIComponent(name)}`,
+      {
+        method: "POST",
+      },
+    ),
   checkout: (ref: string) =>
     request<{ ref: string; current_branch: string }>("/api/v1/checkout", {
       method: "POST",
@@ -524,7 +697,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ source, into }),
     }),
-  mergeApply: (preview: MergePreview, resolutions: Record<string, string>, summary: string) =>
+  mergeApply: (
+    preview: MergePreview,
+    resolutions: Record<string, string>,
+    summary: string,
+  ) =>
     request<CommitResponse>("/api/v1/merge/apply", {
       method: "POST",
       body: JSON.stringify({ preview, resolutions, summary }),
@@ -532,7 +709,12 @@ export const api = {
   compare: (prompt: string, branchA: string, branchB: string, model: string) =>
     request<CompareResult>("/api/v1/compare", {
       method: "POST",
-      body: JSON.stringify({ prompt, branch_a: branchA, branch_b: branchB, model }),
+      body: JSON.stringify({
+        prompt,
+        branch_a: branchA,
+        branch_b: branchB,
+        model,
+      }),
     }),
   commit: (input: {
     messages: Message[];
@@ -557,15 +739,23 @@ export const api = {
       body: JSON.stringify(input),
     }),
   deleteProvider: (id: string) =>
-    request<void>(`/api/v1/providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    request<void>(`/api/v1/providers/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   testProvider: (id: string) =>
-    request<ProviderTestResult>(`/api/v1/providers/${encodeURIComponent(id)}/test`, {
-      method: "POST",
-    }),
+    request<ProviderTestResult>(
+      `/api/v1/providers/${encodeURIComponent(id)}/test`,
+      {
+        method: "POST",
+      },
+    ),
   fetchProviderModels: (id: string) =>
-    request<ProviderModelsResult>(`/api/v1/providers/${encodeURIComponent(id)}/models`, {
-      method: "POST",
-    }),
+    request<ProviderModelsResult>(
+      `/api/v1/providers/${encodeURIComponent(id)}/models`,
+      {
+        method: "POST",
+      },
+    ),
   // ---------- asset agent (its own isolated provider store) ----------
   agentProviders: () => request<ProviderInfo[]>("/api/v1/agent-providers"),
   addAgentProvider: (input: ProviderInput) =>
@@ -574,23 +764,69 @@ export const api = {
       body: JSON.stringify(input),
     }),
   deleteAgentProvider: (id: string) =>
-    request<void>(`/api/v1/agent-providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    request<void>(`/api/v1/agent-providers/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   testAgentProvider: (id: string) =>
-    request<ProviderTestResult>(`/api/v1/agent-providers/${encodeURIComponent(id)}/test`, {
-      method: "POST",
-    }),
+    request<ProviderTestResult>(
+      `/api/v1/agent-providers/${encodeURIComponent(id)}/test`,
+      {
+        method: "POST",
+      },
+    ),
   fetchAgentProviderModels: (id: string) =>
-    request<ProviderModelsResult>(`/api/v1/agent-providers/${encodeURIComponent(id)}/models`, {
-      method: "POST",
-    }),
+    request<ProviderModelsResult>(
+      `/api/v1/agent-providers/${encodeURIComponent(id)}/models`,
+      {
+        method: "POST",
+      },
+    ),
   assetAgent: (input: AssetAgentInput) =>
     request<AssetAgentResponse>("/api/v1/assets/agent", {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  // ---------- HTTP client (the API tab) ----------
+  httpRequest: (spec: HttpRequestSpec) =>
+    request<HttpResponseResult>("/api/v1/http/request", {
+      method: "POST",
+      body: JSON.stringify(spec),
+    }),
+  httpCollections: () => request<string[]>("/api/v1/http/collections"),
+  httpCollection: (name: string) =>
+    request<HttpCollection>(
+      `/api/v1/http/collections/${encodeURIComponent(name)}`,
+    ),
+  saveHttpCollection: (name: string, collection: HttpCollection) =>
+    request<HttpCollection>(
+      `/api/v1/http/collections/${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(collection),
+      },
+    ),
+  deleteHttpCollection: (name: string) =>
+    request<void>(`/api/v1/http/collections/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+  httpHistory: (limit = 50) =>
+    request<HttpHistoryEntry[]>(`/api/v1/http/history?limit=${limit}`),
+  // ---------- endpoint graph (the Endpoints tab) ----------
+  endpoints: (projectPath?: string) =>
+    request<EndpointGraph>(
+      `/api/v1/endpoints${projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : ""}`,
+    ),
+  refreshEndpoints: (projectPath?: string) =>
+    request<EndpointGraph>(
+      `/api/v1/endpoints/refresh${
+        projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : ""
+      }`,
+      { method: "POST" },
+    ),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
-  workspace: (id: string) => request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
+  workspace: (id: string) =>
+    request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
   fleet: () => request<FleetEntry[]>("/api/v1/fleet"),
   preflight: (id: string, target?: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/preflight`, {
@@ -620,9 +856,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ target, git_target: gitTarget }),
     }),
-  sessionContext: (id: string) => request<{ text: string }>(`/api/v1/sessions/${id}/context`),
+  sessionContext: (id: string) =>
+    request<{ text: string }>(`/api/v1/sessions/${id}/context`),
   crossRunConflicts: (id: string) =>
-    request<CrossRunConflict[]>(`/api/v1/sessions/${id}/cross-conflicts`, { method: "POST" }),
+    request<CrossRunConflict[]>(`/api/v1/sessions/${id}/cross-conflicts`, {
+      method: "POST",
+    }),
   createSession: (input: {
     name: string;
     kind?: SessionKind;
@@ -664,8 +903,16 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
-  deleteSession: (id: string) =>
-    request<void>(`/api/v1/sessions/${id}`, { method: "DELETE" }),
+  trash: () => request<TrashSnapshot>("/api/v1/trash"),
+  deleteSession: (id: string, permanent = false) =>
+    request<void>(
+      `/api/v1/sessions/${id}${permanent ? "?permanent=true" : ""}`,
+      {
+        method: "DELETE",
+      },
+    ),
+  restoreSession: (id: string) =>
+    request<Session>(`/api/v1/sessions/${id}/restore`, { method: "POST" }),
   staging: (id: string) => request<Message[]>(`/api/v1/sessions/${id}/staging`),
   stage: (id: string, messages: Message[]) =>
     request<Message[]>(`/api/v1/sessions/${id}/staging`, {
@@ -684,7 +931,11 @@ export const api = {
     }),
   // ---------- team mode (a task graph over parallel runs) ----------
   team: () => request<TeamBoard | null>("/api/v1/team"),
-  createTeam: (input: { name: string; projectPath: string; baseRef?: string }) =>
+  createTeam: (input: {
+    name: string;
+    projectPath: string;
+    baseRef?: string;
+  }) =>
     request<TeamBoard>("/api/v1/team", {
       method: "POST",
       body: JSON.stringify({
@@ -694,8 +945,14 @@ export const api = {
       }),
     }),
   createTask: (input: TaskInput) =>
-    request<Task>("/api/v1/team/tasks", { method: "POST", body: JSON.stringify(input) }),
-  updateTask: (id: string, patch: Partial<TaskInput> & { status?: TaskStatus }) =>
+    request<Task>("/api/v1/team/tasks", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateTask: (
+    id: string,
+    patch: Partial<TaskInput> & { status?: TaskStatus },
+  ) =>
     request<Task>(`/api/v1/team/tasks/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -709,7 +966,11 @@ export const api = {
     request<Task>(`/api/v1/team/tasks/${id}/complete`, { method: "POST" }),
   teamMessages: (limit = 50) =>
     request<TeamMessage[]>(`/api/v1/team/messages?limit=${limit}`),
-  postTeamMessage: (input: { body: string; kind?: TeamMessageKind; taskId?: string }) =>
+  postTeamMessage: (input: {
+    body: string;
+    kind?: TeamMessageKind;
+    taskId?: string;
+  }) =>
     request<TeamMessage>("/api/v1/team/messages", {
       method: "POST",
       body: JSON.stringify({
@@ -718,7 +979,8 @@ export const api = {
         task_id: input.taskId,
       }),
     }),
-  mergeTeam: () => request<MergeQueueEntry[]>("/api/v1/team/merge", { method: "POST" }),
+  mergeTeam: () =>
+    request<MergeQueueEntry[]>("/api/v1/team/merge", { method: "POST" }),
   setTeamGate: (gateCommand: string | null) =>
     request<Team>("/api/v1/team", {
       method: "PATCH",
@@ -758,11 +1020,15 @@ export async function readSse(
 ): Promise<void> {
   const response = await fetch(`${base}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
     body: JSON.stringify(body),
     signal,
   });
-  if (!response.ok || !response.body) throw new Error(`Request failed (${response.status})`);
+  if (!response.ok || !response.body)
+    throw new Error(`Request failed (${response.status})`);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -775,8 +1041,14 @@ export async function readSse(
     buffer = blocks.pop() ?? "";
     for (const block of blocks) {
       const eventName =
-        block.split("\n").find((line) => line.startsWith("event: "))?.slice(7) ?? "message";
-      const dataLine = block.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+        block
+          .split("\n")
+          .find((line) => line.startsWith("event: "))
+          ?.slice(7) ?? "message";
+      const dataLine = block
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6);
       if (dataLine === undefined) continue;
       onMessage({ event: eventName, data: JSON.parse(dataLine) as unknown });
     }
@@ -796,7 +1068,12 @@ export async function streamChat(
   },
   onToken: (text: string) => void,
   signal?: AbortSignal,
-): Promise<{ answer: string; commitId: string | null; staged: boolean; stagedCount: number }> {
+): Promise<{
+  answer: string;
+  commitId: string | null;
+  staged: boolean;
+  stagedCount: number;
+}> {
   let answer = "";
   let commitId: string | null = null;
   let staged = false;
@@ -846,7 +1123,13 @@ export interface CouncilMember {
 }
 
 export type CouncilEvent =
-  | { type: "member"; index: number; provider: string; model: string; label: string }
+  | {
+      type: "member";
+      index: number;
+      provider: string;
+      model: string;
+      label: string;
+    }
   | { type: "token"; index: number; text: string }
   | { type: "member_done"; index: number; answer: string }
   | { type: "error"; index?: number; error: string }
@@ -874,7 +1157,10 @@ export async function streamCouncil(
     },
     (message) => {
       if (message.event === "done") sawDone = true;
-      onEvent({ type: message.event, ...(message.data as object) } as CouncilEvent);
+      onEvent({
+        type: message.event,
+        ...(message.data as object),
+      } as CouncilEvent);
     },
     signal,
   );
@@ -894,7 +1180,13 @@ export interface RenderedImage {
 export type ImageEvent =
   | { type: "step"; label: string; detail: string }
   | ({ type: "image" } & RenderedImage)
-  | { type: "done"; commit_id: string | null; branch: string; tiles: number; staged: boolean }
+  | {
+      type: "done";
+      commit_id: string | null;
+      branch: string;
+      tiles: number;
+      staged: boolean;
+    }
   | { type: "error"; error: string };
 
 export interface ResearchSourceInfo {
@@ -916,8 +1208,14 @@ export type ResearchEvent =
   | ({ type: "step" } & ResearchStepPayload)
   | ({ type: "source" } & ResearchSourceInfo)
   | { type: "report"; text: string }
-  | { type: "result"; mode: string } & Record<string, unknown>
-  | { type: "done"; commit_id: string | null; branch: string; run_id: string; staged: boolean }
+  | ({ type: "result"; mode: string } & Record<string, unknown>)
+  | {
+      type: "done";
+      commit_id: string | null;
+      branch: string;
+      run_id: string;
+      staged: boolean;
+    }
   | { type: "error"; error: string };
 
 /** Run a research pass; steps, sources and the report stream as they happen. */
@@ -958,7 +1256,10 @@ export async function streamResearch(
     },
     (message) => {
       if (message.event === "done") sawDone = true;
-      onEvent({ type: message.event, ...(message.data as object) } as ResearchEvent);
+      onEvent({
+        type: message.event,
+        ...(message.data as object),
+      } as ResearchEvent);
     },
     signal,
   );
@@ -997,7 +1298,10 @@ export async function streamImages(
     },
     (message) => {
       if (message.event === "done") sawDone = true;
-      onEvent({ type: message.event, ...(message.data as object) } as ImageEvent);
+      onEvent({
+        type: message.event,
+        ...(message.data as object),
+      } as ImageEvent);
     },
     signal,
   );
@@ -1067,11 +1371,15 @@ export async function streamDocument(
     },
     (message) => {
       if (message.event === "done") sawDone = true;
-      onEvent({ type: message.event, ...(message.data as object) } as DocumentEvent);
+      onEvent({
+        type: message.event,
+        ...(message.data as object),
+      } as DocumentEvent);
     },
     signal,
   );
-  if (!sawDone) throw new Error("Document generation ended without a done event");
+  if (!sawDone)
+    throw new Error("Document generation ended without a done event");
 }
 
 /** Download URL for a rendered document. */

@@ -106,7 +106,21 @@ def test_session_routes_stage_and_commit(tmp_path: Path) -> None:
     assert committed.json()["commit"]["summary"] == "checkpoint"
     assert client.get(f"/api/v1/sessions/{session['id']}/staging").json() == []
 
+    # A plain delete moves the run to Storage; only permanent=true drops it.
     assert client.delete(f"/api/v1/sessions/{session['id']}").status_code == 204
+    assert [item["id"] for item in client.get("/api/v1/trash").json()["sessions"]] == [
+        session["id"]
+    ]
+    assert session["id"] not in {item["id"] for item in client.get("/api/v1/sessions").json()}
+    restored = client.post(f"/api/v1/sessions/{session['id']}/restore")
+    assert restored.status_code == 200
+    assert restored.json()["deleted_at"] is None
+    assert session["id"] in {item["id"] for item in client.get("/api/v1/sessions").json()}
+
+    assert (
+        client.delete(f"/api/v1/sessions/{session['id']}", params={"permanent": "true"}).status_code
+        == 204
+    )
     missing = client.post(f"/api/v1/sessions/{session['id']}/commit", json={})
     assert missing.status_code == 404
 
@@ -248,6 +262,21 @@ def test_delete_branch_keeps_commits_and_refuses_current(tmp_path: Path) -> None
     assert {branch["name"] for branch in after["branches"]} == {"main"}
     # Only the pointer went; every commit is still reachable from main.
     assert len(after["commits"]) == commits_before
+
+    # The branch is in Storage and comes back on restore.
+    assert {branch["name"] for branch in client.get("/api/v1/trash").json()["branches"]} == {"source"}
+    assert client.post("/api/v1/branches/restore", params={"name": "source"}).status_code == 200
+    assert {branch["name"] for branch in client.get("/api/v1/repo").json()["branches"]} == {
+        "main",
+        "source",
+    }
+
+    # Permanent delete drops the pointer for good.
+    assert (
+        client.delete("/api/v1/branches", params={"name": "source", "permanent": "true"}).status_code
+        == 204
+    )
+    assert {branch["name"] for branch in client.get("/api/v1/trash").json()["branches"]} == set()
 
     refused = client.delete("/api/v1/branches", params={"name": "main"})
     assert refused.status_code == 422

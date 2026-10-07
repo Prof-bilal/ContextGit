@@ -76,14 +76,28 @@ for F4, with the reuse CLI as the primary path.
 
 ## Packaging
 
-- `desktop/scripts/fetch-vscode-server.mjs` downloads a **pinned** `code-server` release
-  for the target OS/arch into `desktop/build/editor/`.
-- `desktop/package.json` `extraResources` ships `build/editor/` → `resources/editor/`.
-- Installer grows by roughly 150–250 MB (it carries its own Node runtime). It is an
-  extraResource, not a renderer dependency, so the app still runs if it is absent — the
-  Editor panel then shows a "start / install the editor" affordance instead of failing.
-- Extensions come from **Open VSX**, not the Microsoft marketplace — proprietary
-  extensions (Copilot, Microsoft C/C++) are unavailable. Documented as a known limit.
+- `desktop/scripts/fetch-editor.mjs` (`npm run fetch:editor`) downloads a **pinned**
+  `code-server` standalone build for the target OS/arch into `desktop/build/editor/`.
+  It is a self-contained build (its own Node runtime) — no native compilation.
+- `desktop/package.json` `extraResources` ships:
+  - `build/editor/` → `resources/editor/` (the VS Code sidecar), and
+  - `build/extension/` → `resources/extension/` (our editor extensions).
+- `resolveEditorBinary()` finds the binary at `resources/editor/<code-server-*>/bin/code-server`
+  (packaged) or `build/editor/<code-server-*>/bin/code-server` (dev). The sidecar is
+  spawned with the **augmented PATH**, so VS Code's built-in git extension (and the
+  Source Control Graph) can find `git`.
+- Order: `npm run fetch:editor --prefix desktop` **then** `npm run dist --prefix desktop`
+  (which runs the renderer/main/extension builds, the PyInstaller backend, then
+  electron-builder).
+- Installer grows by roughly **200 MB compressed / ~670 MB unpacked** (code-server's
+  bundled Node + a full VS Code). The editor is an extraResource, not a renderer
+  dependency, so the app **still runs without it** — the Editor rail then shows
+  "Editor not installed — run `npm run fetch:editor`" instead of failing.
+- The app installs its bundled extensions into the sidecar's extensions dir under
+  VS Code's required `<publisher>.<name>-<version>` folder name and clears the scan
+  caches, so they load on the next start.
+- Extensions come from our bundle plus **Open VSX** (not the Microsoft marketplace):
+  proprietary extensions (Copilot, Microsoft C/C++) are unavailable. Known limit.
 
 ## Files
 

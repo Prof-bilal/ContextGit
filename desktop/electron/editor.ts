@@ -59,7 +59,10 @@ export class EditorSidecar {
     return { available: Boolean(this.resolveBinary()), running: Boolean(this.child && this.url), url: this.url };
   }
 
-  async start(folder: string | null): Promise<{ ok: boolean; url?: string; error?: string }> {
+  async start(
+    folder: string | null,
+    extraEnv: Record<string, string> = {},
+  ): Promise<{ ok: boolean; url?: string; error?: string }> {
     // Already running on the same folder: reuse it. A different folder restarts.
     if (this.child && this.url && folder === this.folder) return { ok: true, url: this.url };
     if (this.child) this.stop();
@@ -85,7 +88,9 @@ export class EditorSidecar {
     ];
     const child = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PORT: String(port) },
+      // Electron's PATH is bare, so VS Code's built-in git extension (and the
+      // Source Control Graph) cannot find `git` — pass the augmented PATH.
+      env: { ...process.env, PORT: String(port), ...extraEnv },
     });
     child.stdout?.on("data", (chunk: Buffer) => this.onLog(chunk.toString()));
     child.stderr?.on("data", (chunk: Buffer) => this.onLog(chunk.toString()));

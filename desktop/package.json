@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
     "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning",
-    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:extension",
+    "build:extension": "node scripts/build-extension.mjs",
     "build:backend": "bash scripts/build-backend.sh",
     "fetch:editor": "node scripts/fetch-editor.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
@@ -50,6 +51,14 @@
       {
         "from": "build/backend/contextgit-api",
         "to": "backend/contextgit-api"
+      },
+      {
+        "from": "build/editor",
+        "to": "editor"
+      },
+      {
+        "from": "build/extension",
+        "to": "extension"
       }
     ],
     "directories": {

@@ -51,6 +51,9 @@ class Branch(BaseModel):
 
     name: str
     head_commit_id: str
+    # When set, the branch is in Storage (trash): hidden from the normal lists
+    # but recoverable. None means live.
+    deleted_at: datetime | None = None
 
 
 class Tag(BaseModel):
@@ -215,6 +218,9 @@ class Session(BaseModel):
     skills: list[str] = Field(default_factory=list)
     # A stable local port for this run, so two runs' dev servers cannot collide.
     port: int | None = None
+    # When set, the run is in Storage (trash): hidden from normal lists but
+    # recoverable. None means live.
+    deleted_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -319,3 +325,148 @@ class TeamBoard(BaseModel):
     tasks: list[Task]
     messages: list[TeamMessage]
     current_branch: str
+
+
+# ---------- HTTP / API client (the API tab) ----------
+
+HttpBodyKind = Literal["none", "json", "text", "form"]
+HttpAuthKind = Literal["none", "bearer", "basic", "api-key"]
+
+
+class HttpKeyValue(BaseModel):
+    """One enabled/disabled query param or header row."""
+
+    name: str = ""
+    value: str = ""
+    enabled: bool = True
+
+
+class HttpRequestSpec(BaseModel):
+    """A request the user composed: method, URL, params, headers, body, auth."""
+
+    method: str = "GET"
+    url: str = ""
+    params: list[HttpKeyValue] = Field(default_factory=list)
+    headers: list[HttpKeyValue] = Field(default_factory=list)
+    body_kind: HttpBodyKind = "none"
+    body: str = ""
+    auth_kind: HttpAuthKind = "none"
+    auth_value: str = ""
+    timeout_s: float = 30.0
+    verify_tls: bool = True
+    follow_redirects: bool = True
+
+
+class HttpResponseResult(BaseModel):
+    """What came back: status, headers, body (capped), timing and size."""
+
+    status: int
+    reason: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str = ""
+    truncated: bool = False
+    elapsed_ms: int = 0
+    size: int = 0
+    url: str = ""
+
+
+class HttpSavedRequest(BaseModel):
+    """A named request inside a collection."""
+
+    name: str
+    spec: HttpRequestSpec
+
+
+class HttpCollection(BaseModel):
+    """A collection of saved requests, stored as a file in the repo."""
+
+    name: str
+    requests: list[HttpSavedRequest] = Field(default_factory=list)
+
+
+class HttpHistoryEntry(BaseModel):
+    """One executed request, for the history list."""
+
+    id: int
+    method: str
+    url: str
+    status: int
+    elapsed_ms: int
+    size: int
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+# ---------- endpoint graph (the Endpoints tab) ----------
+
+EndpointSourceKind = Literal[
+    "openapi", "python", "django", "javascript", "go", "manual"
+]
+Confidence = Literal["high", "medium", "low"]
+EndpointFieldLocation = Literal["path", "query", "header", "cookie", "body"]
+
+
+class EndpointSource(BaseModel):
+    """Where an endpoint was found, and how much to trust that finding."""
+
+    kind: EndpointSourceKind
+    file: str | None = None
+    line: int | None = None
+    confidence: Confidence = "medium"
+
+
+class EndpointField(BaseModel):
+    """One input the endpoint accepts."""
+
+    name: str
+    location: EndpointFieldLocation
+    type: str | None = None
+    required: bool = False
+
+
+class EndpointProvenance(BaseModel):
+    """Which change produced this endpoint — the join to the context graph.
+
+    `tracked` is False when the code change did not come from a recorded run; in
+    that case only the git commit is reported, and no run is invented.
+    """
+
+    tracked: bool = False
+    code_commit: str | None = None
+    code_commit_summary: str | None = None
+    author: str | None = None
+    committed_at: datetime | None = None
+    run_id: str | None = None
+    run_name: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    context_commit: str | None = None
+    context_branch: str | None = None
+    summary: str | None = None
+    excerpt: str | None = None
+    decisions: list[str] = Field(default_factory=list)
+    dead_ends: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class Endpoint(BaseModel):
+    """One HTTP endpoint of the user's project, with its origin."""
+
+    id: str
+    method: str
+    path: str
+    operation: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    auth: bool = False
+    request_fields: list[EndpointField] = Field(default_factory=list)
+    response_status: int | None = None
+    source: EndpointSource
+    provenance: EndpointProvenance | None = None
+
+
+class EndpointGraph(BaseModel):
+    """What the Endpoints tab shows for one project."""
+
+    project_path: str
+    generated_at: datetime = Field(default_factory=utcnow)
+    scanned_files: int = 0
+    endpoints: list[Endpoint] = Field(default_factory=list)

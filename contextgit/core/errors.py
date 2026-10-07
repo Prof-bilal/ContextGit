@@ -91,3 +91,11 @@ class ProviderNotFound(ContextGitError):
 
 class ProviderConfigError(ContextGitError):
     """A provider is misconfigured (missing key, unsupported base URL, …)."""
+
+
+class HttpRequestError(ContextGitError):
+    """An outbound HTTP request could not be performed or its body parsed."""
+
+
+class CollectionNotFound(ContextGitError):
+    """The referenced API collection does not exist."""

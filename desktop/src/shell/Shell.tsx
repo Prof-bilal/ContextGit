@@ -51,6 +51,13 @@ import TeamMessages from "./team/TeamMessages";
 import TeamRail from "./team/TeamRail";
 import { useTeam } from "./team/useTeam";
 import AgentView from "./views/AgentView";
+import ApiRail from "./rail/ApiRail";
+import ApiView from "./views/ApiView";
+import { useApiClient } from "./api/useApiClient";
+import EndpointsRail from "./rail/EndpointsRail";
+import EndpointsView from "./views/EndpointsView";
+import EndpointOrigin from "./endpoints/EndpointOrigin";
+import { useEndpoints } from "./endpoints/useEndpoints";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
 import AssetsRail, { type AssetFilter } from "./rail/AssetsRail";
@@ -66,6 +73,19 @@ import AssetAgentPanel from "./assets/AssetAgentPanel";
 import NewFolderDialog from "./assets/NewFolderDialog";
 import { useAssets } from "./assets/useAssets";
 import GitView, { type CommitFilter } from "./views/GitView";
+import StorageRail, { type StorageCategory } from "./rail/StorageRail";
+import StorageView, { branchKey, closedKey, sessionKey } from "./views/StorageView";
+import ConfirmDialog from "./storage/ConfirmDialog";
+import {
+  clearClosed,
+  loadClosed,
+  loadOpenPanes,
+  pushClosed,
+  removeClosed,
+  saveOpenPanes,
+  type ClosedPane,
+} from "./storage/recentlyClosed";
+import { useTrash } from "./storage/useTrash";
 import TeamView from "./views/TeamView";
 import UsageView from "./views/UsageView";
 import ProjectPicker from "./workspace/ProjectPicker";
@@ -73,7 +93,19 @@ import { useProjects } from "./workspace/useProjects";
 
 type Theme = "dark" | "light";
 
-const TAB_IDS: TabId[] = ["chat", "code", "assets", "browser", "editor", "agent", "git", "usage"];
+const TAB_IDS: TabId[] = [
+  "chat",
+  "code",
+  "assets",
+  "browser",
+  "editor",
+  "api",
+  "endpoints",
+  "agent",
+  "git",
+  "usage",
+  "storage",
+];
 
 /** Time windows for the Usage tab. */
 const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
@@ -157,6 +189,24 @@ export default function Shell() {
   /** Session id → the one-line briefing typed into that terminal once it is up. */
   const [kickoff, setKickoff] = useState<Record<string, string>>({});
 
+  // ---- Storage tab: trashed runs/branches + panes closed this session ----
+  const {
+    sessions: trashSessions,
+    branches: trashBranches,
+    error: trashError,
+    refresh: refreshTrash,
+  } = useTrash();
+  const [trashCategory, setTrashCategory] = useState<StorageCategory>("all");
+  const [trashQuery, setTrashQuery] = useState("");
+  const [trashSelected, setTrashSelected] = useState<string | null>(null);
+  const [closedPanes, setClosedPanes] = useState<ClosedPane[]>(() => loadClosed());
+  const [purgeTarget, setPurgeTarget] = useState<{
+    kind: "session" | "branch";
+    key: string;
+    label: string;
+  } | null>(null);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
+
   // ---- Chat operates on a real branch; Agent still reads fixtures ----
   const [chatBranch, setChatBranch] = useState("");
   // ---- Assets tab: the app-level asset library ----
@@ -195,6 +245,8 @@ export default function Shell() {
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepo();
+  const apiClient = useApiClient();
+  const endpointsState = useEndpoints(activePath ?? null);
   const {
     providers,
     error: providersError,
@@ -459,13 +511,13 @@ export default function Shell() {
         if (session) await api.deleteSession(session.id);
         await api.deleteBranch(name);
         if (chatBranch === name) setChatBranch(snapshot?.current_branch ?? "");
-        await Promise.all([refreshRepo(), refresh()]);
+        await Promise.all([refreshRepo(), refresh(), refreshTrash()]);
         setBarError(null);
       } catch (cause) {
         setBarError(cause instanceof Error ? cause.message : "Could not delete the conversation");
       }
     },
-    [sessions, chatBranch, snapshot, refreshRepo, refresh],
+    [sessions, chatBranch, snapshot, refreshRepo, refresh, refreshTrash],
   );
 
   /** Switch the repo's current branch, then reload so HEAD-derived state follows. */
@@ -706,7 +758,88 @@ export default function Shell() {
     // The pane owns its PTY and kills it on unmount; just drop it from the layout.
     setOpenIds((current) => current.filter((id) => id !== session.id));
     setActiveId((current) => (current === session.id ? null : current));
+    // Remember it so it can be reopened from Storage → Recently closed.
+    setClosedPanes(
+      pushClosed({
+        id: session.id,
+        name: session.name,
+        kind: session.kind,
+        at: new Date().toISOString(),
+      }),
+    );
   }, []);
+
+  const reopenClosed = useCallback(
+    (pane: ClosedPane) => {
+      setClosedPanes(removeClosed(pane.id));
+      const session = sessions.find((entry) => entry.id === pane.id);
+      if (session) openSession(session);
+      else setBarError("That run no longer exists — it may have been deleted.");
+    },
+    [openSession, sessions],
+  );
+
+  const restoreTrashedSession = useCallback(
+    async (session: Session) => {
+      try {
+        await api.restoreSession(session.id);
+        setBarError(null);
+        await Promise.all([refresh(), refreshTrash()]);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not restore run");
+      }
+    },
+    [refresh, refreshTrash],
+  );
+
+  const restoreTrashedBranch = useCallback(
+    async (branch: { name: string }) => {
+      try {
+        await api.restoreBranch(branch.name);
+        setBarError(null);
+        await Promise.all([refreshRepo(), refreshTrash()]);
+      } catch (cause) {
+        setBarError(cause instanceof Error ? cause.message : "Could not restore branch");
+      }
+    },
+    [refreshRepo, refreshTrash],
+  );
+
+  const purgeSelected = useCallback(async () => {
+    if (!purgeTarget) return;
+    if (purgeTarget.kind === "session") await api.deleteSession(purgeTarget.key, true);
+    else await api.deleteBranch(purgeTarget.key, true);
+    setTrashSelected(null);
+    await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
+  }, [purgeTarget, refresh, refreshRepo, refreshTrash]);
+
+  const emptyTrash = useCallback(async () => {
+    await Promise.all([
+      ...trashSessions.map((session) => api.deleteSession(session.id, true)),
+      ...trashBranches.map((branch) => api.deleteBranch(branch.name, true)),
+    ]);
+    setTrashSelected(null);
+    await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
+  }, [trashSessions, trashBranches, refresh, refreshRepo, refreshTrash]);
+
+  // Reopen the panes that were open before the last reload, once runs load.
+  const restoredPanes = useRef(false);
+  useEffect(() => {
+    if (restoredPanes.current || sessions.length === 0) return;
+    restoredPanes.current = true;
+    const valid = loadOpenPanes().filter((id) => sessions.some((session) => session.id === id));
+    if (valid.length > 0) {
+      setOpenIds(valid);
+      setActiveId(valid[valid.length - 1]);
+    }
+  }, [sessions]);
+
+  // Persist open panes so they survive a reload. Only after the restore pass, so
+  // the empty initial state never clobbers the stored ids.
+  useEffect(() => {
+    if (!restoredPanes.current) return;
+    saveOpenPanes(openIds);
+  }, [openIds]);
 
   const deleteRun = useCallback(
     async (session: Session) => {
@@ -714,11 +847,12 @@ export default function Shell() {
       setActiveId((current) => (current === session.id ? null : current));
       try {
         await remove(session.id);
+        await refreshTrash();
       } catch (cause) {
         setBarError(cause instanceof Error ? cause.message : "Could not delete run");
       }
     },
-    [remove],
+    [remove, refreshTrash],
   );
 
   const commitStaged = useCallback(async () => {
@@ -852,9 +986,12 @@ export default function Shell() {
     { id: "assets", label: "Assets" },
     { id: "browser", label: "Browser" },
     { id: "editor", label: "Editor" },
+    { id: "api", label: "API" },
+    { id: "endpoints", label: "Endpoints" },
     { id: "agent", label: "Agent" },
     { id: "git", label: "Git" },
     { id: "usage", label: "Usage" },
+    { id: "storage", label: "Storage" },
   ];
 
   // ---- Assets tab: counts, folders, tags and the filtered gallery ----
@@ -984,6 +1121,10 @@ export default function Shell() {
             onOpenFolder={() => setProjectOpen(true)}
           />
         );
+      case "api":
+        return <ApiRail client={apiClient} />;
+      case "endpoints":
+        return <EndpointsRail state={endpointsState} />;
       case "agent":
         return (
           <RosterRail
@@ -1025,6 +1166,18 @@ export default function Shell() {
               </button>
             ))}
           </nav>
+        );
+      case "storage":
+        return (
+          <StorageRail
+            sessions={trashSessions}
+            branches={trashBranches}
+            closed={closedPanes}
+            category={trashCategory}
+            onCategory={setTrashCategory}
+            query={trashQuery}
+            onQuery={setTrashQuery}
+          />
         );
     }
   };
@@ -1097,6 +1250,32 @@ export default function Shell() {
         );
       case "usage":
         return <UsageView days={usageDays} providers={providers} />;
+      case "storage":
+        return (
+          <StorageView
+            sessions={trashSessions}
+            branches={trashBranches}
+            closed={closedPanes}
+            category={trashCategory}
+            query={trashQuery}
+            selectedKey={trashSelected}
+            onSelect={setTrashSelected}
+            onRestoreSession={(session) => void restoreTrashedSession(session)}
+            onRestoreBranch={(branch) => void restoreTrashedBranch(branch)}
+            onPurgeSession={(session) =>
+              setPurgeTarget({ kind: "session", key: session.id, label: session.name })
+            }
+            onPurgeBranch={(branch) =>
+              setPurgeTarget({ kind: "branch", key: branch.name, label: branch.name })
+            }
+            onReopen={reopenClosed}
+            onClearClosed={() => setClosedPanes(clearClosed())}
+          />
+        );
+      case "api":
+        return <ApiView client={apiClient} />;
+      case "endpoints":
+        return <EndpointsView state={endpointsState} />;
       default:
         return null;
     }
@@ -1402,6 +1581,82 @@ export default function Shell() {
         ) : (
           <p className="cg-empty-note">Select a commit to inspect it.</p>
         );
+      case "api": {
+        const sent = apiClient.response;
+        return sent ? (
+          <div className="cg-fields">
+            <Field label="Status">
+              {sent.status} {sent.reason}
+            </Field>
+            <Field label="Time">{sent.elapsed_ms} ms</Field>
+            <Field label="Size">{sent.size} bytes</Field>
+            <Field label="Headers">{Object.keys(sent.headers).length}</Field>
+            <Field label="URL">
+              <span className="cg-mono">{sent.url}</span>
+            </Field>
+          </div>
+        ) : (
+          <p className="cg-empty-note">Send a request to inspect the response here.</p>
+        );
+      }
+      case "endpoints":
+        return endpointsState.active ? (
+          <EndpointOrigin endpoint={endpointsState.active} />
+        ) : (
+          <p className="cg-empty-note">Pick an endpoint to see where it came from.</p>
+        );
+      case "storage": {
+        const selected = trashSelected;
+        const session = selected?.startsWith("session:")
+          ? trashSessions.find((entry) => sessionKey(entry.id) === selected)
+          : undefined;
+        const branch = selected?.startsWith("branch:")
+          ? trashBranches.find((entry) => branchKey(entry.name) === selected)
+          : undefined;
+        const pane = selected?.startsWith("closed:")
+          ? closedPanes.find((entry) => closedKey(entry.id) === selected)
+          : undefined;
+        if (session) {
+          return (
+            <div className="cg-fields">
+              <Field label="Type">{session.kind === "chat" ? "Conversation" : "Run"}</Field>
+              <Field label="Branch">{session.branch}</Field>
+              <Field label="Agent">{session.agent ?? "—"}</Field>
+              <Field label="Project">{session.project_path ?? "—"}</Field>
+              <Field label="Moved to Storage">
+                {session.deleted_at ? new Date(session.deleted_at).toLocaleString() : "—"}
+              </Field>
+            </div>
+          );
+        }
+        if (branch) {
+          return (
+            <div className="cg-fields">
+              <Field label="Type">Branch</Field>
+              <Field label="Head">
+                <span className="cg-mono">{branch.head_commit_id.slice(0, 7)}</span>
+              </Field>
+              <Field label="Moved to Storage">
+                {branch.deleted_at ? new Date(branch.deleted_at).toLocaleString() : "—"}
+              </Field>
+            </div>
+          );
+        }
+        if (pane) {
+          return (
+            <div className="cg-fields">
+              <Field label="Type">Closed pane</Field>
+              <Field label="Run">{pane.name}</Field>
+              <Field label="Closed">{new Date(pane.at).toLocaleString()}</Field>
+            </div>
+          );
+        }
+        return (
+          <p className="cg-empty-note">
+            Select an item to inspect it, then restore or delete it for good.
+          </p>
+        );
+      }
     }
   };
 
@@ -1416,6 +1671,14 @@ export default function Shell() {
     }
     if (tab === "editor") {
       // No commit bar: VS Code owns the bottom edge.
+      return null;
+    }
+    if (tab === "api") {
+      // No commit bar: the request editor owns the bottom edge.
+      return null;
+    }
+    if (tab === "endpoints") {
+      // No commit bar: the endpoint detail owns the bottom edge.
       return null;
     }
     if (tab === "agent") {
@@ -1451,6 +1714,66 @@ export default function Shell() {
               aria-haspopup="dialog"
             >
               Review merge…
+            </button>
+          </span>
+        </footer>
+      );
+    }
+    if (tab === "storage") {
+      const selected = trashSelected;
+      const session = selected?.startsWith("session:")
+        ? trashSessions.find((entry) => sessionKey(entry.id) === selected)
+        : undefined;
+      const branch = selected?.startsWith("branch:")
+        ? trashBranches.find((entry) => branchKey(entry.name) === selected)
+        : undefined;
+      const pane = selected?.startsWith("closed:")
+        ? closedPanes.find((entry) => closedKey(entry.id) === selected)
+        : undefined;
+      return (
+        <footer className="cg-bottombar" aria-label="Storage actions">
+          <span className="cg-bb-info">
+            <strong>{session?.name ?? branch?.name ?? pane?.name ?? "Storage"}</strong>
+            <span className="cg-view-sub">
+              {trashSessions.length + trashBranches.length} recoverable
+              {closedPanes.length > 0 ? ` · ${closedPanes.length} closed` : ""}
+            </span>
+          </span>
+          <span className="cg-bb-actions cg-bb-end">
+            <button
+              type="button"
+              className="cg-btn"
+              disabled={!session && !branch && !pane}
+              onClick={() => {
+                if (pane) reopenClosed(pane);
+                else if (session) void restoreTrashedSession(session);
+                else if (branch) void restoreTrashedBranch(branch);
+              }}
+            >
+              {pane ? "Reopen" : "Restore"}
+            </button>
+            <button
+              type="button"
+              className="cg-btn"
+              data-variant="danger"
+              disabled={!session && !branch}
+              onClick={() => {
+                if (session) {
+                  setPurgeTarget({ kind: "session", key: session.id, label: session.name });
+                } else if (branch) {
+                  setPurgeTarget({ kind: "branch", key: branch.name, label: branch.name });
+                }
+              }}
+            >
+              Delete forever
+            </button>
+            <button
+              type="button"
+              className="cg-btn"
+              disabled={trashSessions.length === 0 && trashBranches.length === 0}
+              onClick={() => setEmptyTrashOpen(true)}
+            >
+              Empty Storage
             </button>
           </span>
         </footer>
@@ -1550,7 +1873,13 @@ export default function Shell() {
               ? "Page"
               : tab === "editor"
                 ? "Editor"
-                : "Commit";
+                : tab === "storage"
+                  ? "Storage"
+                  : tab === "api"
+                    ? "Response"
+                    : tab === "endpoints"
+                      ? "Origin"
+                      : "Commit";
 
   const notice =
     sessionsError ??
@@ -1560,7 +1889,8 @@ export default function Shell() {
     fleetError ??
     teamError ??
     mergeQueue.error ??
-    providersError;
+    providersError ??
+    trashError;
 
   // A native WebContentsView (Browser/Editor) is layered above the DOM, so it
   // would cover any dialog. Hide those views while a modal is open.
@@ -1579,7 +1909,9 @@ export default function Shell() {
     assetPreview !== null ||
     assetDelete !== null ||
     newFolderOpen ||
-    agentOpen;
+    agentOpen ||
+    purgeTarget !== null ||
+    emptyTrashOpen;
 
   return (
     <div className="cg-shell" data-cg-theme={theme}>
@@ -1783,6 +2115,7 @@ export default function Shell() {
               chooseBranch(snapshot?.current_branch || branches[0]?.name || "");
             }
             void refreshRepo();
+            void refreshTrash();
           }}
           onClose={() => setBranchToDelete(null)}
         />
@@ -1802,6 +2135,31 @@ export default function Shell() {
           name={conversationToDelete}
           onConfirm={() => deleteConversation(conversationToDelete)}
           onClose={() => setConversationToDelete(null)}
+        />
+      )}
+
+      {purgeTarget && (
+        <ConfirmDialog
+          title={purgeTarget.kind === "branch" ? "Delete branch forever" : "Delete forever"}
+          subtitle={purgeTarget.label}
+          body={
+            purgeTarget.kind === "branch"
+              ? `Permanently drop the "${purgeTarget.label}" branch pointer. Every commit stays in the repository.`
+              : `Permanently delete "${purgeTarget.label}". Its worktree is removed when clean; its commits and branch stay in the repository.`
+          }
+          confirmLabel="Delete forever"
+          onConfirm={purgeSelected}
+          onClose={() => setPurgeTarget(null)}
+        />
+      )}
+
+      {emptyTrashOpen && (
+        <ConfirmDialog
+          title="Empty Storage"
+          body={`Permanently delete ${trashSessions.length} run(s) and ${trashBranches.length} branch pointer(s). Every commit is kept.`}
+          confirmLabel="Empty Storage"
+          onConfirm={emptyTrash}
+          onClose={() => setEmptyTrashOpen(false)}
         />
       )}
 

@@ -6,9 +6,12 @@ export type TabId =
   | "assets"
   | "browser"
   | "editor"
+  | "api"
+  | "endpoints"
   | "agent"
   | "git"
-  | "usage";
+  | "usage"
+  | "storage";
 
 export interface TabDef {
   id: TabId;

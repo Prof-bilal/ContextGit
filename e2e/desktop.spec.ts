@@ -55,8 +55,45 @@ test.beforeAll(async () => {
   git("config", "user.email", "e2e@example.com");
   git("config", "user.name", "e2e");
   fs.writeFileSync(path.join(workdir, "README.md"), "# e2e project\n");
+  // A route for the Endpoints tab to discover (parsed, never imported) and trace
+  // back to its commit. Line 6 is the handler decorator.
+  fs.writeFileSync(
+    path.join(workdir, "app.py"),
+    [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/health")',
+      "def health() -> dict[str, str]:",
+      '    return {"status": "ok"}',
+      "",
+    ].join("\n"),
+  );
   git("add", "-A");
   git("commit", "-q", "-m", "init");
+  fs.writeFileSync(
+    path.join(workdir, "app.py"),
+    [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/health")',
+      "def health() -> dict[str, str]:",
+      '    return {"status": "ok"}',
+      "",
+      "",
+      '@app.post("/notes")',
+      "def add_note(text: str) -> dict[str, str]:",
+      '    return {"text": text}',
+      "",
+    ].join("\n"),
+  );
+  git("add", "-A");
+  git("commit", "-q", "-m", "add endpoints");
 
   // A private userData dir keeps the e2e out of the developer's real app data
   // (projects, theme, asset library). Seed the asset library so the Assets tab
@@ -219,6 +256,61 @@ test("the asset agent uses the provider connector, isolated from Chat", async ()
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+test("the API tab sends a real request and saves it to a collection", async () => {
+  const page = await openShell();
+  await nav(page, "API").click();
+
+  const base = await page.evaluate(
+    () =>
+      (window as unknown as { contextgit?: { apiBase?: string } }).contextgit?.apiBase ?? "",
+  );
+  expect(base).toBeTruthy();
+
+  await expect(page.getByLabel("HTTP method")).toHaveValue("GET");
+  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+
+  // A real round-trip to this app's own backend.
+  await page.getByLabel("Request URL").fill(`${base}/api/v1/health`);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".cg-api-code")).toContainText("200");
+  await expect(page.locator(".cg-api-pre")).toContainText("ok");
+
+  // The request is recorded in the rail's history.
+  await expect(page.locator(".cg-rail")).toContainText("/api/v1/health");
+
+  // Saving stores the composed request as a file in the repo.
+  await page.getByLabel("Collection name").fill("E2E API");
+  await page.getByRole("button", { name: "Save request" }).click();
+  const saved = page.locator(".cg-rail .cg-row", { hasText: "E2E API" });
+  await expect(saved).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete collection E2E API" }).click();
+  await expect(saved).toHaveCount(0);
+});
+
+test("the Endpoints tab lists the project's routes with their origin", async () => {
+  const page = await openShell();
+  await nav(page, "Endpoints").click();
+
+  const row = page.locator(".cg-rail .cg-row", { hasText: "/health" });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("GET");
+  const notes = page.locator(".cg-rail .cg-row", { hasText: "/notes" });
+  await expect(notes).toBeVisible();
+
+  await row.click();
+  await expect(page.locator(".cg-ep-path")).toHaveText("/health");
+  // The handler location comes from the AST scan, not from a spec.
+  await expect(page.locator(".cg-ep")).toContainText("app.py:6");
+  // /health has not changed since the first commit, so that is its origin.
+  await expect(page.locator(".cg-dock")).toContainText("init");
+
+  // The endpoint added by the second commit is traced to that commit.
+  await notes.click();
+  await expect(page.locator(".cg-ep-path")).toHaveText("/notes");
+  await expect(page.locator(".cg-dock")).toContainText("add endpoints");
+});
+
 test("the Browser tab opens real pages and refuses non-http schemes", async () => {
   const page = await openShell();
   await nav(page, "Browser").click();
@@ -256,6 +348,14 @@ test("the Editor tab starts the embedded VS Code sidecar", async () => {
 
   // The rail reports the sidecar is running.
   await expect(page.locator(".cg-rail")).toContainText("Running on");
+
+  // Our graph extension was installed under the name VS Code expects, and scanned.
+  const root = path.resolve(__dirname, "..");
+  const extensionsDir = path.join(root, ".playwright-userdata", "editor", "extensions");
+  expect(
+    fs.existsSync(path.join(extensionsDir, "contextgit.contextgraph-0.1.0", "extension.js")),
+  ).toBe(true);
+  expect(fs.existsSync(path.join(extensionsDir, ".obsolete"))).toBe(false);
 });
 
 test("switch to the Git tab and toggle list/graph", async () => {

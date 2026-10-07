@@ -1,45 +1,55 @@
 # All-in-one workbench — supporting clients: HTTP and database
 
 > Companion to `all-in-one-landscape.md`, `workspace-architecture.md`,
-> `editor-integration.md`, `browser-embedding.md`. Status: proposal.
-> Scope: the **API client** and **DB client** panels. Verified 2026-10-06.
+> `editor-integration.md`, `browser-embedding.md`.
+> Status: **API client built** (Phase 5, 2026-10-07); **DB client: proposal**.
+> Scope: the **API client** and **DB client** panels.
 
 These are the two "everyday" tools a builder opens next to the editor — an HTTP client
 (Postman/Bruno) and a database client (DBeaver/Beekeeper). Both are pure backend +
 DOM panels: no native view, no extra process. Business logic lives in new Python
 packages reached through thin FastAPI routes.
 
-## HTTP / API client
+## HTTP / API client — built
+
+A new top-nav tab, **API**, between Editor and Agent. Same frozen layout as every other
+tab: rail on the left, one view, response details in the dock.
 
 **Backend** — `contextgit/apiclient/`:
 
 - `client.py` executes a request with `httpx` (already a core dependency): method, URL,
-  query, headers, body (`json` | `form` | `raw`), auth helpers (bearer / basic / api-key),
-  timeout, TLS-verify toggle, redirect policy. Returns status, headers, body, elapsed ms
-  and size.
-- `models.py` — Pydantic request/response models.
+  query, headers, body (`json` | `text` | `form`), auth helpers (bearer / basic / api-key),
+  timeout, TLS-verify toggle, redirect policy. Returns status, reason, headers, body
+  (capped at 512 KB), elapsed ms and size. Bad URLs, connection failures and malformed
+  JSON bodies all raise `HttpRequestError`, so the API answers with one readable error.
 - `store.py` — collections.
+- Models live in `contextgit/core/models.py` (`HttpRequestSpec`, `HttpResponseResult`,
+  `HttpCollection`, `HttpSavedRequest`, `HttpHistoryEntry`) because they cross the
+  API boundary.
 
-**Collections are files, not rows.** A collection is
-`.contextgit/api/<collection>.json` in the project — Bruno-style, git-versionable, and
-consistent with ContextGit's "context belongs in the repo" idea. Request **history** is
-ephemeral run data and lives in SQLite.
+**Collections are files, not rows.** A collection is `<repo>/api/<collection>.json` —
+Bruno-style, git-versionable, and consistent with ContextGit's "context belongs in the
+repo" idea. Names are validated (`[A-Za-z0-9][A-Za-z0-9._ -]{0,63}`) so a name can never
+escape the directory. Request **history** is run data and lives in SQLite
+(`0015_http_history.sql`).
 
-Routes (in `contextgit/api/app.py`, schemas in `contextgit/api/schemas.py`):
+Routes (in `contextgit/api/app.py`):
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/http/request` | execute a request, return the full response |
-| GET | `/api/v1/http/collections` | list collections for the active project |
+| POST | `/api/v1/http/request` | execute a request, return the full response, record it |
+| GET | `/api/v1/http/collections` | list the repo's collections |
 | GET | `/api/v1/http/collections/{name}` | read one collection |
 | PUT | `/api/v1/http/collections/{name}` | create/save a collection |
 | DELETE | `/api/v1/http/collections/{name}` | delete a collection |
-| GET | `/api/v1/http/history` | recent requests (capped) |
+| GET | `/api/v1/http/history` | recent requests, newest first (capped) |
 
-**Panel** (`shell/api/ApiPanel.tsx` + `useApiClient.ts`): collection tree, request editor
-(method/URL/params/headers/body/auth tabs), a formatted response viewer (pretty JSON,
-headers, timing, size), and history. "Save to collection" writes the file through the
-backend.
+**Panel** — `desktop/src/shell/views/ApiView.tsx`, `rail/ApiRail.tsx`,
+`api/useApiClient.ts`, `api/KeyValueEditor.tsx`, typed client methods in `lib/api.ts`:
+method + URL bar with Send, Params/Headers/Body/Auth panes, a formatted response viewer
+(pretty JSON, headers, status, timing, size), saved collections in the rail, and the
+request history below them (clicking one loads it back into the editor). Covered by
+`tests/test_http_client.py` and the desktop e2e "API tab sends a real request".
 
 ## Database client
 

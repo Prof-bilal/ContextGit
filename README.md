@@ -48,8 +48,12 @@ that history a mergeable artefact alongside your code.
   pre-flight and conflict blocking.
 - **Paired code + context merge** — merging a run lands its diff on the git
   branch *and* its reasoning on the context branch.
-- **Desktop workbench** — Electron app with Chat / Code / Agent / Git tabs, live
-  terminals (xterm + node-pty) per run.
+- **Desktop workbench** — Electron app with Chat / Code / Assets / Browser / Editor /
+  API / Agent / Git tabs, live terminals (xterm + node-pty) per run, an in-app browser
+  (`WebContentsView`), a file-asset library with an AI agent, an **HTTP client** (send
+  requests, saved collections, history), and an **embedded VS Code** (a bundled
+  `code-server` sidecar) with a ContextGit graph. Editor setup:
+  `npm run fetch:editor --prefix desktop`.
 - **CLI harnesses** — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama,
   Freebuff, Cline, Pi, Kilo Code and Command Code, each with its real brand icon.
   A harness you don't have is installed in the background with a progress bar —
@@ -72,9 +76,9 @@ that history a mergeable artefact alongside your code.
   the project on launch. The board *file* (`.contextgit/team.md` plus the managed
   `AGENTS.md` block) works with every CLI, MCP or not.
 - **Run isolation** — a private local `PORT` per run and a work-in-progress cap.
-- **All-in-one workbench** *(planned)* — the editor, in-app browser, file explorer and
-  HTTP/database clients added as **new tabs** in the existing workbench (same UI and
-  layout, no redesign). Design:
+- **All-in-one workbench** *(planned)* — the database client added as another **new tab**
+  in the existing workbench (same UI and layout, no redesign). HTTP client shipped
+  (`files/api-db-clients.md`); design:
   [`files/all-in-one-landscape.md`](files/all-in-one-landscape.md),
   [`files/workspace-architecture.md`](files/workspace-architecture.md).
 

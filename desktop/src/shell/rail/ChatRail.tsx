@@ -126,8 +126,8 @@ export default function ChatRail({
             <button
               type="button"
               className="cg-icon-btn cg-row-delete"
-              aria-label={`Delete conversation ${conversation.name}`}
-              title="Delete conversation (commits are kept)"
+              aria-label={`Move conversation ${conversation.name} to Storage`}
+              title="Move to Storage (restorable)"
               onClick={() => onDelete(conversation.name)}
             >
               <LuX aria-hidden="true" />

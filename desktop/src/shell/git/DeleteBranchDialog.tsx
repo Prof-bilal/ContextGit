@@ -31,7 +31,7 @@ export default function DeleteBranchDialog({
 
   return (
     <Modal
-      title="Delete branch"
+      title="Move branch to Storage"
       subtitle={name}
       onClose={onClose}
       footer={
@@ -46,14 +46,15 @@ export default function DeleteBranchDialog({
             disabled={busy}
             onClick={() => void remove()}
           >
-            {busy ? "Deleting…" : "Delete branch"}
+            {busy ? "Moving…" : "Move to Storage"}
           </button>
         </>
       }
     >
       <p className="cg-empty-note">
-        This removes the <strong>{name}</strong> pointer only — every commit stays in the repository
-        and is still reachable from other branches.
+        This moves the <strong>{name}</strong> branch to Storage — restore it any time from the
+        Storage tab. Every commit stays in the repository and is still reachable from other
+        branches.
       </p>
       {error && <p className="cg-pane-error">{error}</p>}
     </Modal>
