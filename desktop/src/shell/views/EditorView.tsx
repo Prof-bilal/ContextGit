@@ -14,11 +14,14 @@ export default function EditorView({
   active,
   nonce,
   obscured,
+  onStarted,
 }: {
   active: boolean;
   nonce: number;
   /** A dialog is open; hide the native view so the dialog is not covered. */
   obscured: boolean;
+  /** The sidecar was started here — let the rail refresh its status. */
+  onStarted: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const createdRef = useRef(false);
@@ -86,7 +89,8 @@ export default function EditorView({
       return;
     }
     await show(result.url);
-  }, [show]);
+    onStarted();
+  }, [show, onStarted]);
 
   // (Re)load whenever the tab is opened or the rail asks to (re)start.
   useEffect(() => {

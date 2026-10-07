@@ -169,6 +169,11 @@ export default function AddProviderDialog({
     ]),
   ];
 
+  // A built-in that needs a key cannot be saved without one (it would 401 later).
+  const keyRequired = selected !== "custom" ? (preset?.requires_key ?? true) : false;
+  const hasStoredKey = Boolean(current?.key_hint) || Boolean(preset?.has_key);
+  const needsKeyInput = keyRequired && !hasStoredKey && !apiKey.trim();
+
   return (
     <Modal
       title={
@@ -200,7 +205,7 @@ export default function AddProviderDialog({
             type="button"
             className="cg-btn"
             data-variant="primary"
-            disabled={busy || (selected === "custom" && !baseUrl.trim())}
+            disabled={busy || (selected === "custom" && !baseUrl.trim()) || needsKeyInput}
             onClick={() => void save()}
           >
             {busy ? "Working…" : current ? "Save changes" : "Save & test"}
@@ -324,6 +329,11 @@ export default function AddProviderDialog({
       <p className="cg-empty-note">
         The key is stored on this machine only and is never returned by the API.
       </p>
+      {needsKeyInput && (
+        <p className="cg-form-warn" role="alert">
+          {preset?.label ?? "This provider"} needs an API key — paste it above, then save.
+        </p>
+      )}
 
       {current && (
         <div className="cg-dock-group">

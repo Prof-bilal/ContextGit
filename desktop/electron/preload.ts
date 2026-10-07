@@ -121,13 +121,6 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.invoke("ctx:editor-start") as Promise<import("../shared/editor").EditorStartResult>,
   editorStop: () =>
     ipcRenderer.invoke("ctx:editor-stop") as Promise<import("../shared/editor").EditorStatus>,
-  editorSelectionGet: () =>
-    ipcRenderer.invoke("ctx:editor-selection-get") as Promise<{ providerId: string; model: string }>,
-  editorSelectionSet: (selection: { providerId?: string; model?: string }) =>
-    ipcRenderer.invoke("ctx:editor-selection-set", selection) as Promise<{
-      providerId: string;
-      model: string;
-    }>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

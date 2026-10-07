@@ -66,12 +66,6 @@ export interface ContextGitBridge {
   editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
   editorStart: () => Promise<import("../shared/editor").EditorStartResult>;
   editorStop: () => Promise<import("../shared/editor").EditorStatus>;
-  /** Which editor provider/model inline completions use. */
-  editorSelectionGet: () => Promise<{ providerId: string; model: string }>;
-  editorSelectionSet: (selection: {
-    providerId?: string;
-    model?: string;
-  }) => Promise<{ providerId: string; model: string }>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

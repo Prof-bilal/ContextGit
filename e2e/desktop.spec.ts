@@ -254,49 +254,8 @@ test("the Editor tab starts the embedded VS Code sidecar", async () => {
     { timeout: 60_000 },
   );
 
-  // The Copilot extension was installed into the sidecar's extensions dir.
-  const root = path.resolve(__dirname, "..");
-  const installed = path.join(
-    root,
-    ".playwright-userdata",
-    "editor",
-    "extensions",
-    "contextgit-copilot",
-    "extension.js",
-  );
-  expect(fs.existsSync(installed)).toBe(true);
-
-  // The editor's own provider connector is the shared modal, isolated store.
-  await page.locator(".cg-rail").getByRole("button", { name: "Connect AI provider…" }).click();
-  await expect(page.getByRole("dialog", { name: "Connect the editor" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-});
-
-test("the editor shows a connected completion provider", async () => {
-  const page = await openShell();
-  await nav(page, "Editor").click();
-  await expect(page.locator(".cg-rail")).toContainText("No provider connected");
-
-  await page.getByRole("button", { name: "Connect AI provider…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Connect the editor" });
-  await dialog.getByLabel("Provider").selectOption("custom");
-  await dialog.getByLabel("Label").fill("Test Provider");
-  await dialog.getByLabel("Base URL").fill("http://127.0.0.1:9/v1");
-  await dialog.getByLabel("API key").fill("sk-test-key");
-  await dialog.getByRole("button", { name: /Save/ }).click();
-
-  // The rail reflects the connection immediately (no need to close the dialog).
-  await expect(page.locator(".cg-rail")).toContainText("Inline completions use Test Provider", {
-    timeout: 15_000,
-  });
-
-  // Removing the provider clears the connection and the rail.
-  await page.getByRole("dialog").getByRole("button", { name: "Remove provider" }).click();
-  await expect(page.locator(".cg-rail")).toContainText("No provider connected", {
-    timeout: 10_000,
-  });
-  await page.keyboard.press("Escape");
+  // The rail reports the sidecar is running.
+  await expect(page.locator(".cg-rail")).toContainText("Running on");
 });
 
 test("switch to the Git tab and toggle list/graph", async () => {

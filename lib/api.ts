@@ -172,22 +172,6 @@ export interface AssetAgentResponse {
   actions: AssetAgentAction[];
 }
 
-/** A fill-in-the-middle completion request for the embedded editor. */
-export interface CodeCompleteInput {
-  provider_id: string;
-  model?: string;
-  language?: string;
-  filename?: string;
-  prefix?: string;
-  suffix?: string;
-  max_tokens?: number;
-}
-
-export interface CodeCompleteResponse {
-  text: string;
-  model?: string | null;
-}
-
 export interface Session {
   id: string;
   name: string;
@@ -601,28 +585,6 @@ export const api = {
     }),
   assetAgent: (input: AssetAgentInput) =>
     request<AssetAgentResponse>("/api/v1/assets/agent", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-  // ---------- editor completions (its own isolated provider store) ----------
-  editorProviders: () => request<ProviderInfo[]>("/api/v1/editor-providers"),
-  addEditorProvider: (input: ProviderInput) =>
-    request<ProviderInfo>("/api/v1/editor-providers", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-  deleteEditorProvider: (id: string) =>
-    request<void>(`/api/v1/editor-providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  testEditorProvider: (id: string) =>
-    request<ProviderTestResult>(`/api/v1/editor-providers/${encodeURIComponent(id)}/test`, {
-      method: "POST",
-    }),
-  fetchEditorProviderModels: (id: string) =>
-    request<ProviderModelsResult>(`/api/v1/editor-providers/${encodeURIComponent(id)}/models`, {
-      method: "POST",
-    }),
-  codeComplete: (input: CodeCompleteInput) =>
-    request<CodeCompleteResponse>("/api/v1/code/complete", {
       method: "POST",
       body: JSON.stringify(input),
     }),
