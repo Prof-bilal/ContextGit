@@ -8,6 +8,7 @@ from contextgit.core.models import (
     AuthStyle,
     Branch,
     Commit,
+    DbConnectionSpec,
     EndpointTestFile,
     EndpointTestSuite,
     Message,
@@ -420,3 +421,29 @@ class EndpointGenerateResponse(BaseModel):
     suite: EndpointTestSuite
     overwrote: bool = False
     failure: str | None = None
+
+
+class EndpointBisectRequest(BaseModel):
+    """Find the change that broke behaviour, between a good and a bad commit."""
+
+    project_path: str
+    endpoint_id: str | None = None
+    good: str | None = None
+    bad: str | None = None
+    command: str | None = None
+    provider_id: str | None = None
+
+
+class DbOpenRequest(BaseModel):
+    """Open a connection. The password travels with this request and is stored nowhere."""
+
+    spec: DbConnectionSpec
+    password: str | None = None
+
+
+class DbQueryRequest(BaseModel):
+    """Run one statement on an open connection."""
+
+    connection_id: str
+    sql: str = Field(min_length=1)
+    limit: int | None = None

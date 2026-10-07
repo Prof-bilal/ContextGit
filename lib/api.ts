@@ -675,15 +675,20 @@ export interface ServerStatus {
 }
 
 export type TestStatus = "untested" | "pass" | "fail";
+/** Whether a generated test still describes the endpoint it was written for. */
+export type TestState = "untested" | "fresh" | "stale" | "retired";
 
 export interface EndpointTestFile {
   endpoint_id: string;
   file: string;
+  handler: string | null;
   tests: string[];
   status: TestStatus;
   detail: string | null;
   ran_at: string | null;
   verified_at_commit: string | null;
+  state: TestState;
+  reason: string | null;
 }
 
 export interface EndpointTestSuite {
@@ -691,6 +696,8 @@ export interface EndpointTestSuite {
   files: EndpointTestFile[];
   passed: number;
   failed: number;
+  stale: number;
+  retired: number;
   output: string | null;
 }
 
@@ -699,6 +706,114 @@ export interface EndpointGenerateResponse {
   suite: EndpointTestSuite;
   overwrote: boolean;
   failure: string | null;
+}
+
+/** One change that shaped a file or line, with the reasoning behind it. */
+export interface WhyFinding {
+  code_commit: string | null;
+  summary: string | null;
+  author: string | null;
+  committed_at: string | null;
+  tracked: boolean;
+  run_id: string | null;
+  run_name: string | null;
+  agent: string | null;
+  model: string | null;
+  context_branch: string | null;
+  excerpt: string | null;
+  decisions: string[];
+  dead_ends: string[];
+  open_questions: string[];
+  facts: string[];
+}
+
+export interface WhyAnswer {
+  path: string;
+  line: number | null;
+  as_of: string | null;
+  reasoned: boolean;
+  cached: boolean;
+  note: string | null;
+  findings: WhyFinding[];
+}
+
+/** How one environment variable differs between two runs (hashes, never values). */
+export interface EnvDrift {
+  key: string;
+  change: "added" | "removed" | "changed";
+  before: string | null;
+  after: string | null;
+}
+
+export interface BisectStep {
+  commit: string;
+  summary: string | null;
+  ok: boolean;
+}
+
+export interface BisectResult {
+  project_path: string;
+  command: string;
+  good: string;
+  bad: string;
+  culprit: string | null;
+  culprit_summary: string | null;
+  steps: BisectStep[];
+  probes: number;
+  note: string | null;
+  log: string | null;
+  run_id: string | null;
+  run_name: string | null;
+  decisions: string[];
+  dead_ends: string[];
+  env_drift: EnvDrift[];
+}
+
+// ---------- database client (the DB tab) ----------
+
+export type DbEngine = "sqlite" | "postgres" | "sqlserver";
+
+export interface DbConnectionSpec {
+  name: string;
+  engine: DbEngine;
+  path: string | null;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  user: string | null;
+  ssl: boolean;
+  readonly: boolean;
+}
+
+export interface DbConnectionInfo {
+  id: string;
+  name: string;
+  engine: DbEngine;
+  server_version: string | null;
+  database: string | null;
+  readonly: boolean;
+}
+
+export interface DbColumn {
+  name: string;
+  type: string | null;
+  nullable: boolean;
+}
+
+export interface DbTable {
+  schema_name: string | null;
+  name: string;
+  kind: "table" | "view";
+  columns: DbColumn[];
+}
+
+export interface DbQueryResult {
+  columns: string[];
+  rows: (string | null)[][];
+  row_count: number;
+  truncated: boolean;
+  elapsed_ms: number;
+  statement: string;
 }
 
 export const api = {
@@ -918,6 +1033,79 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ project_path: projectPath, base_url: baseUrl ?? null }),
     }),
+  reconcileEndpointTests: (projectPath: string) =>
+    request<EndpointTestSuite>("/api/v1/endpoints/tests/reconcile", {
+      method: "POST",
+      body: JSON.stringify({ project_path: projectPath }),
+    }),
+  bisectEndpointTests: (params: {
+    projectPath: string;
+    endpointId?: string;
+    good?: string | null;
+    bad?: string | null;
+    command?: string;
+    providerId?: string;
+  }) =>
+    request<BisectResult>("/api/v1/endpoints/tests/bisect", {
+      method: "POST",
+      body: JSON.stringify({
+        project_path: params.projectPath,
+        endpoint_id: params.endpointId ?? null,
+        good: params.good ?? null,
+        bad: params.bad ?? null,
+        command: params.command ?? null,
+        provider_id: params.providerId ?? null,
+      }),
+    }),
+  // ---------- database client (the DB tab) ----------
+  dbDrivers: () => request<Record<string, boolean>>("/api/v1/db/drivers"),
+  dbConnections: () => request<string[]>("/api/v1/db/connections"),
+  dbConnection: (name: string) =>
+    request<DbConnectionSpec>(`/api/v1/db/connections/${encodeURIComponent(name)}`),
+  saveDbConnection: (name: string, spec: DbConnectionSpec) =>
+    request<DbConnectionSpec>(`/api/v1/db/connections/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify(spec),
+    }),
+  deleteDbConnection: (name: string) =>
+    request<void>(`/api/v1/db/connections/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  openDb: (spec: DbConnectionSpec, password?: string) =>
+    request<DbConnectionInfo>("/api/v1/db/open", {
+      method: "POST",
+      body: JSON.stringify({ spec, password: password ?? null }),
+    }),
+  closeDb: (connectionId: string) =>
+    request<boolean>(`/api/v1/db/open/${encodeURIComponent(connectionId)}`, { method: "DELETE" }),
+  dbSchema: (connectionId: string) =>
+    request<DbTable[]>(`/api/v1/db/schema?connection_id=${encodeURIComponent(connectionId)}`),
+  dbQuery: (connectionId: string, sql: string, limit?: number) =>
+    request<DbQueryResult>("/api/v1/db/query", {
+      method: "POST",
+      body: JSON.stringify({ connection_id: connectionId, sql, limit: limit ?? null }),
+    }),
+  // ---------- rationale blame (the Why lens) ----------
+  why: (params: {
+    projectPath: string;
+    path: string;
+    line?: number | null;
+    asOf?: string | null;
+    providerId?: string;
+  }) => {
+    const query = new URLSearchParams({
+      project_path: params.projectPath,
+      path: params.path,
+    });
+    if (params.line) query.set("line", String(params.line));
+    if (params.asOf) query.set("as_of", params.asOf);
+    if (params.providerId) query.set("provider_id", params.providerId);
+    return request<WhyAnswer>(`/api/v1/why?${query.toString()}`);
+  },
+  whyHistory: (projectPath: string, path: string) =>
+    request<WhyFinding[]>(
+      `/api/v1/why/history?project_path=${encodeURIComponent(
+        projectPath,
+      )}&path=${encodeURIComponent(path)}`,
+    ),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
   workspace: (id: string) =>

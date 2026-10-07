@@ -318,6 +318,50 @@ test("the Endpoints tab lists the project's routes with their origin", async () 
   await expect(page.getByRole("button", { name: "Start server" })).toBeEnabled();
 });
 
+test("the Why tab reads a file's history and admits what it cannot know", async () => {
+  const page = await openShell();
+  await nav(page, "Why").click();
+
+  await page.getByLabel("File path").fill("app.py");
+  await page.getByRole("button", { name: "Explain" }).click();
+
+  // The timeline comes from git, so it works without any provider.
+  await expect(
+    page.locator(".cg-rail .cg-row", { hasText: "add endpoints" }),
+  ).toBeVisible();
+  await expect(page.locator(".cg-rail .cg-row", { hasText: "init" })).toBeVisible();
+
+  // The e2e project has no recorded runs, so we say that instead of inventing a why.
+  await expect(page.locator(".cg-ep")).toContainText(
+    "did not come from a recorded run",
+  );
+});
+
+test("the DB tab connects to SQLite and runs a query", async () => {
+  const page = await openShell();
+  await nav(page, "Database").click();
+
+  const dbPath = path.join(path.resolve(__dirname, ".."), ".playwright-workdir", "e2e.sqlite");
+  fs.rmSync(dbPath, { force: true });
+
+  await page.getByLabel("Engine").selectOption("sqlite");
+  await page.getByLabel("Connection name").fill("E2E");
+  await page.getByLabel("Database file").fill(dbPath);
+  await page.getByRole("button", { name: "Connect" }).click();
+
+  // SQLite needs no driver, so this really connects.
+  await expect(page.locator(".cg-db-status")).toContainText("SQLite");
+
+  await page.getByLabel("SQL").fill("SELECT 1 AS hello;");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.locator(".cg-db-table")).toContainText("hello");
+  await expect(page.locator(".cg-db-results")).toContainText("1");
+
+  // Saving keeps the connection (and never the password) for next time.
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".cg-rail .cg-row", { hasText: "E2E" })).toBeVisible();
+});
+
 test("the Browser tab opens real pages and refuses non-http schemes", async () => {
   const page = await openShell();
   await nav(page, "Browser").click();

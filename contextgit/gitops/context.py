@@ -13,8 +13,14 @@ BEGIN = "<!-- contextgit:begin -->"
 END = "<!-- contextgit:end -->"
 
 
-def context_document(runs: list[dict[str, str]], digest: str | None = None) -> str:
-    """The body of the managed block for the given runs, plus an optional digest."""
+def context_document(
+    runs: list[dict[str, str]], digest: str | None = None, rejected: list[str] | None = None
+) -> str:
+    """The body of the managed block for the given runs, plus an optional digest.
+
+    `rejected` is the set of approaches already ruled out for the files in scope —
+    the one piece of memory an agent cannot get from reading the code.
+    """
     lines = [
         "## Parallel runs (managed by ContextGit)",
         "",
@@ -30,6 +36,15 @@ def context_document(runs: list[dict[str, str]], digest: str | None = None) -> s
         if run.get("skills"):
             line += f" · skills: {run['skills']}"
         lines.append(line)
+    if rejected:
+        lines.extend(
+            [
+                "",
+                "### Already rejected here (do not retry without new information)",
+                "",
+                *[f"- {item}" for item in rejected],
+            ]
+        )
     if digest and digest.strip():
         lines.extend(["", digest.strip()])
     return "\n".join(lines)

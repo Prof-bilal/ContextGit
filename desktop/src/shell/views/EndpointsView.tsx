@@ -3,7 +3,13 @@ import EndpointOrigin from "../endpoints/EndpointOrigin";
 import type { EndpointsState } from "../endpoints/useEndpoints";
 
 /** The endpoint graph: what the project exposes, and where each one came from. */
-export default function EndpointsView({ state }: { state: EndpointsState }) {
+export default function EndpointsView({
+  state,
+  onWhy,
+}: {
+  state: EndpointsState;
+  onWhy?: (path: string, line: number | null) => void;
+}) {
   const {
     active,
     loading,
@@ -19,6 +25,8 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
     command,
     setCommand,
     testsFor,
+    bisect,
+    findRegression,
     startServer,
     stopServer,
     generate,
@@ -35,6 +43,8 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
         <span className="cg-view-sub">
           {projectPath ? `${projectPath} · ` : ""}
           {state.endpoints.length} found · {scannedFiles} files scanned
+          {suite?.stale ? ` · ${suite.stale} stale` : ""}
+          {suite?.retired ? ` · ${suite.retired} retired` : ""}
         </span>
         <span className="cg-toolbar-spacer" />
         <button
@@ -186,6 +196,19 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
                   >
                     {test.status}
                   </Chip>
+                  {test.state !== "untested" && (
+                    <Chip
+                      tone={
+                        test.state === "fresh"
+                          ? "ok"
+                          : test.state === "stale"
+                            ? "warn"
+                            : "bad"
+                      }
+                    >
+                      {test.state}
+                    </Chip>
+                  )}
                   <span className="cg-mono cg-view-sub">{test.file}</span>
                   <span className="cg-view-sub">{test.tests.length} tests</span>
                 </span>
@@ -201,7 +224,82 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
                   Start the server to run these tests.
                 </span>
               )}
+              {test && (test.state === "stale" || test.status === "fail") && (
+                <button
+                  type="button"
+                  className="cg-btn cg-btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => void findRegression(active)}
+                  title="Search the project's history for the change that broke this"
+                >
+                  {busy === "bisect" ? "Searching…" : "What broke it?"}
+                </button>
+              )}
             </div>
+            {test?.reason && (
+              <p
+                className={
+                  test.state === "stale" ? "cg-ep-reason cg-api-warn" : "cg-ep-reason cg-api-bad"
+                }
+              >
+                {test.reason}
+              </p>
+            )}
+            {bisect && (
+              <div className="cg-ep-bisect">
+                {bisect.culprit ? (
+                  <>
+                    <p className="cg-ep-operation">
+                      Broke in <span className="cg-mono">{bisect.culprit.slice(0, 7)}</span>{" "}
+                      {bisect.culprit_summary ?? ""}
+                      <span className="cg-view-sub"> · {bisect.probes} probes</span>
+                    </p>
+                    {bisect.run_name && (
+                      <p className="cg-view-sub">From the run “{bisect.run_name}”</p>
+                    )}
+                    {bisect.decisions.length > 0 && (
+                      <>
+                        <h2 className="cg-ep-h2">Decided there</h2>
+                        <ul className="cg-why-list">
+                          {bisect.decisions.map((item, index) => (
+                            <li key={index}>{item}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {bisect.dead_ends.length > 0 && (
+                      <>
+                        <h2 className="cg-ep-h2">Rejected there</h2>
+                        <ul className="cg-why-list">
+                          {bisect.dead_ends.map((item, index) => (
+                            <li key={index} className="cg-api-warn">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {bisect.env_drift.length > 0 && (
+                      <>
+                        <h2 className="cg-ep-h2">Environment drift between runs</h2>
+                        <ul className="cg-why-list">
+                          {bisect.env_drift.map((item) => (
+                            <li key={item.key}>
+                              <span className="cg-mono">{item.key}</span> {item.change}
+                              {item.change === "changed" ? " between the two runs" : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <p className="cg-ep-notice">
+                    {bisect.note ?? "No culprit found in this range."}
+                  </p>
+                )}
+              </div>
+            )}
             {test?.detail && (
               <pre className="cg-api-pre cg-ep-failure">{test.detail}</pre>
             )}
@@ -229,7 +327,21 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
               </dl>
             )}
 
-            <h2 className="cg-ep-h2">Origin</h2>
+            <div className="cg-ep-origin-head">
+              <h2 className="cg-ep-h2">Origin</h2>
+              {active.source.file && onWhy && (
+                <button
+                  type="button"
+                  className="cg-btn cg-btn-sm"
+                  onClick={() =>
+                    onWhy(active.source.file as string, active.source.line ?? null)
+                  }
+                  title="Read why this handler exists, and what was rejected"
+                >
+                  Why is this here?
+                </button>
+              )}
+            </div>
             <EndpointOrigin endpoint={active} />
           </section>
         )}

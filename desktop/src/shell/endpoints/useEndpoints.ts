@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   api,
+  type BisectResult,
   type Confidence,
   type Endpoint,
   type EndpointGraph,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/api";
 
 export type ConfidenceFilter = "all" | Confidence;
-export type Busy = "server" | "generate" | "run" | null;
+export type Busy = "server" | "generate" | "run" | "bisect" | null;
 
 /** The run command is remembered per project, so a guess never has to be redone. */
 const commandKey = (projectPath: string) => `cg-run-command:${projectPath}`;
@@ -42,6 +43,8 @@ export interface EndpointsState {
   command: string;
   setCommand: (value: string) => void;
   testsFor: (endpoint: Endpoint) => EndpointTestFile | undefined;
+  bisect: BisectResult | null;
+  findRegression: (endpoint: Endpoint) => Promise<void>;
   startServer: (command?: string) => Promise<void>;
   stopServer: () => Promise<void>;
   generate: (endpoint: Endpoint) => Promise<void>;
@@ -64,6 +67,7 @@ export function useEndpoints(
   const [suite, setSuite] = useState<EndpointTestSuite | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [command, setCommand] = useState("");
+  const [bisect, setBisect] = useState<BisectResult | null>(null);
 
   const load = useCallback(
     async (force: boolean) => {
@@ -98,7 +102,8 @@ export function useEndpoints(
   const loadSuite = useCallback(async () => {
     if (!projectPath) return;
     try {
-      setSuite(await api.endpointTests(projectPath));
+      // Reconciling also tells us which tests the code has moved out from under.
+      setSuite(await api.reconcileEndpointTests(projectPath));
     } catch {
       // A project without generated tests is the normal state.
     }
@@ -203,7 +208,9 @@ export function useEndpoints(
     setBusy("run");
     setNotice(null);
     try {
-      setSuite(await api.runEndpointTests(projectPath, server?.url ?? undefined));
+      await api.runEndpointTests(projectPath, server?.url ?? undefined);
+      // Re-check freshness: a run re-verifies the tests against today's handler.
+      setSuite(await api.reconcileEndpointTests(projectPath));
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : "Could not run the tests");
     } finally {
@@ -241,6 +248,34 @@ export function useEndpoints(
     [suite],
   );
 
+  // Walk the project's history to find the change that broke this endpoint.
+  const findRegression = useCallback(
+    async (endpoint: Endpoint) => {
+      if (!projectPath) return;
+      const entry = testsFor(endpoint);
+      setBusy("bisect");
+      setNotice(null);
+      try {
+        setBisect(
+          await api.bisectEndpointTests({
+            projectPath,
+            endpointId: endpoint.id,
+            good: entry?.verified_at_commit ?? null,
+            bad: "HEAD",
+            providerId: provider.providerId || undefined,
+          }),
+        );
+      } catch (cause) {
+        setNotice(
+          cause instanceof Error ? cause.message : "Could not search the history",
+        );
+      } finally {
+        setBusy(null);
+      }
+    },
+    [projectPath, testsFor, provider.providerId],
+  );
+
   return {
     projectPath: graph?.project_path ?? projectPath,
     endpoints,
@@ -262,6 +297,8 @@ export function useEndpoints(
     command,
     setCommand,
     testsFor,
+    bisect,
+    findRegression,
     startServer,
     stopServer,
     generate,

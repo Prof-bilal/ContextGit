@@ -18,7 +18,11 @@ INSTRUCTIONS = (
     "each run owns its own files. Call team_status() to see the board, check_ownership(path) "
     "before editing a file you do not own, post_update(text) to tell the others what you "
     "changed, and complete_task(evidence) when your task is done. Your own task id is in "
-    "the CONTEXTGIT_TASK environment variable."
+    "the CONTEXTGIT_TASK environment variable. Before designing anything, call "
+    "dead_ends() and decisions() — they return what earlier runs already rejected and "
+    "decided for the files in your scope, derived from their conversations. why(path, line) "
+    "explains a specific change, and endpoints()/endpoint_tests() list this project's API "
+    "surface and whether its generated tests still hold."
 )
 
 
@@ -64,6 +68,42 @@ def build_server(repo_path: str | None = None) -> MCPServer:
     @server.tool(description="Declare the interface file your task owns (single owner).")
     def publish_contract(path: str, task_id: str | None = None) -> dict[str, Any]:
         return tools.publish_contract(repo(), path, task_id)
+
+    # -- memory: what the runs already decided and rejected for your files --
+
+    @server.tool(
+        description=(
+            "What the recorded runs decided about these files (defaults to your "
+            "task's scope). Derived from the conversation history, not hand-written."
+        )
+    )
+    def memory(path: str | None = None) -> dict[str, Any]:
+        return tools.memory(repo(), path)
+
+    @server.tool(
+        description=(
+            "Approaches already rejected for these files, with the reason. Check "
+            "this before proposing a design — do not retry a dead end blindly."
+        )
+    )
+    def dead_ends(path: str | None = None) -> dict[str, Any]:
+        return tools.dead_ends(repo(), path)
+
+    @server.tool(description="The decisions the recorded runs made about these files, and why.")
+    def decisions(path: str | None = None) -> dict[str, Any]:
+        return tools.decisions(repo(), path)
+
+    @server.tool(description="Why a file or line exists: the reasoning behind the change.")
+    def why(path: str, line: int | None = None, as_of: str | None = None) -> dict[str, Any]:
+        return tools.why_line(repo(), path, line, as_of)
+
+    @server.tool(description="The project's endpoints, with the handler behind each one.")
+    def endpoints(path: str | None = None) -> dict[str, Any]:
+        return tools.endpoints(repo(), path)
+
+    @server.tool(description="The generated API tests, and whether they are still true.")
+    def endpoint_tests(path: str | None = None) -> dict[str, Any]:
+        return tools.endpoint_tests(repo(), path)
 
     return server
 

@@ -4375,3 +4375,145 @@ img.cg-tile-art {
   min-width: 12rem;
   font-size: 0.78rem;
 }
+
+.cg-ep-reason {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* ----------------------------------------------------------------- why -- */
+
+.cg-why-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-why-path {
+  flex: 1 1 16rem;
+  font-size: 0.78rem;
+}
+
+.cg-why-line {
+  flex: 0 0 5rem;
+  font-size: 0.78rem;
+}
+
+.cg-why-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.cg-ep-origin-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cg-ep-dot-none {
+  font-size: 0.72rem;
+}
+
+.cg-ep-bisect {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border-left: 2px solid var(--cg-line-strong);
+}
+
+/* ------------------------------------------------------------------ db -- */
+
+.cg-db-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-db-bar .cg-input {
+  flex: 0 1 9rem;
+  font-size: 0.78rem;
+}
+
+.cg-db-name {
+  flex: 0 1 10rem;
+}
+
+.cg-db-wide {
+  flex: 1 1 16rem;
+}
+
+.cg-db-port {
+  flex: 0 1 5rem;
+}
+
+.cg-db-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--cg-ink-3);
+}
+
+.cg-db-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0 1rem;
+}
+
+.cg-db-query {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem 0;
+}
+
+.cg-db-sql {
+  min-height: 8rem;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.cg-db-results {
+  margin: 0.6rem 1rem 1.2rem;
+  overflow: auto;
+  max-height: 46vh;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+}
+
+.cg-db-table {
+  border-collapse: collapse;
+  width: 100%;
+  font: 400 0.78rem/1.5 "Martian Mono", ui-monospace, monospace;
+}
+
+.cg-db-table th,
+.cg-db-table td {
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  border-bottom: 1px solid var(--cg-line);
+  white-space: nowrap;
+  max-width: 28rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cg-db-table th {
+  position: sticky;
+  top: 0;
+  background: var(--cg-surface-2);
+  color: var(--cg-ink-3);
+}

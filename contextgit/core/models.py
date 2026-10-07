@@ -409,6 +409,7 @@ class EndpointSource(BaseModel):
     kind: EndpointSourceKind
     file: str | None = None
     line: int | None = None
+    line_end: int | None = None
     confidence: Confidence = "medium"
 
 
@@ -501,18 +502,24 @@ class ServerStatus(BaseModel):
 
 
 TestStatus = Literal["untested", "pass", "fail"]
+# Whether a generated test still describes the endpoint it was written for.
+TestState = Literal["untested", "fresh", "stale", "retired"]
 
 
 class EndpointTestFile(BaseModel):
-    """One generated test file: where it lands, and how it last ran."""
+    """One generated test file: where it lands, how it last ran, and whether it
+    still describes the endpoint it was written for."""
 
     endpoint_id: str
     file: str
+    handler: str | None = None
     tests: list[str] = Field(default_factory=list)
     status: TestStatus = "untested"
     detail: str | None = None
     ran_at: datetime | None = None
     verified_at_commit: str | None = None
+    state: TestState = "untested"
+    reason: str | None = None
 
 
 class EndpointTestSuite(BaseModel):
@@ -522,4 +529,177 @@ class EndpointTestSuite(BaseModel):
     files: list[EndpointTestFile] = Field(default_factory=list)
     passed: int = 0
     failed: int = 0
+    stale: int = 0
+    retired: int = 0
     output: str | None = None
+
+
+# ---------- rationale blame (the Why lens) ----------
+
+
+class WhyFinding(BaseModel):
+    """One change that shaped a file or line, with the reasoning behind it."""
+
+    code_commit: str | None = None
+    summary: str | None = None
+    author: str | None = None
+    committed_at: datetime | None = None
+    tracked: bool = False
+    run_id: str | None = None
+    run_name: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    context_branch: str | None = None
+    excerpt: str | None = None
+    decisions: list[str] = Field(default_factory=list)
+    dead_ends: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    facts: list[str] = Field(default_factory=list)
+
+
+class WhyAnswer(BaseModel):
+    """Why a path — and optionally a line — exists, as of a point in history."""
+
+    path: str
+    line: int | None = None
+    as_of: str | None = None
+    reasoned: bool = False
+    cached: bool = False
+    note: str | None = None
+    findings: list[WhyFinding] = Field(default_factory=list)
+
+
+# ---------- scoped memory (what an agent should know before it edits) ----------
+
+
+class MemoryRun(BaseModel):
+    """One past run whose reasoning still governs the paths in scope."""
+
+    run_id: str
+    run_name: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    files: list[str] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    dead_ends: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class MemoryBundle(BaseModel):
+    """The derived, versioned memory for a set of paths — never hand-written."""
+
+    project_path: str
+    scoped_by: str | None = None
+    paths: list[str] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
+    runs: list[MemoryRun] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    dead_ends: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+# ---------- database client (the DB tab) ----------
+
+DbEngine = Literal["sqlite", "postgres", "sqlserver"]
+
+
+class DbConnectionSpec(BaseModel):
+    """How to reach one database. Never carries a password."""
+
+    name: str
+    engine: DbEngine = "postgres"
+    path: str | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    user: str | None = None
+    ssl: bool = True
+    readonly: bool = True
+
+
+class DbConnectionInfo(BaseModel):
+    """A live connection, as the UI sees it."""
+
+    id: str
+    name: str
+    engine: DbEngine
+    server_version: str | None = None
+    database: str | None = None
+    readonly: bool = True
+
+
+class DbColumn(BaseModel):
+    """One column of a table."""
+
+    name: str
+    type: str | None = None
+    nullable: bool = True
+
+
+class DbTable(BaseModel):
+    """One table (or view) and its columns."""
+
+    schema_name: str | None = None
+    name: str
+    kind: Literal["table", "view"] = "table"
+    columns: list[DbColumn] = Field(default_factory=list)
+
+
+class DbQueryResult(BaseModel):
+    """What a query produced: columns, rows, timing, and whether it was capped."""
+
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[str | None]] = Field(default_factory=list)
+    row_count: int = 0
+    truncated: bool = False
+    elapsed_ms: int = 0
+    statement: str = ""
+
+
+class EnvEntry(BaseModel):
+    """One environment variable a run had — the name and a hash, never the value."""
+
+    key: str
+    hash: str
+    source: str
+
+
+EnvChange = Literal["added", "removed", "changed"]
+
+
+class EnvDrift(BaseModel):
+    """How one variable differs between two runs."""
+
+    key: str
+    change: EnvChange
+    before: str | None = None
+    after: str | None = None
+
+
+class BisectStep(BaseModel):
+    """One probe: a commit, and whether the gate passed there."""
+
+    commit: str
+    summary: str | None = None
+    ok: bool
+
+
+class BisectResult(BaseModel):
+    """The change that broke behaviour, with the reasoning behind it."""
+
+    project_path: str
+    command: str
+    good: str
+    bad: str
+    culprit: str | None = None
+    culprit_summary: str | None = None
+    steps: list[BisectStep] = Field(default_factory=list)
+    probes: int = 0
+    note: str | None = None
+    log: str | None = None
+    run_id: str | None = None
+    run_name: str | None = None
+    decisions: list[str] = Field(default_factory=list)
+    dead_ends: list[str] = Field(default_factory=list)
+    env_drift: list[EnvDrift] = Field(default_factory=list)

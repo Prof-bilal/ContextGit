@@ -24,6 +24,7 @@ from contextgit.core.models import (
     Branch,
     Commit,
     CommitKind,
+    EnvEntry,
     MergeQueueEntry,
     MergeStatus,
     Message,
@@ -903,6 +904,24 @@ class SqliteStorage:
             "SELECT id, method, url, status, elapsed_ms, size, created_at FROM http_history"
             " ORDER BY id DESC LIMIT ?",
             (max(1, min(limit, 500)),),
+        ).fetchall()
+
+    # ---------- run environments (names + hashes, never values) ----------
+
+    def record_run_env(self, session_id: str, entries: list[EnvEntry]) -> None:
+        """Store what environment a run had."""
+        with self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO run_env (session_id, key, hash, source)"
+                " VALUES (?, ?, ?, ?)",
+                [(session_id, entry.key, entry.hash, entry.source) for entry in entries],
+            )
+
+    def list_run_env(self, session_id: str) -> list[sqlite3.Row]:
+        """One run's variables, alphabetically."""
+        return self._conn.execute(
+            "SELECT key, hash, source FROM run_env WHERE session_id = ? ORDER BY key",
+            (session_id,),
         ).fetchall()
 
     # ---------- usage (token accounting) ----------

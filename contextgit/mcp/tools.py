@@ -14,7 +14,15 @@ from typing import Any, TypeVar
 from contextgit.core.errors import ContextGitError, RepoNotFound
 from contextgit.core.models import Task
 from contextgit.core.repo import Repo
+from contextgit.endpoints.discover import discover
+from contextgit.endpoints.provenance import graph_with_provenance
+from contextgit.endpoints.staleness import annotate
+from contextgit.endpoints.tests import remembered
+from contextgit.endpoints.why import why_for
 from contextgit.gitops.globs import globs_overlap
+from contextgit.llm.base import LLMProvider
+from contextgit.llm.registry import build_for
+from contextgit.memory.bundle import memory_for
 
 ResultT = TypeVar("ResultT")
 
@@ -208,3 +216,171 @@ def resolved_team(repo: Repo, task_id: str) -> str:
 def _titles(repo: Repo) -> dict[str, str]:
     board = repo.team_board()
     return {task.id: task.title for task in board.tasks} if board else {}
+
+
+# ---------- scoped memory (derived from the runs, never hand-written) ----------
+
+
+def project_path(repo: Repo) -> Path:
+    """The project this agent is working in: its run's project, else the cwd."""
+    task_id = current_task_id()
+    if task_id:
+        try:
+            task = repo.get_task(task_id)
+            if task.session_id:
+                session = repo.get_session(task.session_id)
+                if session.project_path:
+                    return Path(session.project_path)
+        except ContextGitError:
+            pass
+    return Path.cwd()
+
+
+def task_scope(repo: Repo) -> list[str]:
+    """The paths this agent claims — the scope memory is answered for."""
+    task_id = current_task_id()
+    if not task_id:
+        return []
+    try:
+        task = repo.get_task(task_id)
+    except ContextGitError:
+        return []
+    if task.scope:
+        return list(task.scope)
+    return [task.contract] if task.contract else []
+
+
+def memory_provider(repo: Repo) -> LLMProvider | None:
+    """A provider for extractions, if the app has one configured. May be None."""
+    try:
+        records = repo.list_providers()
+    except ContextGitError:
+        return None
+    for record in records:
+        try:
+            adapter, _ = build_for(record.id, records)
+            return adapter
+        except Exception:  # noqa: BLE001 — try the next configured provider
+            continue
+    return None
+
+
+def _resolve_paths(repo: Repo, path: str | None) -> tuple[list[str], str]:
+    if path:
+        return [path], "the path you named"
+    scope = task_scope(repo)
+    if scope:
+        return scope, "your task's scope"
+    return [], "no scope"
+
+
+def memory(repo: Repo, path: str | None = None) -> dict[str, Any]:
+    """What the recorded runs decided — and rejected — for these files."""
+    patterns, how = _resolve_paths(repo, path)
+    if not patterns:
+        return {
+            "note": (
+                "I have no scope to answer for. Pass a path, or start me from a "
+                "task that claims one."
+            )
+        }
+    bundle = memory_for(repo, memory_provider(repo), project_path(repo), patterns, scoped_by=how)
+    return bundle.model_dump(mode="json")
+
+
+def dead_ends(repo: Repo, path: str | None = None) -> dict[str, Any]:
+    """Approaches already rejected for these files — do not retry them blindly."""
+    patterns, how = _resolve_paths(repo, path)
+    if not patterns:
+        return {"note": "No scope to answer for; pass a path.", "dead_ends": []}
+    bundle = memory_for(repo, memory_provider(repo), project_path(repo), patterns, scoped_by=how)
+    return {
+        "scoped_by": how,
+        "files": bundle.files,
+        "dead_ends": bundle.dead_ends,
+        "note": bundle.note,
+    }
+
+
+def decisions(repo: Repo, path: str | None = None) -> dict[str, Any]:
+    """The decisions the recorded runs made about these files, and why."""
+    patterns, how = _resolve_paths(repo, path)
+    if not patterns:
+        return {"note": "No scope to answer for; pass a path.", "decisions": []}
+    bundle = memory_for(repo, memory_provider(repo), project_path(repo), patterns, scoped_by=how)
+    return {
+        "scoped_by": how,
+        "files": bundle.files,
+        "decisions": bundle.decisions,
+        "open_questions": bundle.open_questions,
+        "runs": [
+            {"run": run.run_name or run.run_id, "agent": run.agent, "files": run.files}
+            for run in bundle.runs
+        ],
+        "note": bundle.note,
+    }
+
+
+def why_line(
+    repo: Repo, path: str, line: int | None = None, as_of: str | None = None
+) -> dict[str, Any]:
+    """Why this file (or line) exists: the reasoning behind the change that made it."""
+    answer = why_for(
+        repo,
+        memory_provider(repo),
+        project_path(repo),
+        path,
+        line=line,
+        as_of=as_of,
+    )
+    return answer.model_dump(mode="json")
+
+
+def endpoints(repo: Repo, path: str | None = None) -> dict[str, Any]:
+    """The endpoints of this project, each with the run that introduced it."""
+    project = project_path(repo)
+    graph = discover(project)
+    items = []
+    for endpoint in graph.endpoints:
+        if path and not globs_overlap(path, endpoint.source.file or ""):
+            continue
+        items.append(
+            {
+                "id": endpoint.id,
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "handler": (
+                    f"{endpoint.source.file}:{endpoint.source.line}"
+                    if endpoint.source.file
+                    else None
+                ),
+                "confidence": endpoint.source.confidence,
+                "auth": endpoint.auth,
+            }
+        )
+    return {"project_path": str(project), "count": len(items), "endpoints": items}
+
+
+def endpoint_tests(repo: Repo, path: str | None = None) -> dict[str, Any]:
+    """The generated API tests for this project, and whether they are still true."""
+    project = project_path(repo)
+    suite = annotate(project, remembered(project), graph_with_provenance(repo, project))
+    files = [
+        {
+            "endpoint": item.endpoint_id,
+            "file": item.file,
+            "status": item.status,
+            "state": item.state,
+            "reason": item.reason,
+        }
+        for item in suite.files
+        if not path or globs_overlap(path, item.file)
+    ]
+    return {
+        "project_path": str(project),
+        "passed": suite.passed,
+        "failed": suite.failed,
+        "stale": suite.stale,
+        "retired": suite.retired,
+        "files": files,
+    }

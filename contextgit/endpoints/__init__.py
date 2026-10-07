@@ -16,6 +16,7 @@ from contextgit.endpoints.tests import (
     run_suite,
     test_path_for,
 )
+from contextgit.endpoints.why import reasoning_for, why_for, why_history
 
 __all__ = [
     "ServerSupervisor",
@@ -29,8 +30,11 @@ __all__ = [
     "generate_for_endpoint",
     "graph_with_provenance",
     "load_openapi",
+    "reasoning_for",
     "remembered",
     "run_suite",
     "supervisor",
     "test_path_for",
+    "why_for",
+    "why_history",
 ]

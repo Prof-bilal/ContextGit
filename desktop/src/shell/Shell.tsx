@@ -58,6 +58,12 @@ import EndpointsRail from "./rail/EndpointsRail";
 import EndpointsView from "./views/EndpointsView";
 import EndpointOrigin from "./endpoints/EndpointOrigin";
 import { useEndpoints } from "./endpoints/useEndpoints";
+import WhyRail from "./rail/WhyRail";
+import WhyView, { WhyFindingDetail } from "./views/WhyView";
+import { useWhy, type WhyRequest } from "./why/useWhy";
+import DbRail from "./rail/DbRail";
+import DbView from "./views/DbView";
+import { useDatabase } from "./db/useDatabase";
 import ChatView from "./views/ChatView";
 import CodeView from "./views/CodeView";
 import AssetsRail, { type AssetFilter } from "./rail/AssetsRail";
@@ -101,6 +107,8 @@ const TAB_IDS: TabId[] = [
   "editor",
   "api",
   "endpoints",
+  "why",
+  "db",
   "agent",
   "git",
   "usage",
@@ -262,6 +270,14 @@ export default function Shell() {
     providerId: model.providerId,
     modelId: model.modelId,
   });
+  // "Why is this here?" — asked from the Endpoints tab, answered in the Why tab.
+  const [whyRequest, setWhyRequest] = useState<WhyRequest | null>(null);
+  const dbState = useDatabase();
+  const whyState = useWhy(
+    activePath ?? null,
+    { providerId: model.providerId, modelId: model.modelId },
+    whyRequest,
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [providerDialog, setProviderDialog] = useState<{
     capability?: ProviderCapability;
@@ -992,6 +1008,8 @@ export default function Shell() {
     { id: "editor", label: "Editor" },
     { id: "api", label: "API" },
     { id: "endpoints", label: "Endpoints" },
+    { id: "why", label: "Why" },
+    { id: "db", label: "Database" },
     { id: "agent", label: "Agent" },
     { id: "git", label: "Git" },
     { id: "usage", label: "Usage" },
@@ -1129,6 +1147,10 @@ export default function Shell() {
         return <ApiRail client={apiClient} />;
       case "endpoints":
         return <EndpointsRail state={endpointsState} />;
+      case "why":
+        return <WhyRail state={whyState} />;
+      case "db":
+        return <DbRail state={dbState} />;
       case "agent":
         return (
           <RosterRail
@@ -1279,7 +1301,19 @@ export default function Shell() {
       case "api":
         return <ApiView client={apiClient} />;
       case "endpoints":
-        return <EndpointsView state={endpointsState} />;
+        return (
+          <EndpointsView
+            state={endpointsState}
+            onWhy={(path, line) => {
+              setWhyRequest({ path, line, nonce: Date.now() });
+              setTab("why");
+            }}
+          />
+        );
+      case "why":
+        return <WhyView state={whyState} />;
+      case "db":
+        return <DbView state={dbState} />;
       default:
         return null;
     }
@@ -1609,6 +1643,35 @@ export default function Shell() {
         ) : (
           <p className="cg-empty-note">Pick an endpoint to see where it came from.</p>
         );
+      case "why": {
+        const finding = whyState.answer?.findings[0];
+        return finding ? (
+          <WhyFindingDetail finding={finding} />
+        ) : (
+          <p className="cg-empty-note">
+            Ask why a file or line exists and the reasoning lands here.
+          </p>
+        );
+      }
+      case "db": {
+        const info = dbState.open;
+        return info ? (
+          <div className="cg-fields">
+            <Field label="Connection">{info.name}</Field>
+            <Field label="Engine">{info.engine}</Field>
+            <Field label="Server">
+              <span className="cg-mono">{info.server_version ?? "—"}</span>
+            </Field>
+            <Field label="Database">{info.database ?? "—"}</Field>
+            <Field label="Writes">{info.readonly ? "refused (read-only)" : "allowed"}</Field>
+            <Field label="Schema">{dbState.tables.length} tables/views</Field>
+          </div>
+        ) : (
+          <p className="cg-empty-note">
+            Connect to a database and its details land here.
+          </p>
+        );
+      }
       case "storage": {
         const selected = trashSelected;
         const session = selected?.startsWith("session:")
@@ -1683,6 +1746,14 @@ export default function Shell() {
     }
     if (tab === "endpoints") {
       // No commit bar: the endpoint detail owns the bottom edge.
+      return null;
+    }
+    if (tab === "why") {
+      // No commit bar: the reasoning owns the bottom edge.
+      return null;
+    }
+    if (tab === "db") {
+      // No commit bar: the results grid owns the bottom edge.
       return null;
     }
     if (tab === "agent") {
@@ -1883,7 +1954,11 @@ export default function Shell() {
                     ? "Response"
                     : tab === "endpoints"
                       ? "Origin"
-                      : "Commit";
+                      : tab === "why"
+                        ? "Why"
+                        : tab === "db"
+                          ? "Database"
+                        : "Commit";
 
   const notice =
     sessionsError ??

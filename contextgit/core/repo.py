@@ -37,6 +37,8 @@ from contextgit.core.models import (
     Branch,
     Commit,
     CommitKind,
+    EnvDrift,
+    EnvEntry,
     HttpHistoryEntry,
     MergeQueueEntry,
     Message,
@@ -88,6 +90,7 @@ from contextgit.merge.models import CrossRunConflict, Diff, MergePreview, Paired
 from contextgit.merge.semantic import extract_semantics
 from contextgit.storage.sqlite import SqliteStorage
 from contextgit.verify import detect_gate, run_command
+from contextgit.verify.env import capture_env, diff_env
 
 _DB_NAME = "contextgit.db"
 _ROOT_PARENT = "a3f9c21"
@@ -523,6 +526,10 @@ class Repo:
         self._storage.insert_session(session)
         if session.scope:
             self._storage.insert_claims(session.id, session.scope, session.created_at.isoformat())
+        if project_path:
+            # What this run could see. Best-effort: a capture failure must never
+            # stop a run from starting.
+            self.record_run_env(session.id)
         if project_path and session.worktree_path:
             self.sync_agent_context(project_path, self.shared_context(session.id))
         return session
@@ -730,7 +737,9 @@ class Repo:
         )
 
     def sync_agent_context(self, project_path: str, digest: str | None = None) -> None:
-        """Rewrite the managed AGENTS.md block with runs' scopes and shared context."""
+        """Rewrite the managed AGENTS.md block with runs' scopes, shared context,
+        and the alternatives already rejected in the files these runs own."""
+        sessions = [session for session in self._storage.list_sessions() if session.worktree_path]
         runs = [
             {
                 "name": session.name,
@@ -739,10 +748,54 @@ class Repo:
                 "role": session.role or "",
                 "skills": ", ".join(session.skills),
             }
-            for session in self._storage.list_sessions()
-            if session.worktree_path
+            for session in sessions
         ]
-        write_context_block(project_path, context_document(runs, digest))
+        scope = [glob for session in sessions for glob in session.scope]
+        rejected = self.rejected_alternatives(project_path, scope)
+        write_context_block(project_path, context_document(runs, digest, rejected))
+
+    def rejected_alternatives(
+        self, project_path: str, scope: list[str], *, limit: int = 6
+    ) -> list[str]:
+        """Dead ends recorded for these paths, from extractions we already have.
+
+        Cache-only on purpose: starting a run must never cost an LLM call.
+        """
+        from contextgit.memory.bundle import memory_for  # noqa: PLC0415 — avoids a cycle
+
+        if not scope:
+            return []
+        try:
+            bundle = memory_for(self, None, project_path, scope, scoped_by="run scope")
+        except Exception:
+            return []
+        return bundle.dead_ends[:limit]
+
+    # ---------- run environments (names + hashes, never values) ----------
+
+    def record_run_env(self, session_id: str) -> list[EnvEntry]:
+        """Capture this run's environment, so a later diff can explain a regression."""
+        session = self.get_session(session_id)
+        if not session.project_path:
+            return []
+        try:
+            entries = capture_env(session.project_path, dict(os.environ))
+        except Exception:
+            return []
+        if entries:
+            self._storage.record_run_env(session_id, entries)
+        return entries
+
+    def run_env(self, session_id: str) -> list[EnvEntry]:
+        """One run's recorded variables (names + hashes)."""
+        return [
+            EnvEntry(key=row["key"], hash=row["hash"], source=row["source"])
+            for row in self._storage.list_run_env(session_id)
+        ]
+
+    def env_drift(self, session_id: str, against: str) -> list[EnvDrift]:
+        """How `session_id`'s environment differs from another run's."""
+        return diff_env(self.run_env(against), self.run_env(session_id))
 
     # ---------- team mode (a task graph over parallel runs) ----------
 

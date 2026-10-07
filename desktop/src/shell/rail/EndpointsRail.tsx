@@ -1,4 +1,4 @@
-import type { TestStatus } from "@/lib/api";
+import type { TestState, TestStatus } from "@/lib/api";
 
 import type { EndpointsState } from "../endpoints/useEndpoints";
 
@@ -15,10 +15,17 @@ function dot(confidence: string): string {
   return "cg-ep-dot cg-api-bad";
 }
 
-function badge(status: TestStatus): string {
+function badge(status: TestStatus, state: TestState): string {
+  if (state === "retired") return "cg-ep-badge cg-api-bad";
+  if (state === "stale") return "cg-ep-badge cg-api-warn";
   if (status === "pass") return "cg-ep-badge cg-api-ok";
   if (status === "fail") return "cg-ep-badge cg-api-bad";
   return "cg-ep-badge";
+}
+
+function badgeLabel(status: TestStatus, state: TestState): string {
+  if (state === "stale" || state === "retired") return state;
+  return status;
 }
 
 /** Every endpoint of the project, with how sure we are about each finding. */
@@ -89,8 +96,11 @@ export default function EndpointsRail({ state }: { state: EndpointsState }) {
               />
               <span className="cg-mono">{endpoint.method}</span>
               {test && (
-                <span className={badge(test.status)} aria-label="test status">
-                  {test.status}
+                <span
+                  className={badge(test.status, test.state)}
+                  aria-label="test status"
+                >
+                  {badgeLabel(test.status, test.state)}
                 </span>
               )}
             </span>

@@ -8,6 +8,8 @@ export type TabId =
   | "editor"
   | "api"
   | "endpoints"
+  | "why"
+  | "db"
   | "agent"
   | "git"
   | "usage"

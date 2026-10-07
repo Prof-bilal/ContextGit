@@ -20,6 +20,7 @@ from contextgit.core.models import (
     Message,
     utcnow,
 )
+from contextgit.endpoints.provenance import blame_span
 from contextgit.gitops.repo import Git
 from contextgit.llm.base import LLMProvider
 from contextgit.verify.runner import run_command
@@ -182,8 +183,17 @@ def _write_source(
     target = project / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(header(endpoint) + source + "\n", "utf-8")
+    source_info = endpoint.source
+    handler = (
+        f"{source_info.file}:{source_info.line}"
+        if source_info.file and source_info.line is not None
+        else source_info.file
+    )
     return EndpointTestFile(
-        endpoint_id=endpoint.id, file=relative, tests=_TEST_FUNC.findall(source)
+        endpoint_id=endpoint.id,
+        file=relative,
+        handler=handler,
+        tests=_TEST_FUNC.findall(source),
     )
 
 
@@ -263,7 +273,7 @@ def _generate(
         if passed:
             entry.status = "pass"
             entry.ran_at = utcnow()
-            entry.verified_at_commit = head_commit(root)
+            entry.verified_at_commit = handler_commit(root, endpoint)
             return entry, overwrote, None
         if attempt == 0:
             messages = [
@@ -283,7 +293,7 @@ def _generate(
     entry.status = "fail"
     entry.detail = output[-1800:]
     entry.ran_at = utcnow()
-    entry.verified_at_commit = head_commit(root)
+    entry.verified_at_commit = handler_commit(root, endpoint)
     return entry, overwrote, output[-1800:]
 
 
@@ -295,6 +305,22 @@ def head_commit(project: Path) -> str | None:
     result = git.run("rev-parse", "HEAD", check=False)
     commit = result.stdout.strip()
     return commit or None
+
+
+def handler_commit(project: Path, endpoint: Endpoint) -> str | None:
+    """The commit behind the handler line — what a test verified against.
+
+    Recording the *handler's* commit (not the repo HEAD) is what lets Phase C tell
+    "this endpoint changed under my test" from "unrelated commits happened".
+    """
+    source = endpoint.source
+    if source.file and source.line is not None:
+        found = blame_span(
+            project, source.file, source.line, source.line_end or source.line
+        )
+        if found:
+            return found
+    return head_commit(project)
 
 
 class TestStore:

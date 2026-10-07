@@ -49,7 +49,7 @@ that history a mergeable artefact alongside your code.
 - **Paired code + context merge** — merging a run lands its diff on the git
   branch *and* its reasoning on the context branch.
 - **Desktop workbench** — Electron app with Chat / Code / Assets / Browser / Editor /
-  API / Agent / Git tabs, live terminals (xterm + node-pty) per run, an in-app browser
+  API / Endpoints / Why / Database / Agent / Git tabs, live terminals (xterm + node-pty) per run, an in-app browser
   (`WebContentsView`), a file-asset library with an AI agent, an **HTTP client** (send
   requests, saved collections, history), and an **embedded VS Code** (a bundled
   `code-server` sidecar) with a ContextGit graph. Editor setup:

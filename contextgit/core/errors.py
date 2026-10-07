@@ -107,3 +107,11 @@ class EndpointNotFound(ContextGitError):
 
 class ServerNotRunning(ContextGitError):
     """No server URL is known, so there is nothing to test against."""
+
+
+class DbError(ContextGitError):
+    """A database could not be reached, or a statement could not be run."""
+
+
+class DbConnectionNotFound(ContextGitError):
+    """The referenced live database connection does not exist."""

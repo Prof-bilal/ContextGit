@@ -187,3 +187,19 @@ async def test_stdio_handshake_exposes_the_team_tools(repo: Repo, project: Path,
         "publish_contract",
     } <= names
     assert status is not None
+
+
+def test_memory_tools_are_registered_and_described() -> None:
+    """The memory surface has to be reachable, or no agent will ever use it."""
+    import asyncio
+
+    from contextgit.mcp.server import build_server
+
+    server = build_server("/tmp/contextgit-mcp-tools-check")
+    registered = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+
+    expected = {"memory", "dead_ends", "decisions", "why", "endpoints", "endpoint_tests"}
+    assert expected <= set(registered)
+    # `dead_ends` is the differentiator: its description must tell the agent to use it.
+    description = registered["dead_ends"].description or ""
+    assert "rejected" in description.lower()

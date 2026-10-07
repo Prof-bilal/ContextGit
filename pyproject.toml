@@ -29,6 +29,12 @@ contextgit-mcp = "contextgit.mcp.main:main"
 mcp = [
     "mcp>=2",
 ]
+# Database client: SQLite needs nothing (stdlib). These two are the network
+# engines, imported lazily so a missing driver is a clear message, not a crash.
+db = [
+    "psycopg[binary]>=3.1",
+    "pymssql>=2.2",
+]
 # Document generation (Chat "Document" mode): Markdown needs nothing, the rest
 # need one library each. Missing ones degrade to a clear message.
 export = [
@@ -81,7 +87,18 @@ files = ["contextgit"]
 
 # Document libraries ship no (or partial) type stubs; treat them as untyped.
 [[tool.mypy.overrides]]
-module = ["weasyprint", "reportlab", "reportlab.*", "docx", "docx.*", "pptx", "pptx.*"]
+module = [
+  "weasyprint",
+  "reportlab",
+  "reportlab.*",
+  "docx",
+  "docx.*",
+  "pptx",
+  "pptx.*",
+  "psycopg",
+  "psycopg.*",
+  "pymssql",
+]
 ignore_missing_imports = true
 disallow_untyped_calls = false
 

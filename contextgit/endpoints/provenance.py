@@ -41,6 +41,51 @@ def _blame_commit(project: Path, file: str, line: int) -> str | None:
     return sha
 
 
+def blame_commit(project: Path | str, file: str, line: int) -> str | None:
+    """The commit that last touched one line of one file (public wrapper)."""
+    return _blame_commit(Path(project), file, line)
+
+
+def _is_sha(text: str) -> bool:
+    return len(text) == 40 and all(char in "0123456789abcdef" for char in text)
+
+
+def blame_span(project: Path | str, file: str, start: int, end: int) -> str | None:
+    """The newest commit touching a range — the whole handler, not just line 1.
+
+    Tracking only the decorator line would miss every edit to the body, which is
+    exactly the change that makes a generated test stale.
+    """
+    if end <= start:
+        return _blame_commit(Path(project), file, start)
+    git = Git(project)
+    if not git.is_repo():
+        return None
+    result = git.run("blame", "-L", f"{start},{end}", "--porcelain", "--", file, check=False)
+    if result.returncode != 0 or not result.stdout:
+        return None
+    shas = {
+        line.split(" ", 1)[0]
+        for line in result.stdout.splitlines()
+        if not line.startswith("\t")
+    }
+    shas = {sha for sha in shas if _is_sha(sha) and set(sha) != {"0"}}
+    if not shas:
+        return None
+    candidates = sorted(shas)
+    if len(candidates) == 1:
+        return candidates[0]
+    # Ordering by timestamp is unreliable (commits made in the same second tie),
+    # so pick by reachability: the newest is the one nothing else descends to.
+    for candidate in candidates:
+        if not any(
+            candidate != other and _is_ancestor(Path(project), candidate, other)
+            for other in candidates
+        ):
+            return candidate
+    return candidates[0]
+
+
 def _commit_info(project: Path, sha: str) -> dict[str, str]:
     git = Git(project)
     result = git.run(
@@ -62,14 +107,29 @@ def _branches_containing(project: Path, sha: str) -> set[str]:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
+def _is_ancestor(project: Path, sha: str, ref: str) -> bool:
+    """True when `sha` is reachable from `ref` (so it predates whatever ref is)."""
+    git = Git(project)
+    result = git.run("merge-base", "--is-ancestor", sha, ref, check=False)
+    return result.returncode == 0
+
+
 def _run_for(repo: Repo, project: Path, sha: str) -> Session | None:
-    """The recorded run whose git branch contains this commit, if any."""
+    """The recorded run that *introduced* this commit, if any.
+
+    A run's branch also contains everything that predates it. Crediting the run
+    with those commits would claim authorship of code it merely inherited, so a
+    commit reachable from the run's base is skipped.
+    """
     branches = _branches_containing(project, sha)
     if not branches:
         return None
     for session in repo.list_sessions():
-        if session.git_branch and session.git_branch in branches:
-            return session
+        if not session.git_branch or session.git_branch not in branches:
+            continue
+        if session.base_commit and _is_ancestor(project, sha, session.base_commit):
+            continue
+        return session
     return None
 
 
@@ -98,7 +158,7 @@ def endpoint_provenance(repo: Repo, project: Path | str, endpoint: Endpoint) -> 
     source = endpoint.source
     if not source.file or source.line is None:
         return EndpointProvenance()
-    sha = _blame_commit(root, source.file, source.line)
+    sha = blame_span(root, source.file, source.line, source.line_end or source.line)
     if sha is None:
         return EndpointProvenance()
     info = _commit_info(root, sha)

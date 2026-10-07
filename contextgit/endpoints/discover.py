@@ -255,6 +255,7 @@ class _PythonVisitor(ast.NodeVisitor):
                     kind="python",
                     file=self.relative,
                     line=decorator.lineno,
+                    line_end=node.end_lineno,
                     confidence="low" if dynamic else "high",
                 ),
             )

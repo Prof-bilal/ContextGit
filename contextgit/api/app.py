@@ -1,6 +1,7 @@
 """FastAPI routes are thin validation and serialization wrappers around Repo."""
 
 import asyncio
+import importlib
 import json
 import os
 import threading
@@ -39,7 +40,10 @@ from contextgit.api.schemas import (
     CompareRequest,
     CompareResult,
     CouncilRequest,
+    DbOpenRequest,
+    DbQueryRequest,
     DocumentRequest,
+    EndpointBisectRequest,
     EndpointGenerateRequest,
     EndpointGenerateResponse,
     EndpointRunRequest,
@@ -75,6 +79,8 @@ from contextgit.core.errors import (
     CollectionNotFound,
     CommitNotFound,
     ContextGitError,
+    DbConnectionNotFound,
+    DbError,
     EndpointNotFound,
     GateNotConfigured,
     InvalidMergeResolution,
@@ -98,6 +104,11 @@ from contextgit.core.errors import (
     WorkInProgressLimit,
 )
 from contextgit.core.models import (
+    BisectResult,
+    DbConnectionInfo,
+    DbConnectionSpec,
+    DbQueryResult,
+    DbTable,
     EndpointGraph,
     EndpointTestSuite,
     HttpCollection,
@@ -109,9 +120,12 @@ from contextgit.core.models import (
     ProviderRecord,
     ServerStatus,
     UsageSummary,
+    WhyAnswer,
+    WhyFinding,
     utcnow,
 )
 from contextgit.core.repo import Repo
+from contextgit.dbclient.store import ConnectionStore, registry
 from contextgit.documents import (
     DocumentFormat,
     DocumentInfo,
@@ -128,11 +142,13 @@ from contextgit.documents import (
 )
 from contextgit.endpoints.provenance import graph_with_provenance
 from contextgit.endpoints.serve import fetch_live_openapi, supervisor
+from contextgit.endpoints.staleness import annotate
 from contextgit.endpoints.tests import (
     generate_for_endpoint,
     remembered,
     run_suite,
 )
+from contextgit.endpoints.why import why_for, why_history
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -154,6 +170,7 @@ from contextgit.llm import (
 )
 from contextgit.llm.base import UsageSink
 from contextgit.research import Fetcher, ResearchStore, extract_claims, run_research
+from contextgit.verify.bisect import bisect_gate, oldest_commit
 
 # Content types for a rendered document download.
 _DOCUMENT_MEDIA: dict[str, str] = {
@@ -229,6 +246,7 @@ def create_app(
                 TaskNotFound,
                 TeamNotFound,
                 CollectionNotFound,
+                DbConnectionNotFound,
                 EndpointNotFound,
             ),
         ):
@@ -245,6 +263,7 @@ def create_app(
                 TaskNotReviewable,
                 WorkInProgressLimit,
                 ServerNotRunning,
+                DbError,
             ),
         ):
             status = 409
@@ -952,6 +971,26 @@ def create_app(
             file=entry, suite=remembered(root), overwrote=overwrote, failure=failure
         )
 
+    @app.post("/api/v1/endpoints/tests/reconcile", response_model=EndpointTestSuite)
+    def endpoints_reconcile(
+        body: EndpointRunRequest, current: Repo = repo_dep
+    ) -> EndpointTestSuite:
+        """Check every generated test against the handler it was written for."""
+        root = Path(body.project_path).expanduser()
+        graph = graph_with_provenance(current, root, openapi=_live_openapi(root))
+        return annotate(root, remembered(root), graph)
+
+    @app.get("/api/v1/endpoints/tests/staleness", response_model=EndpointTestSuite)
+    def endpoints_staleness(
+        project_path: str, endpoint_id: str, current: Repo = repo_dep
+    ) -> EndpointTestSuite:
+        """The same check, narrowed to one endpoint's tests."""
+        root = Path(project_path).expanduser()
+        graph = graph_with_provenance(current, root, openapi=_live_openapi(root))
+        suite = annotate(root, remembered(root), graph)
+        suite.files = [item for item in suite.files if item.endpoint_id == endpoint_id]
+        return suite
+
     @app.post("/api/v1/endpoints/tests/run", response_model=EndpointTestSuite)
     def endpoints_run(body: EndpointRunRequest) -> EndpointTestSuite:
         """Run every generated test file against the running server."""
@@ -964,6 +1003,137 @@ def create_app(
                 "or pass the URL you want the tests to hit"
             )
         return run_suite(root, base_url)
+
+    @app.post("/api/v1/endpoints/tests/bisect", response_model=BisectResult)
+    def endpoints_bisect(
+        body: EndpointBisectRequest, current: Repo = repo_dep
+    ) -> BisectResult:
+        """Binary-search the history for the change that broke the gate."""
+        root = Path(body.project_path).expanduser()
+        provider = None
+        if body.provider_id:
+            provider, _ = build_for(body.provider_id, current.list_providers())
+
+        good = body.good
+        if not good and body.endpoint_id:
+            entry = next(
+                (
+                    item
+                    for item in remembered(root).files
+                    if item.endpoint_id == body.endpoint_id
+                ),
+                None,
+            )
+            good = entry.verified_at_commit if entry else None
+        good = good or oldest_commit(root)
+        bad = body.bad or "HEAD"
+        if not good:
+            return BisectResult(
+                project_path=str(root),
+                command=body.command or "",
+                good="",
+                bad=bad,
+                note="This project has no history to walk yet.",
+            )
+        if good == bad:
+            return BisectResult(
+                project_path=str(root),
+                command=body.command or "",
+                good=good,
+                bad=bad,
+                note="Nothing has changed since those tests last passed.",
+            )
+        return bisect_gate(
+            current, root, good=good, bad=bad, command=body.command, provider=provider
+        )
+
+    # ---------- database client (the DB tab) ----------
+
+    @app.get("/api/v1/db/drivers", response_model=dict[str, bool])
+    def db_drivers() -> dict[str, bool]:
+        """Which engines this install can actually use."""
+        available = {"sqlite": True}
+        for engine, module in (("postgres", "psycopg"), ("sqlserver", "pymssql")):
+            try:
+                importlib.import_module(module)
+            except ImportError:
+                available[engine] = False
+            else:
+                available[engine] = True
+        return available
+
+    @app.get("/api/v1/db/connections", response_model=list[str])
+    def db_connections(current: Repo = repo_dep) -> list[str]:
+        """The saved connection names in this repository."""
+        return ConnectionStore(current.root).list()
+
+    @app.get("/api/v1/db/connections/{name}", response_model=DbConnectionSpec)
+    def db_connection(name: str, current: Repo = repo_dep) -> DbConnectionSpec:
+        """One saved connection (never its password)."""
+        return ConnectionStore(current.root).get(name)
+
+    @app.put("/api/v1/db/connections/{name}", response_model=DbConnectionSpec)
+    def db_save_connection(
+        name: str, body: DbConnectionSpec, current: Repo = repo_dep
+    ) -> DbConnectionSpec:
+        """Create or replace a connection spec (a file, and no secrets)."""
+        return ConnectionStore(current.root).save(body.model_copy(update={"name": name}))
+
+    @app.delete("/api/v1/db/connections/{name}", status_code=204)
+    def db_delete_connection(name: str, current: Repo = repo_dep) -> None:
+        ConnectionStore(current.root).delete(name)
+
+    @app.post("/api/v1/db/open", response_model=DbConnectionInfo)
+    def db_open(body: DbOpenRequest) -> DbConnectionInfo:
+        """Open a live connection; the password is used and forgotten."""
+        return registry().open(body.spec, body.password)
+
+    @app.delete("/api/v1/db/open/{connection_id}", response_model=bool)
+    def db_close(connection_id: str) -> bool:
+        """Close one live connection."""
+        return registry().close(connection_id)
+
+    @app.get("/api/v1/db/schema", response_model=list[DbTable])
+    def db_schema(connection_id: str) -> list[DbTable]:
+        """Every table and view with its columns."""
+        return registry().get(connection_id).tables()
+
+    @app.post("/api/v1/db/query", response_model=DbQueryResult)
+    def db_query(body: DbQueryRequest) -> DbQueryResult:
+        """Run one statement, capped, against an open connection."""
+        return registry().get(body.connection_id).query(body.sql, body.limit)
+
+    # ---------- rationale blame (the Why lens) ----------
+
+    @app.get("/api/v1/why", response_model=WhyAnswer)
+    def why(
+        project_path: str,
+        path: str,
+        line: int | None = None,
+        as_of: str | None = None,
+        provider_id: str | None = None,
+        current: Repo = repo_dep,
+    ) -> WhyAnswer:
+        """Why a path or line exists: decisions, rejected alternatives, questions."""
+        provider = None
+        if provider_id:
+            provider, _ = build_for(provider_id, current.list_providers())
+        return why_for(
+            current,
+            provider,
+            Path(project_path).expanduser(),
+            path,
+            line=line,
+            as_of=as_of,
+            with_reasoning=provider is not None,
+        )
+
+    @app.get("/api/v1/why/history", response_model=list[WhyFinding])
+    def why_history_route(
+        project_path: str, path: str, limit: int = 5, current: Repo = repo_dep
+    ) -> list[WhyFinding]:
+        """The timeline of changes to one file, newest first (no LLM call)."""
+        return why_history(current, Path(project_path).expanduser(), path, limit=limit)
 
     # ---------- HTTP client (the API tab) ----------
 
