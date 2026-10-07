@@ -1817,3 +1817,135 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .marquee-track { animation: none; flex-wrap: wrap; }
   .marquee { -webkit-mask-image: none; mask-image: none; }
 }
+
+/* --------------------------------------------------------------- pricing --- */
+/* Plan grid + comparison. Border-led, no shadow; Free is the featured card,
+   paid tiers carry a "Coming soon" flag. Accent stays rare. */
+
+.pricing-hero { padding-top: clamp(40px, 6vw, 72px); }
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s4);
+  align-items: stretch;
+}
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s6);
+  background: var(--paper-lift);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+}
+.plan.is-featured {
+  border-color: var(--signal);
+  border-width: 2px;
+  padding: calc(var(--s6) - 1px);
+}
+.plan-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.plan-name { font-size: 1.25rem; letter-spacing: -0.02em; }
+.plan-flag {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.plan[data-status="live"] .plan-flag { border-color: var(--signal); color: var(--signal); }
+.plan-desc { font-size: 0.875rem; line-height: 1.5; color: var(--ink-2); }
+.plan-price {
+  margin-top: var(--s2);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.plan-price-note { font-size: 0.75rem; color: var(--ink-3); }
+.plan-features {
+  display: grid;
+  gap: var(--s2);
+  flex: 1;
+  margin-top: var(--s2);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.plan-features li { position: relative; padding-inline-start: var(--s4); }
+.plan-features li::before {
+  content: "\2713";
+  position: absolute;
+  inset-inline-start: 0;
+  color: var(--ok);
+  font-weight: 700;
+}
+.plan-more { font-size: 0.6875rem; color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+.plan-cta { margin-top: var(--s3); width: 100%; }
+
+.pricing-more { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s8); }
+
+/* comparison table */
+.compare { font-size: 0.9375rem; }
+.compare th,
+.compare td {
+  text-align: start;
+  vertical-align: top;
+  padding: var(--s3) var(--s4) var(--s3) 0;
+  border-bottom: 1px solid var(--line-strong);
+}
+.compare thead th {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom-color: var(--ink);
+}
+.compare thead th:not(:first-child),
+.compare tbody td { text-align: center; }
+.compare tbody th[scope="row"] { font-weight: 500; color: var(--ink-2); }
+.cmp-group th {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: var(--s6);
+  border-bottom-color: var(--ink);
+}
+.cmp-yes { color: var(--ok); font-weight: 700; }
+.cmp-no { color: var(--ink-3); }
+
+/* free-forever reassurance */
+.free-forever {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s6);
+  margin-top: var(--s6);
+  border-top: 1px solid var(--ink);
+}
+.free-forever li { padding: var(--s6) var(--s6) 0 0; border-bottom: 1px solid var(--line-strong); }
+.free-forever strong { display: block; margin-bottom: var(--s1); font-size: 1.0625rem; }
+.free-forever span { color: var(--ink-2); font-size: 0.9375rem; }
+
+.waitlist { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center; }
+
+@media (max-width: 1040px) {
+  .plans { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .free-forever { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .plans { grid-template-columns: 1fr; }
+  .waitlist .btn { width: 100%; }
+}

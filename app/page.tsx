@@ -8,47 +8,43 @@ import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
 import FleetCanvas from "@/components/fleet-canvas";
 import AppDemo from "@/components/app-demo";
-import ThemeToggle from "@/components/theme-toggle";
+import SiteHeader from "@/components/site-header";
+import SiteFooter from "@/components/site-footer";
+import PricingTiers from "@/components/pricing-tiers";
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
 const AGENT_MARQUEE = ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Aider", "Ollama", "Shell"];
+
+const NAV = [
+  { href: "#top", label: "Overview" },
+  { href: "#fleet", label: "Control tower" },
+  { href: "#problem", label: "The problem" },
+  { href: "#workflow", label: "Workflow" },
+  { href: "#merge", label: "Merge engine" },
+  { href: "#interface", label: "Interface" },
+  { href: "#internals", label: "Internals" },
+  { href: "#status", label: "Status" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "#install", label: "Install" },
+];
+
+const FOOTER_LINKS = [
+  { href: "#problem", label: "The problem" },
+  { href: "#workflow", label: "Workflow" },
+  { href: "#merge", label: "Merge engine" },
+  { href: "#interface", label: "Interface" },
+  { href: "#internals", label: "Internals" },
+  { href: "#status", label: "Status" },
+  { href: "/pricing", label: "Pricing" },
+];
 
 export default function Page() {
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
 
-      <header className="topbar">
-        <div className="topbar-inner">
-          <a className="logo" href="#top" aria-label="ContextGit, back to top">
-            <svg className="logo-mark" viewBox="0 0 32 32" width={28} height={28} aria-hidden="true" focusable="false">
-              <rect width={32} height={32} rx={7} fill="currentColor" />
-              <path d="M9 8v16M9 12c0 6 14 2 14 8" fill="none" stroke="var(--paper)" strokeWidth={2.4} strokeLinecap="round" />
-              <circle cx={9} cy={8} r={2.6} fill="var(--paper)" />
-              <circle cx={9} cy={24} r={2.6} fill="var(--paper)" />
-              <circle cx={23} cy={20} r={3} fill="var(--signal)" />
-            </svg>
-            <span className="logo-word">Context<span className="logo-git">Git</span></span>
-          </a>
-          <details className="menu">
-            <summary>Sections</summary>
-            <ol className="menu-list">
-              <li><a href="#top">Overview</a></li>
-              <li><a href="#fleet">Control tower</a></li>
-              <li><a href="#problem">The problem</a></li>
-              <li><a href="#workflow">Workflow</a></li>
-              <li><a href="#merge">Merge engine</a></li>
-              <li><a href="#interface">Interface</a></li>
-              <li><a href="#internals">Internals</a></li>
-              <li><a href="#status">Status</a></li>
-              <li><a href="#install">Install</a></li>
-            </ol>
-          </details>
-          <ThemeToggle />
-          <a className="btn btn-primary btn-sm" href="#install">Install</a>
-        </div>
-      </header>
+      <SiteHeader links={NAV} cta={{ label: "Install", href: "#install" }} logoHref="#top" />
 
       <nav className="rail" aria-label="Page sections">
         <ol>
@@ -60,7 +56,8 @@ export default function Page() {
           <li><a href="#interface" data-label="Interface"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">06</span><span className="rail-label">Interface</span></a></li>
           <li><a href="#internals" data-label="Internals"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">07</span><span className="rail-label">Internals</span></a></li>
           <li><a href="#status" data-label="Status"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">08</span><span className="rail-label">Status</span></a></li>
-          <li><a href="#install" data-label="Install"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">09</span><span className="rail-label">Install</span></a></li>
+          <li><a href="/pricing" data-label="Pricing"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">09</span><span className="rail-label">Pricing</span></a></li>
+          <li><a href="#install" data-label="Install"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">10</span><span className="rail-label">Install</span></a></li>
         </ol>
       </nav>
 
@@ -467,7 +464,7 @@ export default function Page() {
               <li><h3 className="principle-title">Local-first</h3><p>Everything lives in one SQLite file on your machine. Only the LLM calls leave it.</p></li>
               <li><h3 className="principle-title">Provider-agnostic</h3><p>Every call goes through one adapter. A new provider is one new file.</p></li>
               <li><h3 className="principle-title">Streaming</h3><p>Chat replies stream over server-sent events and append token by token.</p></li>
-              <li><h3 className="principle-title">Out of scope, for now</h3><p>Multi-user auth, cloud sync and real-time collaboration.</p></li>
+              <li><h3 className="principle-title">On the roadmap</h3><p>Cloud sync, teams and real-time collaboration.</p></li>
             </ul>
           </div>
         </section>
@@ -549,10 +546,29 @@ export default function Page() {
           </div>
         </section>
 
+        <section className="section section-tint" id="pricing" data-section aria-labelledby="pricing-teaser-title">
+          <div className="wrap">
+            <header className="section-head reveal">
+              <p className="eyebrow"><span className="eyebrow-no">09</span>Pricing</p>
+              <h2 id="pricing-teaser-title">Free on your machine. Paid to scale.</h2>
+              <p className="lede">
+                The whole local workbench is free, forever. Pro adds the security audit, cloud
+                sync and cloud agents; Team adds collaboration. No numbers yet — early access.
+              </p>
+            </header>
+
+            <div className="reveal"><PricingTiers compact limit={4} /></div>
+
+            <p className="pricing-more reveal" style={d(80)}>
+              <a className="btn btn-primary" href="/pricing">See full pricing <span aria-hidden="true">&rarr;</span></a>
+            </p>
+          </div>
+        </section>
+
         <section className="section section-end" id="install" data-section aria-labelledby="install-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">09</span>Questions</p>
+              <p className="eyebrow"><span className="eyebrow-no">10</span>Questions</p>
               <h2 id="install-title">Before you try it.</h2>
             </header>
 
@@ -579,7 +595,7 @@ export default function Page() {
               </details>
               <details>
                 <summary>Does it support teams?</summary>
-                <p>Not for now. Multi-user auth, cloud sync and real-time collaboration are out of scope until the single-user core is solid.</p>
+                <p>Team mode is local today — tasks, roles and an ownership board across parallel runs. Cloud sync and multi-user collaboration are on the roadmap (see <a href="/pricing">Pricing</a>).</p>
               </details>
             </div>
 
@@ -600,23 +616,7 @@ export default function Page() {
 
       </main>
 
-      <footer className="footer">
-        <div className="wrap footer-inner">
-          <div>
-            <p className="footer-brand">ContextGit</p>
-            <p className="footer-tag">Version control for LLM conversations.</p>
-          </div>
-          <ul className="footer-links">
-            <li><a href="#problem">The problem</a></li>
-            <li><a href="#workflow">Workflow</a></li>
-            <li><a href="#merge">Merge engine</a></li>
-            <li><a href="#interface">Interface</a></li>
-            <li><a href="#internals">Internals</a></li>
-            <li><a href="#status">Status</a></li>
-          </ul>
-          <p className="footer-fine">Local-first. Your history stays in a SQLite file on your machine.</p>
-        </div>
-      </footer>
+      <SiteFooter links={FOOTER_LINKS} />
 
       <CopyButtons />
       <Effects />

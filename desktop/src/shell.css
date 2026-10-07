@@ -435,13 +435,28 @@
   margin-right: 0;
 }
 .cg-row-delete {
+  display: grid;
+  place-items: center;
   width: 1.35rem;
   height: 1.35rem;
   flex: none;
-  font-size: 0.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--cg-ink-3);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
   opacity: 0.4;
-  transition: opacity 120ms var(--cg-ease);
+  transition:
+    opacity 120ms var(--cg-ease),
+    color 120ms var(--cg-ease),
+    background-color 120ms var(--cg-ease);
+}
+.cg-row-delete svg {
+  width: 1em;
+  height: 1em;
 }
 /* A run row's role chip: keep it compact so it never crowds out the delete icon. */
 .cg-role-chip {
@@ -4189,10 +4204,124 @@ img.cg-tile-art {
   font-family: "Martian Mono", ui-monospace, monospace;
 }
 
+/* ---- API rail: collections + history, as titled groups ---- */
+
+.cg-api-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0 0.25rem 0.5rem;
+}
+.cg-api-group > .cg-row {
+  width: 100%;
+  margin: 0.0625rem 0;
+}
+.cg-api-group > .cg-empty-note {
+  padding: 0.15rem 0.5rem;
+}
+
+/* Collections: icon + name, delete revealed on hover */
+.cg-api-collection {
+  padding-right: 0.25rem;
+}
+.cg-api-collection .cg-row {
+  gap: 0.5rem;
+}
+.cg-api-collection-icon {
+  flex: none;
+  color: var(--cg-ink-3);
+  font-size: 0.9rem;
+}
+.cg-api-collection .cg-row[aria-current="true"] .cg-api-collection-icon {
+  color: var(--cg-signal);
+}
+.cg-api-collection .cg-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The "save the current request" action, boxed so it reads as a task */
 .cg-api-save {
   display: flex;
+  flex-direction: column;
   gap: 0.4rem;
-  padding: 0.5rem 0.75rem;
+  margin: 0.1rem 0.25rem 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+  background: var(--cg-surface-2);
+}
+.cg-api-save-title {
+  margin: 0;
+  color: var(--cg-ink-3);
+  font:
+    600 0.6rem/1 "Martian Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cg-api-save-btn {
+  justify-content: center;
+}
+
+/* History: verb + status on one line, the URL underneath */
+.cg-api-history {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+.cg-api-history-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.cg-api-history-status {
+  margin-left: auto;
+  font:
+    600 0.62rem/1 "Martian Mono",
+    monospace;
+}
+.cg-api-method-chip {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 5px;
+  background: var(--cg-bg);
+  color: var(--cg-ink-2);
+  font:
+    700 0.58rem/1.6 "Martian Mono",
+    monospace;
+}
+.cg-api-method-chip[data-method="GET"] {
+  color: var(--cg-ok);
+  border-color: color-mix(in srgb, var(--cg-ok) 40%, transparent);
+}
+.cg-api-method-chip[data-method="POST"] {
+  color: var(--cg-warn);
+  border-color: color-mix(in srgb, var(--cg-warn) 40%, transparent);
+}
+.cg-api-method-chip[data-method="PUT"] {
+  color: #5aa9ff;
+  border-color: color-mix(in srgb, #5aa9ff 40%, transparent);
+}
+.cg-api-method-chip[data-method="PATCH"] {
+  color: #b39dff;
+  border-color: color-mix(in srgb, #b39dff 40%, transparent);
+}
+.cg-api-method-chip[data-method="DELETE"] {
+  color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 40%, transparent);
+}
+.cg-api-history-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink-3);
+  font:
+    400 0.72rem/1.3 "Martian Mono",
+    ui-monospace,
+    monospace;
 }
 
 .cg-api-response {
