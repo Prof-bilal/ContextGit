@@ -47,6 +47,7 @@ async function waitForHealth(url: string): Promise<boolean> {
 export class EditorSidecar {
   private child: ChildProcess | null = null;
   private url: string | null = null;
+  private folder: string | null = null;
 
   constructor(
     private readonly resolveBinary: () => string | null,
@@ -59,7 +60,9 @@ export class EditorSidecar {
   }
 
   async start(folder: string | null): Promise<{ ok: boolean; url?: string; error?: string }> {
-    if (this.child && this.url) return { ok: true, url: this.url };
+    // Already running on the same folder: reuse it. A different folder restarts.
+    if (this.child && this.url && folder === this.folder) return { ok: true, url: this.url };
+    if (this.child) this.stop();
     const binary = this.resolveBinary();
     if (!binary) return { ok: false, error: "The editor is not installed. Run `npm run fetch:editor`." };
 
@@ -99,6 +102,7 @@ export class EditorSidecar {
       return { ok: false, error: "The editor did not start in time." };
     }
     this.url = url;
+    this.folder = folder;
     return { ok: true, url };
   }
 
@@ -109,5 +113,6 @@ export class EditorSidecar {
     }
     this.child = null;
     this.url = null;
+    this.folder = null;
   }
 }

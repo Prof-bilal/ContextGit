@@ -186,6 +186,25 @@ class AssetAgentResponse(BaseModel):
     actions: list[dict[str, object]] = Field(default_factory=list)
 
 
+class CodeCompleteRequest(BaseModel):
+    """A fill-in-the-middle completion request from the editor extension."""
+
+    provider_id: str = ""
+    model: str | None = None
+    language: str = ""
+    filename: str = ""
+    prefix: str = ""
+    suffix: str = ""
+    max_tokens: int = 128
+
+
+class CodeCompleteResponse(BaseModel):
+    """The completion text to show as ghost text (already cleaned)."""
+
+    text: str
+    model: str | None = None
+
+
 class CompareRequest(BaseModel):
     """Prompt to send to two branches for side-by-side comparison."""
 

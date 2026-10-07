@@ -145,6 +145,11 @@ export default function AddProviderDialog({
   const drop = async (id: string) => {
     try {
       await remove(id);
+      if (current?.id === id) {
+        setCurrent(null);
+        setTested(null);
+        setModels(null);
+      }
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not remove the provider");
@@ -153,6 +158,16 @@ export default function AddProviderDialog({
 
   const preset = presets.find((entry) => entry.id === selected);
   const brand = brandFor(current?.id ?? selected, label || current?.label || "P");
+
+  // Model choices: fetched live models, the preset's static list and any custom
+  // value, as a dropdown so a model can be picked rather than typed.
+  const modelOptions = [
+    ...new Set([
+      ...(models?.models ?? []),
+      ...(preset?.models ?? []),
+      ...(defaultModel ? [defaultModel] : []),
+    ]),
+  ];
 
   return (
     <Modal
@@ -171,6 +186,16 @@ export default function AddProviderDialog({
           <button type="button" className="cg-btn" onClick={onClose}>
             Close
           </button>
+          {current && (
+            <button
+              type="button"
+              className="cg-btn"
+              data-variant="danger"
+              onClick={() => current && void drop(current.id)}
+            >
+              Remove provider
+            </button>
+          )}
           <button
             type="button"
             className="cg-btn"
@@ -258,13 +283,29 @@ export default function AddProviderDialog({
           <label className="cg-kicker" htmlFor="cg-provider-model">
             Default model
           </label>
-          <input
-            id="cg-provider-model"
-            className="cg-text-input"
-            value={defaultModel}
-            onChange={(event) => setDefaultModel(event.target.value)}
-            placeholder="optional"
-          />
+          {modelOptions.length > 0 ? (
+            <select
+              id="cg-provider-model"
+              className="cg-text-input"
+              value={defaultModel}
+              onChange={(event) => setDefaultModel(event.target.value)}
+            >
+              <option value="">(provider default)</option>
+              {modelOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="cg-provider-model"
+              className="cg-text-input"
+              value={defaultModel}
+              onChange={(event) => setDefaultModel(event.target.value)}
+              placeholder="fetch models to pick one…"
+            />
+          )}
         </span>
       </div>
 

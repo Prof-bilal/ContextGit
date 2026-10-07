@@ -33,6 +33,8 @@ from contextgit.api.schemas import (
     CheckoutRequest,
     ClaimCheckRequest,
     ClaimCheckResult,
+    CodeCompleteRequest,
+    CodeCompleteResponse,
     CommitRequest,
     CommitResponse,
     CommitStagedRequest,
@@ -63,6 +65,15 @@ from contextgit.api.schemas import (
     TeamCreateRequest,
     TeamGateRequest,
     TeamMessageRequest,
+)
+from contextgit.code.completion import (
+    SYSTEM_PROMPT as CODE_COMPLETE_SYSTEM,
+)
+from contextgit.code.completion import (
+    build_prompt as build_completion_prompt,
+)
+from contextgit.code.completion import (
+    clean_completion as clean_completion_text,
 )
 from contextgit.core.errors import (
     BranchNotFound,
@@ -820,6 +831,111 @@ def create_app(
             raise ProviderConfigError(str(exc)) from exc
         return AssetAgentResponse(actions=actions)
 
+    # ---------- editor providers (the completion store) ----------
+
+    @app.get("/api/v1/editor-providers", response_model=list[ProviderInfo])
+    def editor_providers(
+        capability: ProviderCapability | None = None, current: Repo = repo_dep
+    ) -> list[ProviderInfo]:
+        """The editor's own provider catalog, separate from Chat and the agent."""
+        return all_provider_infos(current.list_editor_providers(), capability=capability)
+
+    @app.post("/api/v1/editor-providers", status_code=201, response_model=ProviderInfo)
+    def add_editor_provider(body: ProviderUpsertRequest, current: Repo = repo_dep) -> ProviderInfo:
+        """Add or enable an editor provider; stored apart from the others."""
+        provider_id = body.id or _slug(body.label or "")
+        if not provider_id:
+            raise ProviderConfigError("a provider needs an id or a label")
+        existing = current.get_editor_provider(provider_id)
+        saved = current.save_editor_provider(_provider_record(body, provider_id, existing))
+        return provider_info(effective_spec(saved), saved, is_builtin=saved.id in BUILTIN_BY_ID)
+
+    @app.delete("/api/v1/editor-providers/{provider_id}", status_code=204)
+    def remove_editor_provider(provider_id: str, current: Repo = repo_dep) -> None:
+        """Forget a stored editor provider; a built-in reverts to unconfigured."""
+        current.delete_editor_provider(provider_id)
+
+    @app.post("/api/v1/editor-providers/{provider_id}/test", response_model=ProviderTestResult)
+    def test_editor_provider(provider_id: str, current: Repo = repo_dep) -> ProviderTestResult:
+        """A tiny completion against the editor's provider — a bad key fails here."""
+        records = current.list_editor_providers()
+        resolved = resolve_provider(provider_id, records)
+        started = time.perf_counter()
+        try:
+            adapter, _ = build_for(provider_id, records)
+            adapter.complete(
+                [Message(role="user", content="ping")],
+                model=resolved.model or "default",
+                max_tokens=1,
+            )
+        except Exception as exc:
+            latency = int((time.perf_counter() - started) * 1000)
+            return ProviderTestResult(
+                ok=False,
+                latency_ms=latency,
+                model=resolved.model,
+                error=_redact(str(exc), resolved.api_key),
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+        return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
+
+    @app.post(
+        "/api/v1/editor-providers/{provider_id}/models", response_model=ProviderModelsResult
+    )
+    def fetch_editor_provider_models(
+        provider_id: str, current: Repo = repo_dep
+    ) -> ProviderModelsResult:
+        """`GET {base}/models` when supported, else the static list; persists it."""
+        adapter, resolved = build_for(provider_id, current.list_editor_providers())
+        models = resolved.spec.models
+        source: Literal["live", "static"] = "static"
+        lister = getattr(adapter, "list_models", None)
+        if resolved.spec.models_endpoint and callable(lister):
+            try:
+                models = list(lister())
+                source = "live"
+            except Exception:
+                models = resolved.spec.models
+                source = "static"
+        record = current.get_editor_provider(provider_id) or _record_from_spec(resolved.spec)
+        record.models = models
+        record.updated_at = utcnow()
+        current.save_editor_provider(record)
+        return ProviderModelsResult(models=models, source=source)
+
+    # ---------- code completion (fill-in-the-middle for the editor) ----------
+
+    @app.post("/api/v1/code/complete", response_model=CodeCompleteResponse)
+    def code_complete(body: CodeCompleteRequest, current: Repo = repo_dep) -> CodeCompleteResponse:
+        """One completion: the code around the cursor in, the inserted text out."""
+        if not _completion_allowed():
+            raise HTTPException(status_code=429, detail="Too many completion requests")
+        records = current.list_editor_providers()
+        provider_id = body.provider_id
+        if not provider_id:
+            # Empty means "use the first provider the user connected for the editor".
+            if not records:
+                raise ProviderConfigError("Connect a provider for the editor first")
+            provider_id = records[0].id
+        adapter, resolved = build_for(provider_id, records)
+        model = body.model or resolved.model or "gpt-4o-mini"
+        messages = [
+            Message(role="system", content=CODE_COMPLETE_SYSTEM),
+            Message(
+                role="user",
+                content=build_completion_prompt(
+                    body.language, body.filename, body.prefix, body.suffix
+                ),
+            ),
+        ]
+        try:
+            text = adapter.complete(
+                messages, model=model, max_tokens=body.max_tokens, temperature=0
+            )
+        except Exception as exc:
+            raise ProviderConfigError(_redact(str(exc), resolved.api_key)) from exc
+        return CodeCompleteResponse(text=clean_completion_text(text), model=model)
+
     # ---------- usage (merged token accounting across every surface) ----------
     @app.get("/api/v1/usage", response_model=UsageSummary)
     def usage(days: int | None = None, current: Repo = repo_dep) -> UsageSummary:
@@ -1387,6 +1503,20 @@ def _usage_collector() -> tuple[list[tuple[int, int]], UsageSink]:
         box.append((prompt_tokens, completion_tokens))
 
     return box, sink
+
+
+_completion_hits: list[float] = []
+
+
+def _completion_allowed() -> bool:
+    """A crude per-second cap so a runaway editor cannot hammer the provider."""
+    now = time.time()
+    while _completion_hits and now - _completion_hits[0] > 1.0:
+        _completion_hits.pop(0)
+    if len(_completion_hits) >= 12:
+        return False
+    _completion_hits.append(now)
+    return True
 
 
 def _slug(text: str) -> str:

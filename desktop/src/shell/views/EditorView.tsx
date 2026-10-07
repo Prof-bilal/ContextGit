@@ -10,7 +10,16 @@ type State = "checking" | "absent" | "starting" | "ready" | "error";
  * shared `WebContentsView` primitive. The sidecar is started on demand; until
  * then this shows a start card.
  */
-export default function EditorView({ active, nonce }: { active: boolean; nonce: number }) {
+export default function EditorView({
+  active,
+  nonce,
+  obscured,
+}: {
+  active: boolean;
+  nonce: number;
+  /** A dialog is open; hide the native view so the dialog is not covered. */
+  obscured: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const createdRef = useRef(false);
   const [state, setState] = useState<State>("checking");
@@ -87,10 +96,10 @@ export default function EditorView({ active, nonce }: { active: boolean; nonce: 
   useEffect(() => {
     const bridge = window.contextgit;
     if (!bridge) return;
-    const visible = active && state === "ready";
+    const visible = active && state === "ready" && !obscured;
     bridge.viewSetVisible(VIEW_ID, visible);
     if (visible) requestAnimationFrame(syncBounds);
-  }, [active, state, syncBounds]);
+  }, [active, state, obscured, syncBounds]);
 
   useEffect(() => {
     const host = hostRef.current;

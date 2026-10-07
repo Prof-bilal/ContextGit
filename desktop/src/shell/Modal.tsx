@@ -1,6 +1,9 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { LuX } from "react-icons/lu";
 
+/** Topmost-modal tracking so Escape closes only the front dialog. */
+const modalStack: symbol[] = [];
+
 /**
  * Shared dialog shell: backdrop click closes, Esc closes, Tab is trapped, focus
  * returns to the trigger on close. Used by the read-only run sheets.
@@ -29,6 +32,25 @@ export default function Modal({
     return () => restoreRef.current?.focus?.();
   }, []);
 
+  // Escape closes the front-most dialog even when focus sits outside it (e.g.
+  // after a button that removed itself).
+  useEffect(() => {
+    const id = Symbol("modal");
+    modalStack.push(id);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (modalStack[modalStack.length - 1] !== id) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      const index = modalStack.indexOf(id);
+      if (index >= 0) modalStack.splice(index, 1);
+    };
+  }, [onClose]);
+
   return (
     <div className="cg-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <div
@@ -39,10 +61,6 @@ export default function Modal({
         ref={dialogRef}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onClose();
-          }
           if (event.key === "Tab") {
             const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
               'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',

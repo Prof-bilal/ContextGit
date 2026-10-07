@@ -473,6 +473,43 @@ function resolveEditorBinary(): string | null {
 
 let editorSidecar: EditorSidecar | null = null;
 
+/** Which editor provider/model completions use (persisted for the extension). */
+interface EditorSelection {
+  providerId: string;
+  model: string;
+}
+
+function editorSelectionFile(): string {
+  return path.join(app.getPath("userData"), "editor", "selection.json");
+}
+
+function readEditorSelection(): EditorSelection {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(editorSelectionFile(), "utf8")) as Partial<EditorSelection>;
+    return {
+      providerId: typeof parsed.providerId === "string" ? parsed.providerId : "",
+      model: typeof parsed.model === "string" ? parsed.model : "",
+    };
+  } catch {
+    return { providerId: "", model: "" };
+  }
+}
+
+ipcMain.handle("ctx:editor-selection-get", () => readEditorSelection());
+ipcMain.handle("ctx:editor-selection-set", (_event, selection: Partial<EditorSelection>) => {
+  const next: EditorSelection = {
+    providerId: typeof selection.providerId === "string" ? selection.providerId : "",
+    model: typeof selection.model === "string" ? selection.model : "",
+  };
+  try {
+    fs.mkdirSync(path.dirname(editorSelectionFile()), { recursive: true });
+    fs.writeFileSync(editorSelectionFile(), `${JSON.stringify(next, null, 2)}\n`);
+  } catch {
+    // best effort
+  }
+  return next;
+});
+
 function editor(): EditorSidecar {
   if (!editorSidecar) {
     editorSidecar = new EditorSidecar(
@@ -483,8 +520,55 @@ function editor(): EditorSidecar {
   return editorSidecar;
 }
 
+/** The built Copilot extension: bundled under resources (packaged) or build/ (dev). */
+function editorExtensionSource(): string | null {
+  const dir = isDev
+    ? path.join(app.getAppPath(), "build", "extension", "contextgit-copilot")
+    : path.join(process.resourcesPath, "extension", "contextgit-copilot");
+  return fs.existsSync(path.join(dir, "extension.js")) ? dir : null;
+}
+
+/**
+ * Install our extension into the sidecar's extensions dir and point it at the
+ * backend, before code-server starts.
+ */
+function prepareEditor(): void {
+  const dataDir = path.join(app.getPath("userData"), "editor");
+  const source = editorExtensionSource();
+  if (source) {
+    try {
+      const target = path.join(dataDir, "extensions", "contextgit-copilot");
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.cpSync(source, target, { recursive: true });
+    } catch {
+      // best effort: the editor still runs without completions
+    }
+  }
+  try {
+    const settingsPath = path.join(dataDir, "user-data", "User", "settings.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    let settings: Record<string, unknown> = {};
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+    } catch {
+      // fresh settings file
+    }
+    settings["contextgitCopilot.backendUrl"] = apiBase;
+    const selection = readEditorSelection();
+    settings["contextgitCopilot.providerId"] = selection.providerId;
+    settings["contextgitCopilot.model"] = selection.model;
+    fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  } catch {
+    // best effort
+  }
+}
+
 ipcMain.handle("ctx:editor-status", () => editor().status());
-ipcMain.handle("ctx:editor-start", () => editor().start(currentWorkspace()?.path ?? null));
+ipcMain.handle("ctx:editor-start", () => {
+  prepareEditor();
+  return editor().start(currentWorkspace()?.path ?? null);
+});
 ipcMain.handle("ctx:editor-stop", () => {
   editor().stop();
   return editor().status();

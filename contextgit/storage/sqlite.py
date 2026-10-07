@@ -836,6 +836,22 @@ class SqliteStorage:
         """Remove an asset-agent provider row."""
         return self._delete_provider_row("agent_providers", provider_id)
 
+    def upsert_editor_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or replace an editor provider row (the completion store)."""
+        return self._upsert_provider_row("editor_providers", record)
+
+    def get_editor_provider_row(self, provider_id: str) -> ProviderRecord | None:
+        """One stored editor provider row, or None."""
+        return self._get_provider_row("editor_providers", provider_id)
+
+    def list_editor_provider_rows(self) -> list[ProviderRecord]:
+        """Every stored editor provider row."""
+        return self._list_provider_rows("editor_providers")
+
+    def delete_editor_provider_row(self, provider_id: str) -> bool:
+        """Remove an editor provider row."""
+        return self._delete_provider_row("editor_providers", provider_id)
+
     # ---------- usage (token accounting) ----------
 
     @staticmethod

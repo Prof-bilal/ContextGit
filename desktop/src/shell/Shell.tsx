@@ -58,6 +58,7 @@ import BrowserRail from "./rail/BrowserRail";
 import BrowserView from "./views/BrowserView";
 import EditorRail from "./rail/EditorRail";
 import EditorView from "./views/EditorView";
+import EditorProviderDialog from "./editor/EditorProviderDialog";
 import AssetsView from "./views/AssetsView";
 import AssetDetails from "./assets/AssetDetails";
 import AssetPreview from "./assets/AssetPreview";
@@ -174,6 +175,8 @@ export default function Shell() {
   const [browserRequest, setBrowserRequest] = useState<{ url: string; nonce: number } | null>(null);
   /** Editor tab: bumped to tell EditorView to (re)check the sidecar. */
   const [editorNonce, setEditorNonce] = useState(0);
+  const [editorProviderOpen, setEditorProviderOpen] = useState(false);
+  const bumpEditor = useCallback(() => setEditorNonce((value) => value + 1), []);
   const [chatFilter, setChatFilter] = useState<ConversationMode | "all">("all");
   /** Usage tab time window: undefined = all time. */
   const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
@@ -978,8 +981,10 @@ export default function Shell() {
         return (
           <EditorRail
             reloadKey={editorNonce}
-            onStarted={() => setEditorNonce((value) => value + 1)}
+            activePath={activePath}
+            onStarted={bumpEditor}
             onOpenFolder={() => setProjectOpen(true)}
+            onConnect={() => setEditorProviderOpen(true)}
           />
         );
       case "agent":
@@ -1560,6 +1565,26 @@ export default function Shell() {
     mergeQueue.error ??
     providersError;
 
+  // A native WebContentsView (Browser/Editor) is layered above the DOM, so it
+  // would cover any dialog. Hide those views while a modal is open.
+  const overlayOpen =
+    pickerOpen ||
+    providerDialog !== null ||
+    taskForm !== null ||
+    projectOpen ||
+    agentDialog !== null ||
+    diffOpen ||
+    branchOpen ||
+    branchToDelete !== null ||
+    newConversationOpen ||
+    conversationToDelete !== null ||
+    mergeOpen ||
+    assetPreview !== null ||
+    assetDelete !== null ||
+    newFolderOpen ||
+    agentOpen ||
+    editorProviderOpen;
+
   return (
     <div className="cg-shell" data-cg-theme={theme}>
       <header className="cg-titlebar">
@@ -1655,11 +1680,15 @@ export default function Shell() {
           </div>
           {/* Browser stays mounted too, so its page survives tab switches. */}
           <div className="cg-view" data-active={tab === "browser"}>
-            <BrowserView active={tab === "browser"} request={browserRequest} />
+            <BrowserView
+              active={tab === "browser"}
+              request={browserRequest}
+              obscured={overlayOpen}
+            />
           </div>
           {/* Editor stays mounted too, so VS Code survives tab switches. */}
           <div className="cg-view" data-active={tab === "editor"}>
-            <EditorView active={tab === "editor"} nonce={editorNonce} />
+            <EditorView active={tab === "editor"} nonce={editorNonce} obscured={overlayOpen} />
           </div>
           {tab !== "code" && tab !== "browser" && tab !== "editor" && (
             <div className="cg-view" data-active>
@@ -1817,6 +1846,10 @@ export default function Shell() {
           onChanged={assets.refresh}
           onClose={() => setAgentOpen(false)}
         />
+      )}
+
+      {editorProviderOpen && (
+        <EditorProviderDialog onChanged={bumpEditor} onClose={() => setEditorProviderOpen(false)} />
       )}
     </div>
   );

@@ -1813,6 +1813,22 @@ class Repo:
         """Remove an asset-agent provider row."""
         return self._storage.delete_agent_provider_row(provider_id)
 
+    def list_editor_providers(self) -> list[ProviderRecord]:
+        """The editor's provider rows (the completion store)."""
+        return self._storage.list_editor_provider_rows()
+
+    def get_editor_provider(self, provider_id: str) -> ProviderRecord | None:
+        """One stored editor provider row, or None."""
+        return self._storage.get_editor_provider_row(provider_id)
+
+    def save_editor_provider(self, record: ProviderRecord) -> ProviderRecord:
+        """Insert or update an editor provider row."""
+        return self._storage.upsert_editor_provider(record)
+
+    def delete_editor_provider(self, provider_id: str) -> bool:
+        """Remove an editor provider row."""
+        return self._storage.delete_editor_provider_row(provider_id)
+
     @staticmethod
     def _check_ref_name(name: str) -> None:
         forbidden = " \t\n~^:?*[\\"

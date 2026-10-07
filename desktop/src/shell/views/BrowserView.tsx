@@ -38,10 +38,13 @@ function toUrl(input: string): string | null {
 export default function BrowserView({
   active,
   request,
+  obscured,
 }: {
   active: boolean;
   /** A navigation asked for from elsewhere (the rail); re-fires per `nonce`. */
   request: { url: string; nonce: number } | null;
+  /** A dialog is open; hide the native view so the dialog is not covered. */
+  obscured: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const createdRef = useRef(false);
@@ -139,14 +142,15 @@ export default function BrowserView({
     };
   }, []);
 
-  // Show the native view only when the tab is active and a page is open.
+  // Show the native view only when the tab is active, a page is open, and no
+  // dialog is covering it.
   useEffect(() => {
     const bridge = window.contextgit;
     if (!bridge) return;
-    const show = active && mode === "page";
+    const show = active && mode === "page" && !obscured;
     bridge.viewSetVisible(VIEW_ID, show);
     if (show) requestAnimationFrame(syncBounds);
-  }, [active, mode, syncBounds]);
+  }, [active, mode, obscured, syncBounds]);
 
   // Keep the native view glued to the host.
   useEffect(() => {
