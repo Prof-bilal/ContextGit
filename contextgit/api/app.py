@@ -86,6 +86,7 @@ from contextgit.core.errors import (
     RepoAlreadyExists,
     RepoNotFound,
     ScopeConflict,
+    ServerNotRunning,
     SessionNotFound,
     StagingEmpty,
     StaleMergePreview,
@@ -128,7 +129,6 @@ from contextgit.documents import (
 from contextgit.endpoints.provenance import graph_with_provenance
 from contextgit.endpoints.serve import fetch_live_openapi, supervisor
 from contextgit.endpoints.tests import (
-    DEFAULT_BASE_URL,
     generate_for_endpoint,
     remembered,
     run_suite,
@@ -244,6 +244,7 @@ def create_app(
                 TaskDependencyError,
                 TaskNotReviewable,
                 WorkInProgressLimit,
+                ServerNotRunning,
             ),
         ):
             status = 409
@@ -936,13 +937,16 @@ def create_app(
             raise EndpointNotFound(body.endpoint_id)
         adapter, resolved = build_for(body.provider_id, current.list_providers())
         model = body.model or resolved.model or "gpt-4o-mini"
+        # Only validate against a server we actually started and know is answering;
+        # guessing a URL would test somebody else's service.
+        live = status.url if status.healthy else None
         entry, overwrote, failure = generate_for_endpoint(
             root,
             endpoint,
             adapter=adapter,
             model=model,
-            base_url=status.url or DEFAULT_BASE_URL,
-            validate=status.healthy,
+            base_url=live,
+            validate=live is not None,
         )
         return EndpointGenerateResponse(
             file=entry, suite=remembered(root), overwrote=overwrote, failure=failure
@@ -952,7 +956,13 @@ def create_app(
     def endpoints_run(body: EndpointRunRequest) -> EndpointTestSuite:
         """Run every generated test file against the running server."""
         root = Path(body.project_path).expanduser()
-        base_url = body.base_url or supervisor().status(root).url or DEFAULT_BASE_URL
+        current = supervisor().status(root)
+        base_url = body.base_url or (current.url if current.healthy else None)
+        if not base_url:
+            raise ServerNotRunning(
+                "no server is running for this project — start it first, "
+                "or pass the URL you want the tests to hit"
+            )
         return run_suite(root, base_url)
 
     # ---------- HTTP client (the API tab) ----------

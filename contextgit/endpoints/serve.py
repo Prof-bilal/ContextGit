@@ -28,6 +28,8 @@ _LOG_LINES = 400
 _SHOWN_LINES = 80
 _HEALTH_TIMEOUT = 60.0
 _HEALTH_INTERVAL = 0.4
+# While the process lives we keep probing, so a watcher's restart is noticed.
+_WATCH_INTERVAL = 2.0
 _SKIP_DIRS = {
     ".git",
     ".contextgit",
@@ -42,6 +44,55 @@ _SKIP_DIRS = {
     ".next",
 }
 _PORT_IN_COMMAND = re.compile(r"(?:--port[= ]|:)(\d{2,5})\b")
+# Fatal startup failures worth reporting instead of waiting out the timeout.
+_FATAL_SIGNATURES = (
+    "Cannot find module",
+    "MODULE_NOT_FOUND",
+    "EADDRINUSE",
+    "SyntaxError",
+    "app crashed",
+    "Traceback (most recent call last)",
+    "MissingModuleException",
+    "Cannot find package",
+)
+# A server that ignores PORT usually says which one it bound.
+_ANNOUNCED_PORT = re.compile(
+    r"(?:listening|running|started|ready|serving|url)[^\n]{0,60}?"
+    r"(?:port\s*[:=]?\s*|localhost:|127\.0\.0\.1:|0\.0\.0\.0:)(\d{2,5})\b",
+    re.IGNORECASE,
+)
+_DATABASE_HINTS = ("database", "mongo", "redis", "postgres", "mysql", "sqlite", "kafka", "amqp")
+
+
+def _is_database_line(line: str) -> bool:
+    """Don't mistake a database port for the app's own listening port."""
+    lowered = line.lower()
+    return any(hint in lowered for hint in _DATABASE_HINTS)
+
+
+def _explain_failure(line: str) -> str:
+    """One plain sentence a user can act on, keeping the app's own words."""
+    missing = re.search(r"Cannot find (?:module|package) ['\"]([^'\"]+)['\"]", line)
+    if missing or "MODULE_NOT_FOUND" in line:
+        what = f" It could not find {missing.group(1)}." if missing else ""
+        return (
+            f"Your server crashed on startup.{what} Check that the file exists and "
+            "that the capitalisation matches."
+        )
+    if "EADDRINUSE" in line:
+        port = re.search(r":(\d{2,5})", line)
+        where = (
+            f" Port {port.group(1)} is already in use."
+            if port
+            else " A port it needs is already in use."
+        )
+        return (
+            f"Your server crashed on startup.{where} Stop whatever is using it, "
+            "then start again."
+        )
+    if "SyntaxError" in line:
+        return f"Your server has a syntax error, so it could not start: {line}"
+    return f"Your server crashed on startup: {line}"
 
 
 def free_port() -> int:
@@ -101,6 +152,67 @@ def python_app_target(root: Path) -> str | None:
     return None
 
 
+_SCRIPT_ORDER = ("dev", "start", "serve", "server", "api", "backend", "watch", "develop")
+_SUBDIR_NAMES = ("backend", "server", "api", "web", "frontend", "service")
+_NODE_ENTRIES = ("server.js", "index.js", "app.js", "server.mjs", "index.mjs", "server.ts")
+
+
+def candidate_dirs(root: Path) -> list[Path]:
+    """The project root first, then one level down where a server usually lives."""
+    dirs = [root]
+    for pattern in ("apps/*", "packages/*", "services/*"):
+        dirs.extend(sorted(path for path in root.glob(pattern) if path.is_dir()))
+    for name in _SUBDIR_NAMES:
+        candidate = root / name
+        if candidate.is_dir() and candidate not in dirs:
+            dirs.append(candidate)
+    return dirs
+
+
+def _package_command(directory: Path) -> RunCommand | None:
+    package = directory / "package.json"
+    if not package.is_file():
+        return None
+    try:
+        data = json.loads(package.read_text("utf-8", errors="replace"))
+        scripts = data.get("scripts", {}) if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        scripts = {}
+    if isinstance(scripts, dict):
+        for name in _SCRIPT_ORDER:
+            if name in scripts:
+                return RunCommand(
+                    command=f"{package_manager(directory)} run {name}",
+                    cwd=str(directory),
+                    source="package.json",
+                )
+    # No conventional script: a plain node server is still startable.
+    for entry in _NODE_ENTRIES:
+        candidate = directory / entry
+        if not candidate.is_file():
+            continue
+        try:
+            text = candidate.read_text("utf-8", errors="replace")
+        except OSError:
+            continue
+        if ".listen(" in text:
+            return RunCommand(
+                command=f"node {entry}", cwd=str(directory), source="package.json"
+            )
+    return None
+
+
+def _make_command(directory: Path) -> RunCommand | None:
+    makefile = directory / "Makefile"
+    if not makefile.is_file():
+        return None
+    text = makefile.read_text("utf-8", errors="replace")
+    for target in ("dev", "serve", "start", "run"):
+        if re.search(rf"^{target}\s*:", text, re.MULTILINE):
+            return RunCommand(command=f"make {target}", cwd=str(directory), source="make")
+    return None
+
+
 def detect_run_command(project: Path | str) -> RunCommand | None:
     """The best guess at how to start this project, or None if we have nothing."""
     root = Path(project)
@@ -110,44 +222,25 @@ def detect_run_command(project: Path | str) -> RunCommand | None:
             command=override, cwd=str(root), source="env", port=port_in_command(override)
         )
 
-    package = root / "package.json"
-    if package.is_file():
-        try:
-            data = json.loads(package.read_text("utf-8", errors="replace"))
-            scripts = data.get("scripts", {}) if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            scripts = {}
-        if isinstance(scripts, dict):
-            for name in ("dev", "start", "serve"):
-                if name in scripts:
-                    return RunCommand(
-                        command=f"{package_manager(root)} run {name}",
-                        cwd=str(root),
-                        source="package.json",
-                    )
-
-    makefile = root / "Makefile"
-    if makefile.is_file():
-        text = makefile.read_text("utf-8", errors="replace")
-        for target in ("dev", "serve"):
-            if re.search(rf"^{target}\s*:", text, re.MULTILINE):
-                return RunCommand(command=f"make {target}", cwd=str(root), source="make")
-
-    if (root / "manage.py").is_file():
-        return RunCommand(command="python manage.py runserver", cwd=str(root), source="django")
-
-    app_target = python_app_target(root)
-    if app_target:
-        return RunCommand(
-            command=f"python -m uvicorn {app_target} --host 127.0.0.1",
-            cwd=str(root),
-            source="uvicorn",
-        )
-
-    if (root / "go.mod").is_file():
-        return RunCommand(command="go run .", cwd=str(root), source="go")
-    if (root / "Cargo.toml").is_file():
-        return RunCommand(command="cargo run", cwd=str(root), source="rust")
+    for directory in candidate_dirs(root):
+        if (directory / "manage.py").is_file():
+            return RunCommand(
+                command="python manage.py runserver", cwd=str(directory), source="django"
+            )
+        found = _package_command(directory) or _make_command(directory)
+        if found:
+            return found
+        app_target = python_app_target(directory)
+        if app_target:
+            return RunCommand(
+                command=f"python -m uvicorn {app_target} --host 127.0.0.1",
+                cwd=str(directory),
+                source="uvicorn",
+            )
+        if (directory / "go.mod").is_file():
+            return RunCommand(command="go run .", cwd=str(directory), source="go")
+        if (directory / "Cargo.toml").is_file():
+            return RunCommand(command="cargo run", cwd=str(directory), source="rust")
     return None
 
 
@@ -164,14 +257,53 @@ class ServerSupervisor:
         self._started: datetime | None = None
         self._error: str | None = None
         self._healthy = False
+        self._fatal: str | None = None
+        self._announced_port: int | None = None
 
     # -- internals ---------------------------------------------------------
+
+    def _note(self, line: str) -> None:
+        """Watch the process log for a crash, or for the port it really bound."""
+        if self._fatal is None:
+            for signature in _FATAL_SIGNATURES:
+                if signature in line:
+                    self._fatal = line.strip()[:240]
+                    break
+        if self._announced_port is None and not _is_database_line(line):
+            match = _ANNOUNCED_PORT.search(line)
+            if match:
+                self._announced_port = int(match.group(1))
 
     def _drain(self, process: subprocess.Popen[str]) -> None:
         if process.stdout is None:
             return
         for line in process.stdout:
-            self._log.append(line.rstrip("\n"))
+            text = line.rstrip("\n")
+            self._log.append(text)
+            self._note(text)
+
+    def _watch(self, process: subprocess.Popen[str]) -> None:
+        """Keep probing while this process lives.
+
+        Dev servers under a watcher (nodemon, uvicorn --reload) crash on start and
+        then start for real once the code is fixed. Without this, a crash would
+        leave the UI stuck on "crashed" forever.
+        """
+        while True:
+            time.sleep(_WATCH_INTERVAL)
+            if self._process is not process:
+                return
+            if process.poll() is not None:
+                with self._lock:
+                    self._healthy = False
+                return
+            if self._announced_port and self._announced_port != self._port:
+                self._port = self._announced_port
+            if self._port and self._probe(self._port):
+                with self._lock:
+                    if self._process is process:
+                        self._healthy = True
+                        self._error = None
 
     def _probe(self, port: int) -> bool:
         try:
@@ -204,6 +336,12 @@ class ServerSupervisor:
             process = self._process
             if process is None or process.poll() is not None:
                 return
+            if self._fatal is not None:
+                # It crashed; waiting out the timeout would only hide the reason.
+                return
+            # A server that ignored PORT tells us where it really is.
+            if self._announced_port and self._announced_port != self._port:
+                self._port = self._announced_port
             if self._port and self._probe(self._port):
                 self._healthy = True
                 return
@@ -224,9 +362,15 @@ class ServerSupervisor:
             detected = detect_run_command(root)
             chosen = command or (detected.command if detected else None)
             if not chosen:
-                self._error = "No run command detected — set one for this project."
+                self._error = (
+                    "No run command detected — type the command that starts this "
+                    "project and ContextGit will remember it."
+                )
                 self._command = None
             else:
+                # Detection knows which directory the server lives in (monorepos
+                # often keep it one level down); run it there.
+                run_cwd = Path(detected.cwd) if detected else root
                 self._port = port or port_in_command(chosen) or free_port()
                 if "manage.py runserver" in chosen and not port_in_command(chosen):
                     chosen = f"{chosen} 127.0.0.1:{self._port}"
@@ -238,7 +382,7 @@ class ServerSupervisor:
                 try:
                     self._process = subprocess.Popen(
                         chosen,
-                        cwd=root,
+                        cwd=run_cwd,
                         shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
@@ -251,9 +395,14 @@ class ServerSupervisor:
                     self._error = str(exc)
                 else:
                     self._command = chosen
-                    self._cwd = str(root)
+                    self._cwd = str(run_cwd)
                     self._started = utcnow()
-                    threading.Thread(target=self._drain, args=(self._process,), daemon=True).start()
+                    threading.Thread(
+                        target=self._drain, args=(self._process,), daemon=True
+                    ).start()
+                    threading.Thread(
+                        target=self._watch, args=(self._process,), daemon=True
+                    ).start()
                     deadline = time.monotonic() + _HEALTH_TIMEOUT
 
         # Waiting happens outside the lock: `status` takes it too.
@@ -262,10 +411,16 @@ class ServerSupervisor:
             with self._lock:
                 if not self._healthy:
                     process = self._process
-                    if process is not None and process.poll() is not None:
+                    if self._fatal is not None:
+                        # The app's own error, said plainly.
+                        self._error = _explain_failure(self._fatal)
+                    elif process is not None and process.poll() is not None:
                         self._error = f"The server exited with code {process.returncode}."
-                    elif self._error is None:
-                        self._error = f"The server did not answer on port {self._port} in time."
+                    else:
+                        self._error = (
+                            f"The server never answered on port {self._port}. "
+                            "Check the log below for the reason."
+                        )
         return self.status(root)
 
     def stop(self) -> ServerStatus:

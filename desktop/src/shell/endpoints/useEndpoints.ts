@@ -13,6 +13,9 @@ import {
 export type ConfidenceFilter = "all" | Confidence;
 export type Busy = "server" | "generate" | "run" | null;
 
+/** The run command is remembered per project, so a guess never has to be redone. */
+const commandKey = (projectPath: string) => `cg-run-command:${projectPath}`;
+
 export interface ProviderChoice {
   providerId: string;
   modelId: string;
@@ -36,6 +39,8 @@ export interface EndpointsState {
   suite: EndpointTestSuite | null;
   busy: Busy;
   hasProvider: boolean;
+  command: string;
+  setCommand: (value: string) => void;
   testsFor: (endpoint: Endpoint) => EndpointTestFile | undefined;
   startServer: (command?: string) => Promise<void>;
   stopServer: () => Promise<void>;
@@ -58,6 +63,7 @@ export function useEndpoints(
   const [server, setServer] = useState<ServerStatus | null>(null);
   const [suite, setSuite] = useState<EndpointTestSuite | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
+  const [command, setCommand] = useState("");
 
   const load = useCallback(
     async (force: boolean) => {
@@ -105,13 +111,37 @@ export function useEndpoints(
     void loadSuite();
   }, [load, loadServer, loadSuite]);
 
+  // A running (or crashed-but-watched) server is re-checked so the chip can go
+  // green on its own when nodemon restarts the app.
+  useEffect(() => {
+    if (!server?.running) return;
+    const id = window.setInterval(() => void loadServer(), 2000);
+    return () => window.clearInterval(id);
+  }, [server?.running, loadServer]);
+
+  // A remembered command wins over the guess; the guess fills an empty field.
+  useEffect(() => {
+    if (!projectPath) {
+      setCommand("");
+      return;
+    }
+    const remembered = window.localStorage.getItem(commandKey(projectPath));
+    if (remembered) {
+      setCommand(remembered);
+      return;
+    }
+    setCommand(server?.detected?.command ?? "");
+  }, [projectPath, server?.detected?.command]);
+
   const startServer = useCallback(
-    async (command?: string) => {
+    async (override?: string) => {
       if (!projectPath) return;
+      const chosen = (override ?? command).trim();
       setBusy("server");
       setNotice(null);
       try {
-        setServer(await api.startServer(projectPath, command));
+        if (chosen) window.localStorage.setItem(commandKey(projectPath), chosen);
+        setServer(await api.startServer(projectPath, chosen || undefined));
       } catch (cause) {
         setNotice(
           cause instanceof Error ? cause.message : "Could not start the server",
@@ -120,7 +150,7 @@ export function useEndpoints(
         setBusy(null);
       }
     },
-    [projectPath],
+    [projectPath, command],
   );
 
   const stopServer = useCallback(async () => {
@@ -149,10 +179,13 @@ export function useEndpoints(
           provider.modelId || undefined,
         );
         setSuite(result.suite);
+        const ran = result.file.status !== "untested";
         setNotice(
           result.failure
             ? `${result.file.file} was written but its tests still fail.`
-            : `${result.overwrote ? "Rewrote" : "Wrote"} ${result.file.file}`,
+            : ran
+              ? `${result.overwrote ? "Rewrote" : "Wrote"} ${result.file.file} — the tests pass.`
+              : `${result.overwrote ? "Rewrote" : "Wrote"} ${result.file.file}. Start the server to run it.`,
         );
       } catch (cause) {
         setNotice(
@@ -226,6 +259,8 @@ export function useEndpoints(
     suite,
     busy,
     hasProvider: Boolean(provider.providerId),
+    command,
+    setCommand,
     testsFor,
     startServer,
     stopServer,

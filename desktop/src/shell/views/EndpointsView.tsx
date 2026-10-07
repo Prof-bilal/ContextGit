@@ -16,6 +16,8 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
     suite,
     busy,
     hasProvider,
+    command,
+    setCommand,
     testsFor,
     startServer,
     stopServer,
@@ -49,8 +51,8 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
         <section className="cg-ep-server">
           {server?.running ? (
             <>
-              <Chip tone={server.healthy ? "ok" : "warn"}>
-                {server.healthy ? "healthy" : "starting"}
+              <Chip tone={server.healthy ? "ok" : server.error ? "bad" : "warn"}>
+                {server.healthy ? "healthy" : server.error ? "crashed" : "starting"}
               </Chip>
               <span className="cg-mono cg-ep-server-url">{server.url}</span>
               <span className="cg-view-sub">{server.command}</span>
@@ -67,15 +69,33 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
           ) : (
             <>
               <span className="cg-view-sub">Server</span>
-              <span className="cg-mono cg-ep-server-url">
-                {detected ?? "no run command detected"}
-              </span>
+              <input
+                className="cg-input cg-mono cg-ep-command"
+                aria-label="Run command"
+                placeholder="the command that starts this project, e.g. npm run dev"
+                value={command}
+                onChange={(event) => setCommand(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && command.trim())
+                    void startServer();
+                }}
+              />
+              {detected && detected !== command && (
+                <button
+                  type="button"
+                  className="cg-btn cg-btn-sm"
+                  onClick={() => setCommand(detected)}
+                  title="Use the command ContextGit detected"
+                >
+                  Use detected
+                </button>
+              )}
               <span className="cg-toolbar-spacer" />
               <button
                 type="button"
                 className="cg-btn"
                 data-variant="primary"
-                disabled={busy === "server" || !detected}
+                disabled={busy === "server" || !command.trim()}
                 onClick={() => void startServer()}
               >
                 {busy === "server" ? "Starting…" : "Start server"}
@@ -143,7 +163,12 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
               <button
                 type="button"
                 className="cg-btn"
-                disabled={busy !== null || !suite?.files.length}
+                disabled={busy !== null || !suite?.files.length || !server?.healthy}
+                title={
+                  server?.healthy
+                    ? undefined
+                    : "Start the server first — the tests need a URL to hit"
+                }
                 onClick={() => void runAll()}
               >
                 {busy === "run" ? "Running…" : "Run all"}
@@ -169,6 +194,11 @@ export default function EndpointsView({ state }: { state: EndpointsState }) {
                   {hasProvider
                     ? "No tests yet for this endpoint."
                     : "Connect a provider to write tests."}
+                </span>
+              )}
+              {!server?.healthy && suite?.files.length && (
+                <span className="cg-view-sub">
+                  Start the server to run these tests.
                 </span>
               )}
             </div>

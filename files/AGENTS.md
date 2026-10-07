@@ -18,6 +18,7 @@ Python core library, a CLI, and a FastAPI + React web UI.
 | codestyle.md | Always, before writing any code. |
 | design.md | Building the landing page or any marketing UI. |
 | roadmap.md | Deciding what to build next. |
+| remaining-phases.md | Deciding what to build next **now** — the endpoint graph, the "Why" lens, MCP memory, bisect/replay, and the backlog. |
 
 ## Ground rules
 1. The **core library is the single source of truth**. CLI and API are thin wrappers.

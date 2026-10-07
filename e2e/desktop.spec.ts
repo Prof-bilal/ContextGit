@@ -310,10 +310,10 @@ test("the Endpoints tab lists the project's routes with their origin", async () 
   await expect(page.locator(".cg-ep-path")).toHaveText("/notes");
   await expect(page.locator(".cg-dock")).toContainText("add endpoints");
 
-  // The tab also owns the project's server: the detected command is shown, and
-  // starting it is always an explicit click.
-  await expect(page.locator(".cg-ep-server")).toContainText(
-    "python -m uvicorn app:app",
+  // The tab also owns the project's server: the detected command is offered in
+  // an editable field, and starting it is always an explicit click.
+  await expect(page.getByLabel("Run command")).toHaveValue(
+    "python -m uvicorn app:app --host 127.0.0.1",
   );
   await expect(page.getByRole("button", { name: "Start server" })).toBeEnabled();
 });

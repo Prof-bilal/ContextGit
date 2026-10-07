@@ -60,3 +60,4 @@ blob-report/
 
 # local app data: the app's own repository (sqlite + .contextgit/context.md + assets)
 .contextgit/
+files/remaining-phases.md

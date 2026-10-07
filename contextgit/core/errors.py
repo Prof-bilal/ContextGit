@@ -103,3 +103,7 @@ class CollectionNotFound(ContextGitError):
 
 class EndpointNotFound(ContextGitError):
     """The referenced endpoint is not part of the project's current graph."""
+
+
+class ServerNotRunning(ContextGitError):
+    """No server URL is known, so there is nothing to test against."""

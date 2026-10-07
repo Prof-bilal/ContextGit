@@ -4369,3 +4369,9 @@ img.cg-tile-art {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.cg-ep-command {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+  font-size: 0.78rem;
+}

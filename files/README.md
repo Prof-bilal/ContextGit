@@ -80,3 +80,4 @@ npm run test:e2e
 | `files/editor-integration.md` | All-in-one workbench, round 3: the embedded VS Code (code-server) editor |
 | `files/browser-embedding.md` | All-in-one workbench, round 4: the in-app browser (`WebContentsView`) |
 | `files/api-db-clients.md` | All-in-one workbench: the HTTP and database client panels |
+| `files/remaining-phases.md` | What is left: the endpoint graph, the "Why" lens, MCP memory, bisect/replay, and the backlog |

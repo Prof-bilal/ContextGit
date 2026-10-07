@@ -242,3 +242,175 @@ def test_endpoint_without_a_handler_has_no_excerpt(tmp_path: Path) -> None:
 
     endpoint = Endpoint(id="get /x", method="GET", path="/x", source=EndpointSource(kind="manual"))
     assert "not available" in handler_excerpt(tmp_path, endpoint)
+
+
+def test_validate_source_refuses_hardcoded_hosts_and_missing_env() -> None:
+    from contextgit.core.errors import ProviderConfigError
+
+    # A fixed host can silently point at somebody else's service.
+    hardcoded = (
+        "import os\n\nimport httpx\n\n\n"
+        'BASE = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")\n\n\n'
+        "def test_x() -> None:\n"
+        '    assert httpx.get(f"{BASE}/x").status_code == 200\n'
+    )
+    with pytest.raises(ProviderConfigError, match="hard-code"):
+        validate_source(hardcoded)
+
+    with pytest.raises(ProviderConfigError, match="API_BASE_URL"):
+        validate_source("import httpx\n\n\ndef test_x() -> None:\n    assert True\n")
+
+
+def test_generate_without_a_server_writes_the_file_but_skips_validation(
+    tmp_path: Path,
+) -> None:
+    project = fastapi_project(tmp_path)
+    endpoint = discover(project).endpoints[0]
+    entry, _, failure = generate_for_endpoint(
+        project,
+        endpoint,
+        adapter=StubAdapter(GENERATED),
+        model="stub",
+        base_url=None,
+        validate=True,
+    )
+    assert failure is None
+    # Nothing was run, and we say so rather than inventing a result.
+    assert entry.status == "untested"
+    assert entry.ran_at is None
+    assert (project / entry.file).is_file()
+
+
+def test_run_without_a_server_is_refused(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from contextgit.api.app import create_app
+    from contextgit.core.repo import Repo
+    from contextgit.llm.fake import FakeProvider
+
+    repo = Repo.init(tmp_path / "repo")
+    (tmp_path / "tests" / "api").mkdir(parents=True)
+    (tmp_path / "tests" / "api" / "test_x.py").write_text(
+        "def test_ok():\n    assert True\n"
+    )
+    client = TestClient(create_app(repo=repo, provider=FakeProvider()))
+    response = client.post(
+        "/api/v1/endpoints/tests/run", json={"project_path": str(tmp_path)}
+    )
+    assert response.status_code == 409
+    assert "no server is running" in response.json()["error"]
+
+
+def test_monorepo_server_is_found_one_level_down_with_its_own_cwd(
+    tmp_path: Path,
+) -> None:
+    # A workspace root whose scripts say nothing about running a server.
+    (tmp_path / "package.json").write_text('{"scripts": {"build": "turbo build"}}')
+    api = tmp_path / "apps" / "api"
+    api.mkdir(parents=True)
+    (api / "package.json").write_text('{"scripts": {"dev": "tsx src/server.ts"}}')
+
+    detected = detect_run_command(tmp_path)
+    assert detected is not None
+    assert detected.command == "npm run dev"
+    # The command has to run where the server lives, not at the workspace root.
+    assert detected.cwd == str(api)
+
+
+def test_unconventional_script_names_are_still_startable(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"scripts": {"server": "tsx src/main.ts"}}'
+    )
+    detected = detect_run_command(tmp_path)
+    assert detected is not None
+    assert detected.command == "npm run server"
+
+
+def test_plain_node_server_without_scripts_is_startable(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "server.js").write_text(
+        "const express = require('express');\nconst app = express();\napp.listen(3000);\n"
+    )
+    detected = detect_run_command(tmp_path)
+    assert detected is not None
+    assert detected.command == "node server.js"
+
+
+def test_crash_on_startup_reports_the_apps_own_error(tmp_path: Path) -> None:
+    import time
+
+    # nodemon-style: the wrapper process stays alive while the app inside dies.
+    (tmp_path / "crash.py").write_text(
+        "import time\n"
+        "print(\"Error: Cannot find module '../controllers/userController'\")\n"
+        "time.sleep(30)\n"
+    )
+    supervisor = ServerSupervisor()
+    started = time.monotonic()
+    try:
+        status = supervisor.start(tmp_path, command=f"{sys.executable} -u crash.py")
+        elapsed = time.monotonic() - started
+    finally:
+        supervisor.stop()
+
+    assert status.healthy is False
+    assert status.error is not None
+    assert "crashed on startup" in status.error
+    assert "../controllers/userController" in status.error
+    assert "capitalisation" in status.error
+    assert any("Cannot find module" in line for line in status.log)
+    # The crash is reported at once, not after the full health timeout.
+    assert elapsed < 20
+
+
+def test_a_server_that_ignores_port_is_found_from_its_log(tmp_path: Path) -> None:
+    real = free_port()
+    guessed = free_port()
+    assert real != guessed
+
+    supervisor = ServerSupervisor()
+    try:
+        # http.server only ever binds the port given on the command line, so the
+        # PORT we pass is a decoy — the log is the only way to find the truth.
+        status = supervisor.start(
+            tmp_path, command=f"{sys.executable} -u -m http.server {real}", port=guessed
+        )
+    finally:
+        supervisor.stop()
+
+    assert status.healthy is True
+    assert status.port == real
+    assert status.url == f"http://127.0.0.1:{real}"
+
+
+def test_a_watched_server_that_recovers_turns_healthy(tmp_path: Path) -> None:
+    import time
+
+    # nodemon-style: die on start, then serve for real once the code is fixed.
+    (tmp_path / "recover.py").write_text(
+        "import http.server, os, socketserver, time\n"
+        "print(\"Error: Cannot find module 'x'\", flush=True)\n"
+        "time.sleep(2.5)\n"
+        "port = int(os.environ['PORT'])\n"
+        "with socketserver.TCPServer(('127.0.0.1', port), http.server.SimpleHTTPRequestHandler) as httpd:\n"
+        "    print(f'listening on port {port}', flush=True)\n"
+        "    httpd.serve_forever()\n"
+    )
+    port = free_port()
+    supervisor = ServerSupervisor()
+    try:
+        first = supervisor.start(
+            tmp_path, command=f"{sys.executable} -u recover.py", port=port
+        )
+        assert first.healthy is False
+        assert first.error is not None and "crashed" in first.error
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and not supervisor.status().healthy:
+            time.sleep(0.5)
+
+        recovered = supervisor.status()
+        assert recovered.healthy is True
+        assert recovered.error is None
+    finally:
+        supervisor.stop()
