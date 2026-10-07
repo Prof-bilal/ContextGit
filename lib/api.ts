@@ -643,6 +643,64 @@ export interface EndpointGraph {
   endpoints: Endpoint[];
 }
 
+export type RunCommandSource =
+  | "env"
+  | "package.json"
+  | "make"
+  | "django"
+  | "uvicorn"
+  | "flask"
+  | "go"
+  | "rust";
+
+export interface RunCommand {
+  command: string;
+  cwd: string;
+  source: RunCommandSource;
+  port: number | null;
+}
+
+export interface ServerStatus {
+  running: boolean;
+  healthy: boolean;
+  command: string | null;
+  cwd: string | null;
+  port: number | null;
+  url: string | null;
+  started_at: string | null;
+  exit_code: number | null;
+  error: string | null;
+  log: string[];
+  detected: RunCommand | null;
+}
+
+export type TestStatus = "untested" | "pass" | "fail";
+
+export interface EndpointTestFile {
+  endpoint_id: string;
+  file: string;
+  tests: string[];
+  status: TestStatus;
+  detail: string | null;
+  ran_at: string | null;
+  verified_at_commit: string | null;
+}
+
+export interface EndpointTestSuite {
+  project_path: string;
+  files: EndpointTestFile[];
+  passed: number;
+  failed: number;
+  output: string | null;
+}
+
+export interface EndpointGenerateResponse {
+  file: EndpointTestFile;
+  suite: EndpointTestSuite;
+  overwrote: boolean;
+  failure: string | null;
+}
+
 export const api = {
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
   branchBudget: (name: string) =>
@@ -823,6 +881,43 @@ export const api = {
       }`,
       { method: "POST" },
     ),
+  // ---------- the project's server + its generated tests ----------
+  serveStatus: (projectPath?: string) =>
+    request<ServerStatus>(
+      `/api/v1/endpoints/serve${
+        projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : ""
+      }`,
+    ),
+  startServer: (projectPath: string, command?: string) =>
+    request<ServerStatus>("/api/v1/endpoints/serve", {
+      method: "POST",
+      body: JSON.stringify({ project_path: projectPath, command }),
+    }),
+  stopServer: () => request<ServerStatus>("/api/v1/endpoints/serve", { method: "DELETE" }),
+  endpointTests: (projectPath: string) =>
+    request<EndpointTestSuite>(
+      `/api/v1/endpoints/tests?project_path=${encodeURIComponent(projectPath)}`,
+    ),
+  generateEndpointTests: (
+    projectPath: string,
+    endpointId: string,
+    providerId: string,
+    model?: string,
+  ) =>
+    request<EndpointGenerateResponse>("/api/v1/endpoints/tests/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        project_path: projectPath,
+        endpoint_id: endpointId,
+        provider_id: providerId,
+        model: model ?? null,
+      }),
+    }),
+  runEndpointTests: (projectPath: string, baseUrl?: string) =>
+    request<EndpointTestSuite>("/api/v1/endpoints/tests/run", {
+      method: "POST",
+      body: JSON.stringify({ project_path: projectPath, base_url: baseUrl ?? null }),
+    }),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
   workspace: (id: string) =>

@@ -1,3 +1,5 @@
+import type { TestStatus } from "@/lib/api";
+
 import type { EndpointsState } from "../endpoints/useEndpoints";
 
 const CONFIDENCE: Array<{ id: EndpointsState["confidence"]; label: string }> = [
@@ -13,6 +15,12 @@ function dot(confidence: string): string {
   return "cg-ep-dot cg-api-bad";
 }
 
+function badge(status: TestStatus): string {
+  if (status === "pass") return "cg-ep-badge cg-api-ok";
+  if (status === "fail") return "cg-ep-badge cg-api-bad";
+  return "cg-ep-badge";
+}
+
 /** Every endpoint of the project, with how sure we are about each finding. */
 export default function EndpointsRail({ state }: { state: EndpointsState }) {
   const {
@@ -24,6 +32,7 @@ export default function EndpointsRail({ state }: { state: EndpointsState }) {
     setConfidence,
     select,
     loading,
+    testsFor,
   } = state;
 
   return (
@@ -63,30 +72,38 @@ export default function EndpointsRail({ state }: { state: EndpointsState }) {
       {!loading && endpoints.length === 0 && (
         <p className="cg-empty-note">No endpoints found in this project.</p>
       )}
-      {endpoints.map((endpoint) => (
-        <button
-          key={endpoint.id}
-          type="button"
-          className="cg-row"
-          aria-current={active?.id === endpoint.id}
-          onClick={() => select(endpoint)}
-        >
-          <span className="cg-row-top">
-            <span
-              className={dot(endpoint.source.confidence)}
-              aria-hidden="true"
-            />
-            <span className="cg-mono">{endpoint.method}</span>
-          </span>
-          <span className="cg-row-name">{endpoint.path}</span>
-          {endpoint.source.file && (
-            <span className="cg-row-preview">
-              {endpoint.source.file}
-              {endpoint.source.line ? `:${endpoint.source.line}` : ""}
+      {endpoints.map((endpoint) => {
+        const test = testsFor(endpoint);
+        return (
+          <button
+            key={endpoint.id}
+            type="button"
+            className="cg-row"
+            aria-current={active?.id === endpoint.id}
+            onClick={() => select(endpoint)}
+          >
+            <span className="cg-row-top">
+              <span
+                className={dot(endpoint.source.confidence)}
+                aria-hidden="true"
+              />
+              <span className="cg-mono">{endpoint.method}</span>
+              {test && (
+                <span className={badge(test.status)} aria-label="test status">
+                  {test.status}
+                </span>
+              )}
             </span>
-          )}
-        </button>
-      ))}
+            <span className="cg-row-name">{endpoint.path}</span>
+            {endpoint.source.file && (
+              <span className="cg-row-preview">
+                {endpoint.source.file}
+                {endpoint.source.line ? `:${endpoint.source.line}` : ""}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </nav>
   );
 }

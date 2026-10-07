@@ -99,3 +99,7 @@ class HttpRequestError(ContextGitError):
 
 class CollectionNotFound(ContextGitError):
     """The referenced API collection does not exist."""
+
+
+class EndpointNotFound(ContextGitError):
+    """The referenced endpoint is not part of the project's current graph."""

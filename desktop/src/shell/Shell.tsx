@@ -246,7 +246,6 @@ export default function Shell() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepo();
   const apiClient = useApiClient();
-  const endpointsState = useEndpoints(activePath ?? null);
   const {
     providers,
     error: providersError,
@@ -258,6 +257,11 @@ export default function Shell() {
   const [model, setModel] = useState<ModelSelection>(
     () => readStoredModel() ?? { providerId: "", modelId: "" },
   );
+  // The Endpoints tab borrows the chat provider/model to author its tests.
+  const endpointsState = useEndpoints(activePath ?? null, {
+    providerId: model.providerId,
+    modelId: model.modelId,
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [providerDialog, setProviderDialog] = useState<{
     capability?: ProviderCapability;

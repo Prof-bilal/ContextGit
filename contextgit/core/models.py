@@ -398,9 +398,7 @@ class HttpHistoryEntry(BaseModel):
 
 # ---------- endpoint graph (the Endpoints tab) ----------
 
-EndpointSourceKind = Literal[
-    "openapi", "python", "django", "javascript", "go", "manual"
-]
+EndpointSourceKind = Literal["openapi", "python", "django", "javascript", "go", "manual"]
 Confidence = Literal["high", "medium", "low"]
 EndpointFieldLocation = Literal["path", "query", "header", "cookie", "body"]
 
@@ -470,3 +468,58 @@ class EndpointGraph(BaseModel):
     generated_at: datetime = Field(default_factory=utcnow)
     scanned_files: int = 0
     endpoints: list[Endpoint] = Field(default_factory=list)
+
+
+RunCommandSource = Literal[
+    "env", "package.json", "make", "django", "uvicorn", "flask", "go", "rust"
+]
+
+
+class RunCommand(BaseModel):
+    """How we think this project's server starts."""
+
+    command: str
+    cwd: str
+    source: RunCommandSource
+    port: int | None = None
+
+
+class ServerStatus(BaseModel):
+    """The project's running server, as the UI shows it."""
+
+    running: bool = False
+    healthy: bool = False
+    command: str | None = None
+    cwd: str | None = None
+    port: int | None = None
+    url: str | None = None
+    started_at: datetime | None = None
+    exit_code: int | None = None
+    error: str | None = None
+    log: list[str] = Field(default_factory=list)
+    detected: RunCommand | None = None
+
+
+TestStatus = Literal["untested", "pass", "fail"]
+
+
+class EndpointTestFile(BaseModel):
+    """One generated test file: where it lands, and how it last ran."""
+
+    endpoint_id: str
+    file: str
+    tests: list[str] = Field(default_factory=list)
+    status: TestStatus = "untested"
+    detail: str | None = None
+    ran_at: datetime | None = None
+    verified_at_commit: str | None = None
+
+
+class EndpointTestSuite(BaseModel):
+    """The project's generated API tests, and the latest run."""
+
+    project_path: str
+    files: list[EndpointTestFile] = Field(default_factory=list)
+    passed: int = 0
+    failed: int = 0
+    output: str | None = None

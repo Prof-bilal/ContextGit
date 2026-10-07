@@ -4306,3 +4306,66 @@ img.cg-tile-art {
   color: var(--cg-ink-3);
   font-size: 0.85rem;
 }
+
+/* ------------------------------------------------ endpoints: server tests -- */
+
+.cg-ep-server {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-ep-server-url {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24rem;
+}
+
+.cg-ep-log summary {
+  cursor: pointer;
+  padding: 0 1rem;
+  color: var(--cg-ink-3);
+  font-size: 0.8rem;
+}
+
+.cg-ep-log .cg-api-pre {
+  margin: 0.4rem 1rem 0;
+}
+
+.cg-ep-notice {
+  margin: 0;
+  padding: 0 1rem;
+  color: var(--cg-ink-3);
+  font-size: 0.82rem;
+}
+
+.cg-ep-tests {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cg-ep-test-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cg-ep-failure {
+  max-height: 14rem;
+}
+
+.cg-ep-badge {
+  padding: 0 0.3rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 4px;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

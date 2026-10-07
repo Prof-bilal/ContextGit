@@ -40,6 +40,10 @@ from contextgit.api.schemas import (
     CompareResult,
     CouncilRequest,
     DocumentRequest,
+    EndpointGenerateRequest,
+    EndpointGenerateResponse,
+    EndpointRunRequest,
+    EndpointServeRequest,
     EnqueueMergeRequest,
     ImageRequest,
     InitRequest,
@@ -71,6 +75,7 @@ from contextgit.core.errors import (
     CollectionNotFound,
     CommitNotFound,
     ContextGitError,
+    EndpointNotFound,
     GateNotConfigured,
     InvalidMergeResolution,
     InvalidRefName,
@@ -93,6 +98,7 @@ from contextgit.core.errors import (
 )
 from contextgit.core.models import (
     EndpointGraph,
+    EndpointTestSuite,
     HttpCollection,
     HttpHistoryEntry,
     HttpRequestSpec,
@@ -100,6 +106,7 @@ from contextgit.core.models import (
     Message,
     ProviderCapability,
     ProviderRecord,
+    ServerStatus,
     UsageSummary,
     utcnow,
 )
@@ -119,6 +126,13 @@ from contextgit.documents import (
     save,
 )
 from contextgit.endpoints.provenance import graph_with_provenance
+from contextgit.endpoints.serve import fetch_live_openapi, supervisor
+from contextgit.endpoints.tests import (
+    DEFAULT_BASE_URL,
+    generate_for_endpoint,
+    remembered,
+    run_suite,
+)
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -194,6 +208,13 @@ def create_app(
 
     repo_dep = Depends(get_repo)
 
+    def _live_openapi(root: Path) -> dict[str, object] | None:
+        """The running server's own spec — only when it is this project's server."""
+        status = supervisor().status()
+        if not status.healthy or not status.url or status.cwd != str(root):
+            return None
+        return fetch_live_openapi(status.url)
+
     @app.exception_handler(ContextGitError)
     async def contextgit_error_handler(request: Request, exc: ContextGitError) -> JSONResponse:
         if isinstance(
@@ -208,6 +229,7 @@ def create_app(
                 TaskNotFound,
                 TeamNotFound,
                 CollectionNotFound,
+                EndpointNotFound,
             ),
         ):
             status = 404
@@ -868,7 +890,7 @@ def create_app(
     def endpoints(project_path: str | None = None, current: Repo = repo_dep) -> EndpointGraph:
         """Every endpoint of the project, with the change that produced each one."""
         root = Path(project_path).expanduser() if project_path else current.root
-        return graph_with_provenance(current, root)
+        return graph_with_provenance(current, root, openapi=_live_openapi(root))
 
     @app.post("/api/v1/endpoints/refresh", response_model=EndpointGraph)
     def endpoints_refresh(
@@ -876,7 +898,62 @@ def create_app(
     ) -> EndpointGraph:
         """Re-scan the project (the graph is always read fresh, so this is a re-read)."""
         root = Path(project_path).expanduser() if project_path else current.root
-        return graph_with_provenance(current, root)
+        return graph_with_provenance(current, root, openapi=_live_openapi(root))
+
+    # ---------- the project's server + generated endpoint tests ----------
+
+    @app.get("/api/v1/endpoints/serve", response_model=ServerStatus)
+    def endpoints_serve(project_path: str | None = None) -> ServerStatus:
+        """The project's server, with the tail of its log."""
+        root = Path(project_path).expanduser() if project_path else None
+        return supervisor().status(root)
+
+    @app.post("/api/v1/endpoints/serve", response_model=ServerStatus)
+    def endpoints_serve_start(body: EndpointServeRequest) -> ServerStatus:
+        """Start the project's server. Never automatic: the UI clicks this."""
+        return supervisor().start(body.project_path, body.command, body.port)
+
+    @app.delete("/api/v1/endpoints/serve", response_model=ServerStatus)
+    def endpoints_serve_stop() -> ServerStatus:
+        """Stop the server and its whole process group."""
+        return supervisor().stop()
+
+    @app.get("/api/v1/endpoints/tests", response_model=EndpointTestSuite)
+    def endpoints_tests(project_path: str) -> EndpointTestSuite:
+        """The generated test files for a project, with their last outcome."""
+        return remembered(Path(project_path).expanduser())
+
+    @app.post("/api/v1/endpoints/tests/generate", response_model=EndpointGenerateResponse)
+    def endpoints_generate(
+        body: EndpointGenerateRequest, current: Repo = repo_dep
+    ) -> EndpointGenerateResponse:
+        """Author tests for one endpoint, run them, and keep the file."""
+        root = Path(body.project_path).expanduser()
+        status = supervisor().status(root)
+        graph = graph_with_provenance(current, root, openapi=_live_openapi(root))
+        endpoint = next((item for item in graph.endpoints if item.id == body.endpoint_id), None)
+        if endpoint is None:
+            raise EndpointNotFound(body.endpoint_id)
+        adapter, resolved = build_for(body.provider_id, current.list_providers())
+        model = body.model or resolved.model or "gpt-4o-mini"
+        entry, overwrote, failure = generate_for_endpoint(
+            root,
+            endpoint,
+            adapter=adapter,
+            model=model,
+            base_url=status.url or DEFAULT_BASE_URL,
+            validate=status.healthy,
+        )
+        return EndpointGenerateResponse(
+            file=entry, suite=remembered(root), overwrote=overwrote, failure=failure
+        )
+
+    @app.post("/api/v1/endpoints/tests/run", response_model=EndpointTestSuite)
+    def endpoints_run(body: EndpointRunRequest) -> EndpointTestSuite:
+        """Run every generated test file against the running server."""
+        root = Path(body.project_path).expanduser()
+        base_url = body.base_url or supervisor().status(root).url or DEFAULT_BASE_URL
+        return run_suite(root, base_url)
 
     # ---------- HTTP client (the API tab) ----------
 

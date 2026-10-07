@@ -8,6 +8,8 @@ from contextgit.core.models import (
     AuthStyle,
     Branch,
     Commit,
+    EndpointTestFile,
+    EndpointTestSuite,
     Message,
     ProviderCapability,
     ProviderKind,
@@ -385,3 +387,36 @@ class TeamMessageRequest(BaseModel):
     ] = "update"
     task_id: str | None = None
     from_task_id: str | None = None
+
+
+class EndpointServeRequest(BaseModel):
+    """Start the project's server (with an optional command override)."""
+
+    project_path: str
+    command: str | None = None
+    port: int | None = None
+
+
+class EndpointGenerateRequest(BaseModel):
+    """Write tests for one endpoint, using a chat provider to author them."""
+
+    project_path: str
+    endpoint_id: str
+    provider_id: str = "openai"
+    model: str | None = None
+
+
+class EndpointRunRequest(BaseModel):
+    """Run the generated API tests against a base URL."""
+
+    project_path: str
+    base_url: str | None = None
+
+
+class EndpointGenerateResponse(BaseModel):
+    """The endpoint's new test file, plus the suite it now belongs to."""
+
+    file: EndpointTestFile
+    suite: EndpointTestSuite
+    overwrote: bool = False
+    failure: str | None = None

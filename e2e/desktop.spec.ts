@@ -309,6 +309,13 @@ test("the Endpoints tab lists the project's routes with their origin", async () 
   await notes.click();
   await expect(page.locator(".cg-ep-path")).toHaveText("/notes");
   await expect(page.locator(".cg-dock")).toContainText("add endpoints");
+
+  // The tab also owns the project's server: the detected command is shown, and
+  // starting it is always an explicit click.
+  await expect(page.locator(".cg-ep-server")).toContainText(
+    "python -m uvicorn app:app",
+  );
+  await expect(page.getByRole("button", { name: "Start server" })).toBeEnabled();
 });
 
 test("the Browser tab opens real pages and refuses non-http schemes", async () => {

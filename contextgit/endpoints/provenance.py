@@ -124,11 +124,17 @@ def endpoint_provenance(repo: Repo, project: Path | str, endpoint: Endpoint) -> 
     return provenance
 
 
-def graph_with_provenance(repo: Repo, project: Path | str) -> EndpointGraph:
-    """Discover a project's endpoints and attach the origin of each one."""
+def graph_with_provenance(
+    repo: Repo, project: Path | str, *, openapi: dict[str, object] | None = None
+) -> EndpointGraph:
+    """Discover a project's endpoints and attach the origin of each one.
+
+    `openapi` is the *live* server's document when it is running; it wins over a
+    static spec file because it describes what the process actually serves.
+    """
     from contextgit.endpoints.discover import discover  # noqa: PLC0415 — avoids a cycle
 
-    graph = discover(project)
+    graph = discover(project, openapi=openapi)
     for endpoint in graph.endpoints:
         endpoint.provenance = endpoint_provenance(repo, project, endpoint)
     return graph
