@@ -493,6 +493,9 @@ export default function ProjectsRail({
                               >
                                 <StatusIcon status={session.status} />
                                 <span className="cg-row-title">{session.name}</span>
+                                {!openIds.includes(session.id) && session.status === "idle" && (
+                                  <span className="cg-session-offline">offline</span>
+                                )}
                                 <span className="cg-toolbar-spacer" />
                                 {session.role && (
                                   <Chip>

@@ -411,7 +411,7 @@ export default function TerminalPane({
           type="button"
           className="cg-icon-btn"
           aria-label={`Close ${session.name}`}
-          title="Close pane (the run stays in the rail)"
+          title="Close terminal and stop the process"
           onClick={onClose}
         >
           <LuX aria-hidden="true" />

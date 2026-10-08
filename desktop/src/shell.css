@@ -1065,6 +1065,15 @@ textarea.cg-text-input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cg-session-offline {
+  flex: none;
+  color: var(--cg-ink-3);
+  font:
+    500 0.58rem/1 "Martian Mono",
+    monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 .cg-row-meta {
   display: flex;
   align-items: center;

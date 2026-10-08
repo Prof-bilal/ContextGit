@@ -11,7 +11,7 @@ const unavailable = async (): Promise<never> => { throw new Error("This data sou
 const refreshUnavailable = async () => { };
 const useSessionsSource = createIsolatedResource<ReturnType<typeof useSessions>>("Sessions", useSessions, {
   sessions: [], loaded: false, removedIds: [], error: null, refresh: refreshUnavailable,
-  create: unavailable, remove: unavailable, setAutoCommit: unavailable,
+  create: unavailable, remove: unavailable, setAutoCommit: unavailable, stop: unavailable,
 });
 const useTeamSource = createIsolatedResource<ReturnType<typeof useTeam>>("Team data", useTeam, {
   board: null, error: null, refresh: refreshUnavailable, act: unavailable,

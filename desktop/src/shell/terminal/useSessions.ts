@@ -107,5 +107,12 @@ export function useSessions() {
     return updated;
   }, []);
 
-  return { sessions, loaded, removedIds, error, refresh, create, remove, setAutoCommit };
+  const stop = useCallback(async (id: string) => {
+    const updated = await api.updateSession(id, { status: "idle" });
+    revision.current.changed();
+    setSessions((current) => current.map((session) => (session.id === id ? updated : session)));
+    return updated;
+  }, []);
+
+  return { sessions, loaded, removedIds, error, refresh, create, remove, setAutoCommit, stop };
 }
