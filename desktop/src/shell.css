@@ -838,6 +838,21 @@ textarea.cg-text-input {
 .cg-project-group {
   border-bottom: 1px solid color-mix(in srgb, var(--cg-line) 55%, transparent);
 }
+.cg-project-head-row {
+  display: flex;
+  align-items: center;
+}
+.cg-project-head-row .cg-project-head {
+  flex: 1;
+  min-width: 0;
+}
+.cg-project-new-terminal {
+  margin-right: 0.45rem;
+  color: var(--cg-ink-3);
+}
+.cg-project-new-terminal:hover {
+  color: var(--cg-signal);
+}
 .cg-project-head .cg-project-icon {
   flex: none;
   color: var(--cg-ink-3);

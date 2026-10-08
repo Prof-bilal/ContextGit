@@ -129,15 +129,19 @@ export default function CodeFeature() {
     [create, openSession, workspace],
   );
 
-  const newTerminal = useCallback(async () => {
-    if (!workspace) {
+  const newTerminal = useCallback(async (projectPath?: string) => {
+    const targetPath = projectPath ?? workspace?.path;
+    if (!targetPath) {
       setProjectOpen(true);
       setBarError("Choose a project folder first");
       return;
     }
     try {
-      const shellCount = sessions.filter((session) => (session.agent ?? "shell") === "shell").length;
-      const created = await create(`shell ${shellCount + 1}`, "shell", workspace.path);
+      const shellCount = sessions.filter(
+        (session) =>
+          (session.agent ?? "shell") === "shell" && session.project_path === targetPath,
+      ).length;
+      const created = await create(`shell ${shellCount + 1}`, "shell", targetPath);
       openSession(created);
     } catch (cause) {
       setBarError(cause instanceof Error ? cause.message : "Could not open a terminal");
@@ -373,6 +377,7 @@ export default function CodeFeature() {
         activePath={activePath}
         onSelect={openSession}
         onNew={startRun}
+        onNewTerminal={(projectPath) => void newTerminal(projectPath)}
         backendAvailable={backendAvailable}
         onDelete={(session) => void deleteRun(session)}
         onUseProject={(path) => void runAction(() => useProject(path))}

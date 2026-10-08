@@ -100,6 +100,7 @@ export default function ProjectsRail({
   onSelect,
   onMergeAgent,
   onNew,
+  onNewTerminal,
   onDelete,
   onUseProject,
   onForgetProject,
@@ -118,6 +119,7 @@ export default function ProjectsRail({
   onMergeAgent?: () => void;
   onSelect: (session: Session) => void;
   onNew: (name: string, agent: string, scope: string[], roleId: string) => Promise<void>;
+  onNewTerminal: (projectPath: string) => void;
   onDelete: (session: Session) => void;
   onUseProject: (path: string) => void;
   onForgetProject: (path: string) => void;
@@ -422,25 +424,38 @@ export default function ProjectsRail({
             data-open={isOpen}
             data-active={node.path === activePath}
           >
-            <button
-              type="button"
-              className="cg-group-head cg-project-head"
-              aria-expanded={isOpen}
-              onClick={() => setProjOpen((current) => ({ ...current, [node.key]: !isOpen }))}
-            >
-              <span className="cg-group-caret" aria-hidden="true">
-                <LuChevronRight />
-              </span>
-              <LuFolder aria-hidden="true" className="cg-project-icon" />
-              <span className="cg-group-name">{node.name}</span>
-              {node.path === activePath && (
-                <span className="cg-project-active" title="Active project">
-                  active
+            <div className="cg-project-head-row">
+              <button
+                type="button"
+                className="cg-group-head cg-project-head"
+                aria-expanded={isOpen}
+                onClick={() => setProjOpen((current) => ({ ...current, [node.key]: !isOpen }))}
+              >
+                <span className="cg-group-caret" aria-hidden="true">
+                  <LuChevronRight />
                 </span>
+                <LuFolder aria-hidden="true" className="cg-project-icon" />
+                <span className="cg-group-name">{node.name}</span>
+                {node.path === activePath && (
+                  <span className="cg-project-active" title="Active project">
+                    active
+                  </span>
+                )}
+                <span className="cg-toolbar-spacer" />
+                <span className="cg-count">{node.sessions.length}</span>
+              </button>
+              {node.path && (
+                <button
+                  type="button"
+                  className="cg-icon-btn cg-project-new-terminal"
+                  aria-label={`Open terminal in ${node.name}`}
+                  title={`Open terminal in ${node.name}`}
+                  onClick={() => onNewTerminal(node.path!)}
+                >
+                  <LuPlus aria-hidden="true" />
+                </button>
               )}
-              <span className="cg-toolbar-spacer" />
-              <span className="cg-count">{node.sessions.length}</span>
-            </button>
+            </div>
             <div className="cg-group-items">
               <div>
                 {node.groups.map((group) => {
