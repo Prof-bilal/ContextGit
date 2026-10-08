@@ -51,7 +51,11 @@ export class PtyManager {
     const command = options.command === "" || options.command === "shell"
       ? null
       : preset?.command ?? options.command;
-    const pty = spawn(command ?? defaultShell(), [...(preset?.args ?? []), ...(options.extraArgs ?? [])], {
+    const taskPrompt = options.command === "opencode" ? options.input?.trim() : undefined;
+    const args = taskPrompt
+      ? [...(preset?.args ?? []), ...(options.extraArgs ?? []), "run", taskPrompt]
+      : [...(preset?.args ?? []), ...(options.extraArgs ?? [])];
+    const pty = spawn(command ?? defaultShell(), args, {
       name: "xterm-256color",
       cols: Math.max(20, options.cols),
       rows: Math.max(5, options.rows),
@@ -59,7 +63,10 @@ export class PtyManager {
       env: { ...process.env, ...options.env } as Record<string, string>,
     });
     pty.onData((data) => this._onData(options.id, data));
-    if (options.input && options.input.trim()) {
+    // Team OpenCode sessions use `opencode run` above, so they submit the task
+    // as a CLI argument. Other harnesses keep the interactive initial-input
+    // path because their command-line prompt interfaces differ.
+    if (!taskPrompt && options.input && options.input.trim()) {
       const payload = `${options.input.trim()}\r`;
       let sent = false;
       let inputTimer: ReturnType<typeof setTimeout> | null = null;
