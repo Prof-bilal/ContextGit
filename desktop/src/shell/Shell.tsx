@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type SetStateAction } from "react";
 import { LuCommand, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
-import TopNav, { type TabDef, type TabId } from "./TopNav";
+import TopNav, { type PrimaryTabId, type TabDef, type TabId } from "./TopNav";
 import { IconButton, MiniSeg } from "./primitives";
 import { Dock } from "./Dock";
 import { FeatureBoundary } from "./FeatureBoundary";
@@ -12,41 +12,44 @@ import TerminalHost from "./terminal/TerminalHost";
 import ChatFeature from "./features/ChatFeature";
 import CodeFeature from "./features/CodeFeature";
 import AssetsFeature from "./features/AssetsFeature";
-import BrowserFeature from "./features/BrowserFeature";
-import EditorFeature from "./features/EditorFeature";
-import ApiFeature from "./features/ApiFeature";
-import EndpointsFeature from "./features/EndpointsFeature";
-import WhyFeature from "./features/WhyFeature";
-import DbFeature from "./features/DbFeature";
 import AgentFeature from "./features/AgentFeature";
-import PlaygroundFeature from "./features/PlaygroundFeature";
 import GitFeature from "./features/GitFeature";
-import UsageFeature from "./features/UsageFeature";
-import StorageFeature from "./features/StorageFeature";
 
 const FEATURES = [
   { id: "chat", label: "Chat", title: "Conversation", Controller: ChatFeature },
   { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
-  { id: "assets", label: "Assets", title: "Asset", Controller: AssetsFeature },
-  { id: "browser", label: "Browser", title: "Page", Controller: BrowserFeature },
-  { id: "editor", label: "Editor", title: "Editor", Controller: EditorFeature },
-  { id: "api", label: "API", title: "Response", Controller: ApiFeature },
-  { id: "endpoints", label: "Endpoints", title: "Origin", Controller: EndpointsFeature },
-  { id: "why", label: "Why", title: "Why", Controller: WhyFeature },
-  { id: "db", label: "Database", title: "Database", Controller: DbFeature },
   { id: "agent", label: "Agent", title: "Agent", Controller: AgentFeature },
-  { id: "playground", label: "Playground", title: "Playground", Controller: PlaygroundFeature },
   { id: "git", label: "Git", title: "Commit", Controller: GitFeature },
-  { id: "usage", label: "Usage", title: "Usage", Controller: UsageFeature },
-  { id: "storage", label: "Storage", title: "Storage", Controller: StorageFeature },
+  { id: "assets", label: "Assets", title: "Asset", Controller: AssetsFeature },
 ] as const satisfies readonly (TabDef & { title: string; Controller: typeof ChatFeature })[];
 const TABS: TabDef[] = FEATURES.map(({ id, label }) => ({ id, label }));
 const MODE_OPTIONS = [{ value: "single" as const, label: "Single" }, { value: "team" as const, label: "Team" }];
-const NO_DOCK: TabId[] = ["usage", "browser", "editor"];
+const NO_DOCK: PrimaryTabId[] = [];
 
-function initialTab(): TabId {
+const LEGACY_TAB_REDIRECTS: Record<Exclude<TabId, PrimaryTabId>, PrimaryTabId> = {
+  storage: "git",
+  editor: "code",
+  api: "code",
+  endpoints: "code",
+  why: "code",
+  db: "code",
+  browser: "chat",
+  playground: "agent",
+  usage: "agent",
+};
+
+function initialTab(): PrimaryTabId {
   const value = new URLSearchParams(window.location.search).get("tab");
-  return FEATURES.find(feature => feature.id === value)?.id ?? "code";
+  const primary = FEATURES.find(feature => feature.id === value)?.id as PrimaryTabId | undefined;
+  const redirected = primary ?? (value && value in LEGACY_TAB_REDIRECTS
+    ? LEGACY_TAB_REDIRECTS[value as Exclude<TabId, PrimaryTabId>]
+    : undefined) ?? "code";
+  if (value && value !== redirected) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", redirected);
+    window.history.replaceState(null, "", url);
+  }
+  return redirected;
 }
 
 export default function Shell(props: { backendAvailable?: boolean }) {
@@ -55,7 +58,15 @@ export default function Shell(props: { backendAvailable?: boolean }) {
 
 /** Only stable layout and coordination live here. Feature hooks run in sibling controllers. */
 function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolean }) {
-  const [tab, setTab] = useState<TabId>(initialTab);
+  const [tab, setActiveTab] = useState<PrimaryTabId>(initialTab);
+  const setTab = useCallback((next: SetStateAction<TabId>) => {
+    setActiveTab(current => {
+      const value = typeof next === "function" ? next(current) : next;
+      return Object.prototype.hasOwnProperty.call(LEGACY_TAB_REDIRECTS, value)
+        ? LEGACY_TAB_REDIRECTS[value as Exclude<TabId, PrimaryTabId>]
+        : value as PrimaryTabId;
+    });
+  }, []);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [dockOpen, setDockOpen] = useState(true);
   const shared = useWorkbenchState();
@@ -77,7 +88,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
       }])) as Record<TabId, (node: HTMLDivElement | null) => void>
     };
   }, []);
-  const selected = FEATURES.find(feature => feature.id === tab)!;
+  const selected = FEATURES.find(feature => feature.id === tab) ?? FEATURES[0];
   const dockTitle = tab === "code" && shared.mode === "team" ? "Task" : selected.title;
 
   return <WorkbenchContext.Provider value={{ ...shared, tab, setTab, theme, dockOpen, backendAvailable, overlayOpen, setFeatureOverlay, slots }}>

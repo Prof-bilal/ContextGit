@@ -59,8 +59,11 @@ that history a mergeable artefact alongside your code.
   pre-flight and conflict blocking.
 - **Paired code + context merge** — merging a run lands its diff on the git
   branch *and* its reasoning on the context branch.
-- **Desktop workbench** — Electron app with Chat / Code / Assets / Browser / Editor /
-  API / Endpoints / Why / Database / Agent / Git tabs, live terminals (xterm + node-pty) per run,
+- **Desktop workbench** — Electron app with five primary tabs: Chat / Code / Agent /
+  Git / Assets. Storage is being folded into Git, while the legacy Browser, Editor,
+  API, Endpoints, Why, Database, Playground and Usage surfaces remain preserved in
+  the [full workbench archive](https://github.com/Prof-bilal/ContextGit-legacy-features).
+  Live terminals (xterm + node-pty) run per agent,
   a **general-purpose in-app browser** (Chromium via `WebContentsView`, with tabs,
   history, bookmarks, find-in-page and zoom), a file-asset library with an AI agent,
   and an **embedded VS Code** (a bundled `code-server` sidecar) with a ContextGit graph.

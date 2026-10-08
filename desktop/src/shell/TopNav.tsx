@@ -1,20 +1,28 @@
 import { useRef } from "react";
 
-export type TabId =
+export type PrimaryTabId =
   | "chat"
   | "code"
   | "assets"
+  | "agent"
+  | "git";
+
+/**
+ * Retained for feature code that is being archived in a later phase. These
+ * IDs are not part of the primary navigation and must not be added to TABS.
+ */
+export type LegacyTabId =
   | "browser"
   | "editor"
   | "api"
   | "endpoints"
   | "why"
   | "db"
-  | "agent"
   | "playground"
-  | "git"
   | "usage"
   | "storage";
+
+export type TabId = PrimaryTabId | LegacyTabId;
 
 export interface TabDef {
   id: TabId;

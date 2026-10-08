@@ -185,6 +185,25 @@ test("workspace shell renders with the top nav", async () => {
   await expect(nav(page, "Code")).toBeVisible();
   await expect(nav(page, "Agent")).toBeVisible();
   await expect(nav(page, "Git")).toBeVisible();
+  await expect(nav(page, "Assets")).toBeVisible();
+  await expect(page.locator(".cg-segmented").getByRole("tab")).toHaveCount(5);
+  for (const retired of ["Browser", "Editor", "API", "Endpoints", "Why", "Database", "Playground", "Usage", "Storage"]) {
+    await expect(nav(page, retired)).toHaveCount(0);
+  }
+});
+
+test("legacy tab URLs redirect to the reduced navigation", async () => {
+  const page = await openShell();
+  const legacyUrl = new URL(await page.url());
+  legacyUrl.searchParams.set("tab", "storage");
+  await page.goto(legacyUrl.toString());
+  await expect(nav(page, "Git")).toHaveAttribute("aria-selected", "true");
+  expect(new URL(await page.url()).searchParams.get("tab")).toBe("git");
+
+  legacyUrl.searchParams.set("tab", "playground");
+  await page.goto(legacyUrl.toString());
+  await expect(nav(page, "Agent")).toHaveAttribute("aria-selected", "true");
+  expect(new URL(await page.url()).searchParams.get("tab")).toBe("agent");
 });
 
 test("the Assets tab renders the gallery and its controls", async () => {
@@ -267,159 +286,6 @@ test("the asset agent uses the provider connector, isolated from Chat", async ()
   await expect(connector).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-});
-
-test("the API tab sends a real request and saves it to a collection", async () => {
-  const page = await openShell();
-  await nav(page, "API").click();
-
-  const base = await page.evaluate(
-    () =>
-      (window as unknown as { contextgit?: { apiBase?: string } }).contextgit?.apiBase ?? "",
-  );
-  expect(base).toBeTruthy();
-
-  await expect(page.getByLabel("HTTP method")).toHaveValue("GET");
-  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
-
-  // A real round-trip to this app's own backend.
-  await page.getByLabel("Request URL").fill(`${base}/api/v1/health`);
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator(".cg-api-code")).toContainText("200");
-  await expect(page.locator(".cg-api-pre")).toContainText("ok");
-
-  // The request is recorded in the rail's history.
-  await expect(page.locator(".cg-rail")).toContainText("/api/v1/health");
-
-  // Saving stores the composed request as a file in the repo.
-  await page.getByLabel("Collection name").fill("E2E API");
-  await page.getByRole("button", { name: "Save request" }).click();
-  const saved = page.locator(".cg-rail .cg-row", { hasText: "E2E API" });
-  await expect(saved).toBeVisible();
-
-  await page.getByRole("button", { name: "Delete collection E2E API" }).click();
-  await expect(saved).toHaveCount(0);
-});
-
-test("the Endpoints tab lists the project's routes with their origin", async () => {
-  const page = await openShell();
-  await nav(page, "Endpoints").click();
-
-  const row = page.locator(".cg-rail .cg-row", { hasText: "/health" });
-  await expect(row).toBeVisible();
-  await expect(row).toContainText("GET");
-  const notes = page.locator(".cg-rail .cg-row", { hasText: "/notes" });
-  await expect(notes).toBeVisible();
-
-  await row.click();
-  await expect(page.locator(".cg-ep-path")).toHaveText("/health");
-  // The handler location comes from the AST scan, not from a spec.
-  await expect(page.locator(".cg-ep")).toContainText("app.py:6");
-  // /health has not changed since the first commit, so that is its origin.
-  await expect(page.locator(".cg-dock")).toContainText("init");
-
-  // The endpoint added by the second commit is traced to that commit.
-  await notes.click();
-  await expect(page.locator(".cg-ep-path")).toHaveText("/notes");
-  await expect(page.locator(".cg-dock")).toContainText("add endpoints");
-
-  // The tab also owns the project's server: the detected command is offered in
-  // an editable field, and starting it is always an explicit click.
-  await expect(page.getByLabel("Run command")).toHaveValue(
-    "python -m uvicorn app:app --host 127.0.0.1",
-  );
-  await expect(page.getByRole("button", { name: "Start server" })).toBeEnabled();
-});
-
-test("the Why tab reads a file's history and admits what it cannot know", async () => {
-  const page = await openShell();
-  await nav(page, "Why").click();
-
-  await page.getByLabel("File path").fill("app.py");
-  await page.getByRole("button", { name: "Explain" }).click();
-
-  // The timeline comes from git, so it works without any provider.
-  await expect(
-    page.locator(".cg-rail .cg-row", { hasText: "add endpoints" }),
-  ).toBeVisible();
-  await expect(page.locator(".cg-rail .cg-row", { hasText: "init" })).toBeVisible();
-
-  // The e2e project has no recorded runs, so we say that instead of inventing a why.
-  await expect(page.locator(".cg-ep")).toContainText(
-    "did not come from a recorded run",
-  );
-});
-
-test("the DB tab connects to SQLite and runs a query", async () => {
-  const page = await openShell();
-  await nav(page, "Database").click();
-
-  const dbPath = path.join(testWorkdir, "e2e.sqlite");
-  fs.rmSync(dbPath, { force: true });
-
-  await page.getByLabel("Engine").selectOption("sqlite");
-  await page.getByLabel("Connection name").fill("E2E");
-  await page.getByLabel("Database file").fill(dbPath);
-  await page.getByRole("button", { name: "Connect" }).click();
-
-  // SQLite needs no driver, so this really connects.
-  await expect(page.locator(".cg-db-status")).toContainText("SQLite");
-
-  await page.getByLabel("SQL").fill("SELECT 1 AS hello;");
-  await page.getByRole("button", { name: "Run", exact: true }).click();
-  await expect(page.locator(".cg-db-table")).toContainText("hello");
-  await expect(page.locator(".cg-db-results")).toContainText("1");
-
-  // Saving keeps the connection (and never the password) for next time.
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".cg-rail .cg-row", { hasText: "E2E" })).toBeVisible();
-});
-
-test("the Browser tab opens real pages and refuses non-http schemes", async () => {
-  const page = await openShell();
-  await nav(page, "Browser").click();
-
-  const browser = page.locator(".cg-browser");
-  await expect(browser).toBeVisible();
-  // A new tab shows the start page with shortcuts.
-  await expect(browser.locator(".cg-browser-tile", { hasText: "Google" })).toBeVisible();
-
-  // Loopback loads through the in-app view (the e2e backend).
-  const status = page.locator(".cg-browser .cg-browser-status");
-  const address = page.getByLabel("Address");
-  await address.fill("http://127.0.0.1:8757/api/v1/health");
-  await address.press("Enter");
-  await expect(status).toHaveAttribute("data-status", "loaded", { timeout: 20_000 });
-
-  // Non-http(s) schemes are refused.
-  await address.fill("file:///etc/passwd");
-  await address.press("Enter");
-  await expect(status).toHaveAttribute("data-status", "blocked", { timeout: 10_000 });
-});
-
-test("the Editor tab starts the embedded VS Code sidecar", async () => {
-  const page = await openShell();
-  await nav(page, "Editor").click();
-  await expect(page.locator(".cg-editor")).toBeVisible();
-
-  // Start code-server from the view's start card.
-  await page.locator(".cg-editor-start").getByRole("button", { name: "Start editor" }).click();
-  await expect(page.locator(".cg-editor .cg-browser-status")).toHaveAttribute(
-    "data-status",
-    "loaded",
-    { timeout: 60_000 },
-  );
-
-  // The rail reports the sidecar is running.
-  await expect(page.locator(".cg-rail")).toContainText("Running on");
-
-  // Our graph extension was installed under the name VS Code expects, and scanned.
-  const root = path.resolve(__dirname, "..");
-  const extensionsDir = path.join(root, ".playwright-userdata", "editor", "extensions");
-  expect(
-    fs.existsSync(path.join(extensionsDir, "contextgit.contextgraph-0.1.0", "extension.js")),
-  ).toBe(true);
-  expect(fs.existsSync(path.join(extensionsDir, ".obsolete"))).toBe(false);
 });
 
 test("switch to the Git tab and toggle list/graph", async () => {
@@ -550,13 +416,6 @@ test("a branch can be deleted, and the current one cannot", async () => {
 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Move branch e2e/to-delete to Storage" })).toHaveCount(0);
-  await nav(page, "Storage").click();
-  const restore = page.getByRole("button", { name: "Restore branch e2e/to-delete", exact: true });
-  await expect(restore).toBeVisible();
-  await restore.click();
-  await expect(restore).toHaveCount(0);
-  await nav(page, "Git").click();
-  await expect(page.getByRole("button", { name: "Move branch e2e/to-delete to Storage" })).toBeVisible();
 
   // The current branch has no delete affordance at all.
   await expect(page.getByRole("button", { name: "Move branch main to Storage" })).toHaveCount(0);
@@ -1065,20 +924,6 @@ test("the Docs sub-tab in Chat has the creator", async () => {
   });
   expect(artifact.status).toBe(200);
   expect(artifact.text).toContain("offline mock provider");
-});
-
-test("the Usage tab shows the merged token view", async () => {
-  const page = await openShell();
-  await nav(page, "Usage").click();
-
-  const usage = page.locator(".cg-usage");
-  await expect(usage).toBeVisible();
-  await expect(usage.getByRole("heading", { name: "Usage" })).toBeVisible();
-  // The streak panel and contribution graph render.
-  await expect(usage.locator(".cg-usage-streak")).toBeVisible();
-  await expect(usage.locator(".cg-heat-grid")).toBeVisible();
-  await expect(usage.locator(".cg-heat-legend")).toContainText("More");
-  await expect(usage.locator(".cg-usage-row").first()).toBeVisible();
 });
 
 test("agent tab renders distinct clay avatars that react to state", async () => {
@@ -1705,140 +1550,4 @@ test("Code usage changes from preload events without Refresh", async () => {
   await expect(page.locator(".cg-dock .cg-limits")).toContainText("123 tokens");
   await app.evaluate(({ BrowserWindow }, reading) => BrowserWindow.getAllWindows()[0].webContents.send("ctx:usage-update", reading), { ...value, totals: { ...value.totals, total_tokens: 456 } });
   await expect(page.locator(".cg-dock .cg-limits")).toContainText("456 tokens");
-});
-
-test("Playground browses the curated catalog and installs a bundled role skill", async () => {
-  const page = await openShell();
-  await nav(page, "Playground").click();
-  await expect(page.getByRole("heading", { name: "CodeAtlas", exact: true })).toBeVisible();
-  await expect(page.locator(".cg-rail")).toContainText("Warden");
-  await expect(page.locator(".cg-rail")).toContainText("ModelCheck");
-  await page.locator(".cg-rail").getByRole("button", { name: /^Skills/ }).click();
-  await page.getByLabel("Search Playground").fill("UI build");
-  await page.locator(".cg-rail .cg-row", { hasText: "UI build" }).click();
-  await page.locator(".cg-pg-actions").getByRole("button", { name: /Install|Review installation/, exact: true }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Review installation" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("SKILL.md");
-  await expect(dialog).toContainText("name: ui-build");
-  await dialog.getByRole("button", { name: "Confirm install" }).click();
-  await expect(dialog).not.toBeVisible();
-  await page.getByLabel("Search Playground").fill("");
-  await page.locator(".cg-rail").getByRole("button", { name: /^Installed/ }).click();
-  await expect(page.locator(".cg-rail .cg-row", { hasText: "UI build" })).toBeVisible();
-});
-
-test("Playground Try calls a real read-only MCP tool and desktop API requires its launch token", async () => {
-  const page = await openShell();
-  await nav(page, "Playground").click();
-  await page.getByLabel("Search Playground").fill("");
-  await page.locator(".cg-rail").getByRole("button", { name: /^MCP servers/ }).click();
-  await page.locator(".cg-rail .cg-row", { hasText: "ContextGit team MCP" }).click();
-  await page.locator(".cg-pg-actions").getByRole("button", { name: /Install|Review installation/, exact: true }).first().click();
-  await page.getByRole("dialog").getByRole("button", { name: "Confirm install" }).click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
-  await page.getByRole("button", { name: "Run tool", exact: true }).click();
-  await expect(page.getByTestId("playground-response")).toContainText('"jsonrpc": "2.0"', { timeout: 25_000 });
-  const statuses = await page.evaluate(async () => {
-    const bridge = window.contextgit!;
-    const unauthenticated = await fetch(`${bridge.apiBase}/api/v1/repo`);
-    const authenticated = await fetch(`${bridge.apiBase}/api/v1/repo`, { headers: { Authorization: `Bearer ${bridge.apiToken}` } });
-    return [unauthenticated.status, authenticated.status];
-  });
-  expect(statuses).toEqual([401, 200]);
-});
-
-test("Playground expanded catalog distinguishes local installs from guided connections", async () => {
-  const page = await openShell();
-  await nav(page, "Playground").click();
-  await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
-  await page.getByLabel("Search Playground").fill("");
-  await expect(page.locator(".cg-pg-feature-card")).toHaveCount(3);
-  await expect(page.locator(".cg-pg-hero")).not.toContainText("Installed in this project.");
-  await page.locator(".cg-rail").getByRole("button", { name: /^MCP servers/ }).click();
-  await page.getByLabel("Search Playground").fill("Context7");
-  await page.locator(".cg-rail .cg-row", { hasText: "Context7" }).click();
-  await expect(page.getByLabel("Tool JSON arguments")).toHaveValue(/"libraryName": "react"/);
-  await expect(page.locator(".cg-pg-try")).toContainText("Your query is sent to Context7");
-  await page.getByLabel("Search Playground").fill("GitHub");
-  await page.locator(".cg-rail .cg-row", { hasText: "GitHub" }).click();
-  await expect(page.locator(".cg-pg-guided")).toContainText("OAuth");
-  await expect(page.locator(".cg-pg-actions").getByRole("button", { name: "Setup guide" })).toBeEnabled();
-  await page.getByLabel("Search Playground").fill("");
-  await page.locator(".cg-rail").getByRole("button", { name: /^Plugins/ }).click();
-  await page.getByLabel("Search Playground").fill("Frontend Design");
-  await page.locator(".cg-rail .cg-row", { hasText: "Frontend Design" }).click();
-  await expect(page.locator(".cg-pg-guided")).toContainText("frontend-design@claude-plugins-official --scope project");
-  await page.getByLabel("Search Playground").fill("");
-  await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
-  await page.locator(".cg-pg-feature-card", { hasText: "CodeAtlas" }).click();
-});
-
-test("tab render and controller failures preserve navigation, API drafts, and the live PTY", async () => {
-  test.setTimeout(60000);
-  const page = await openShell();
-  await nav(page, "Code").click();
-  await page.getByRole("tablist", { name: "Code mode" }).getByRole("tab", { name: "Single", exact: true }).click();
-  await page.getByRole("button", { name: "New run", exact: true }).click();
-  await page.getByLabel("Run name").fill("tab failure survivor");
-  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
-  await page.getByRole("button", { name: "Start run", exact: true }).click();
-  const pane = page.getByRole("region", { name: "tab failure survivor terminal", exact: true });
-  const output = pane.locator(".xterm-accessibility-tree");
-  await expect(output).toContainText(/\S/, { timeout: 15000 });
-  await pane.locator(".cg-term-host").click();
-  await page.keyboard.type('CG_ISOLATION=alive; printf "CG_ISOLATION_BEFORE=%s\\n" "$$"');
-  await page.keyboard.press("Enter");
-  await expect(output).toContainText(/CG_ISOLATION_BEFORE=\d+/, { timeout: 15000 });
-  const pid = (await output.innerText()).match(/CG_ISOLATION_BEFORE=(\d+)/)?.[1];
-  expect(pid).toBeTruthy();
-
-  let badFleet = true;
-  let fleetRecovered = false;
-  await page.route("**/api/v1/fleet", async route => {
-    if (badFleet) return route.fulfill({ json: {} }); // Break Code's rail and content, not its terminals.
-    const response = await route.fetch();
-    fleetRecovered = true;
-    await route.fulfill({ response });
-  });
-  try {
-    await expect(page.locator('[data-failed-feature="Run rail"]')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('[data-failed-feature="Run content"]')).toBeVisible();
-    await expect(pane).toBeVisible();
-    await nav(page, "API").click();
-    await page.getByLabel("Request URL").fill("https://example.com/isolation-draft");
-    badFleet = false;
-    await expect.poll(() => fleetRecovered, { timeout: 15000 }).toBe(true);
-    await nav(page, "Code").click();
-    // The inactive rail unmounts and recovers when revisited; Code content stays mounted.
-    await expect(page.locator('[data-failed-feature="Run rail"]')).toHaveCount(0);
-    await page.locator('[data-failed-feature="Run content"]').getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeEnabled();
-  } finally { await page.unroute("**/api/v1/fleet"); }
-
-  // Throw in Assets' controller calculation while it is hidden. No production fault-injection API.
-  await page.evaluate(() => {
-    const original = Array.prototype.find;
-    (window as unknown as { restoreAssetFind: () => void }).restoreAssetFind = () => { Array.prototype.find = original; };
-    Array.prototype.find = function <T>(this: T[], predicate: (value: T, index: number, array: T[]) => unknown, thisArg?: unknown): T | undefined {
-      if (this.some(item => (item as { id?: string } | null)?.id === "seed-png")) throw new Error("TEST Assets controller failure");
-      return original.call(this, predicate as (value: unknown, index: number, array: unknown[]) => unknown, thisArg) as T | undefined;
-    };
-  });
-  try {
-    await nav(page, "API").click(); // Rerenders the hidden feature controller.
-    await expect(page.getByLabel("Request URL")).toHaveValue("https://example.com/isolation-draft");
-    await nav(page, "Assets").click();
-    await expect(page.locator('[data-failed-feature="Assets"]')).toBeVisible();
-    await expect(page.locator(".backend-screen")).toHaveCount(0);
-  } finally {
-    await page.evaluate(() => (window as unknown as { restoreAssetFind: () => void }).restoreAssetFind());
-  }
-  await page.locator('[data-failed-feature="Assets"]').getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByRole("button", { name: "Import", exact: true })).toBeVisible();
-  await nav(page, "Code").click();
-  await pane.locator(".cg-term-host").click();
-  await page.keyboard.type('printf "CG_ISOLATION_AFTER=%s CG_ISOLATION=%s\\n" "$$" "$CG_ISOLATION"');
-  await page.keyboard.press("Enter");
-  await expect(output).toContainText(`CG_ISOLATION_AFTER=${pid} CG_ISOLATION=alive`, { timeout: 15000 });
 });
