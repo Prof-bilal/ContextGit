@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type TeamBoard } from "@/lib/api";
+import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
@@ -14,21 +15,20 @@ export function useTeam(intervalMs = 4000) {
   const [board, setBoard] = useState<TeamBoard | null>(null);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
-  const refresh = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+  const load = useCallback(async (current: () => boolean) => {
+    if (!HAS_BRIDGE || !current()) return;
     try {
-      setBoard(await api.team());
+      const next = await api.team();
+      if (!current()) return;
+      setBoard(next);
       reportSuccess();
     } catch (cause) {
+      if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load the team board");
     }
   }, [reportSuccess, reportFailure]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), intervalMs);
-    return () => clearInterval(timer);
-  }, [refresh, intervalMs]);
+  const refresh = useBackendPolling(load, intervalMs);
 
   /** Run a mutation, then re-read the board so gating state is never stale. */
   const act = useCallback(

@@ -130,22 +130,28 @@ export default function BrowserView({
       const url = toUrl(input);
       if (!bridge || !url) return;
       patch(key, { status: "loading", message: null, url });
-      if (!created.current.has(key)) {
-        created.current.add(key);
-        const made = await bridge.viewCreate(key, url);
-        if (!made.ok) {
-          created.current.delete(key);
-          patch(key, { status: "blocked", message: made.error ?? "Could not open the page" });
-          return;
+      const newView = !created.current.has(key);
+      try {
+        if (!created.current.has(key)) {
+          created.current.add(key);
+          const made = await bridge.viewCreate(key, url);
+          if (!made.ok) {
+            created.current.delete(key);
+            patch(key, { status: "blocked", message: made.error ?? "Could not open the page" });
+            return;
+          }
+        } else {
+          const loaded = await bridge.viewLoad(key, url);
+          if (!loaded.ok) {
+            patch(key, { status: "blocked", message: loaded.error ?? "Could not open the page" });
+            return;
+          }
         }
-      } else {
-        const loaded = await bridge.viewLoad(key, url);
-        if (!loaded.ok) {
-          patch(key, { status: "blocked", message: loaded.error ?? "Could not open the page" });
-          return;
-        }
+        patch(key, { mode: "page" });
+      } catch (cause) {
+        if (newView) created.current.delete(key);
+        patch(key, { status: "error", message: cause instanceof Error ? cause.message : "Could not open the page" });
       }
-      patch(key, { mode: "page" });
     },
     [patch],
   );

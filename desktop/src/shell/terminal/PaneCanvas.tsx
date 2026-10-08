@@ -1,6 +1,7 @@
 import { lazy, Suspense, useRef } from "react";
 
 import { uniqueSessions } from "./sessionState";
+import ErrorBoundary from "../../ErrorBoundary";
 import type { Session } from "@/lib/api";
 
 /** xterm is heavy and only needed once a terminal pane exists. */
@@ -14,7 +15,7 @@ export const LAYOUT_OPTIONS = [
   { value: "tiled" as const, label: "Tiled" },
 ];
 
-export const LAYOUT_LIMIT: Record<PaneLayout, number> = { single: 1, split: 2, tiled: 4 };
+export const LAYOUT_LIMIT: Record<PaneLayout, number> = { single: 1, split: 2, tiled: Infinity };
 
 /** Open runs, in the order they were opened. */
 export function openSessions(sessions: Session[], openIds: string[]): Session[] {
@@ -25,8 +26,8 @@ export function openSessions(sessions: Session[], openIds: string[]): Session[] 
 
 /**
  * The panes the current layout actually shows (the rest stay mounted, hidden).
- * The active run comes first, so starting or selecting a run never leaves its
- * terminal sliced out of a split/tiled layout by older panes.
+ * Tiled panes keep their opening order so selecting a terminal does not move
+ * the scrollable grid. Split puts the active run first so it stays visible.
  */
 export function visibleSessions(
   open: Session[],
@@ -34,6 +35,7 @@ export function visibleSessions(
   activeId: string | null,
 ): Session[] {
   if (layout === "single") return open.filter((session) => session.id === activeId).slice(0, 1);
+  if (layout === "tiled") return open;
   const active = open.find((session) => session.id === activeId);
   const rest = open.filter((session) => session.id !== activeId);
   return [...(active ? [active] : []), ...rest].slice(0, LAYOUT_LIMIT[layout]);
@@ -81,22 +83,23 @@ export default function PaneCanvas({
 
   return (
     <div className="cg-pane-canvas" data-layout={layout}>
-      <Suspense fallback={null}>
-        {open.map((session) => (
-          <TerminalPane
-            key={session.id}
-            session={session}
-            visible={shownIds.has(session.id)}
-            theme={theme}
-            initialInput={kickoff?.[session.id]}
-            taskId={taskIds?.[session.id]}
-            onActivate={() => onSelect(session)}
-            onClose={() => onClose(session)}
-            onStaged={onStaged}
-            onStatus={onStatus}
-          />
-        ))}
-      </Suspense>
+      {open.map((session) => (
+        <ErrorBoundary key={session.id} feature={`${session.name} terminal`}>
+          <Suspense fallback={null}>
+            <TerminalPane
+              session={session}
+              visible={shownIds.has(session.id)}
+              theme={theme}
+              initialInput={kickoff?.[session.id]}
+              taskId={taskIds?.[session.id]}
+              onActivate={() => onSelect(session)}
+              onClose={() => onClose(session)}
+              onStaged={onStaged}
+              onStatus={onStatus}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      ))}
     </div>
   );
 }

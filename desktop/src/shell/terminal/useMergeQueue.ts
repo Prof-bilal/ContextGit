@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type MergeQueueEntry } from "@/lib/api";
+import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
@@ -11,40 +12,42 @@ export function useMergeQueue() {
   const [queue, setQueue] = useState<MergeQueueEntry[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
-  const refresh = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+  const load = useCallback(async (current: () => boolean) => {
+    if (!HAS_BRIDGE || !current()) return;
     try {
-      setQueue(await api.mergeQueue());
+      const next = await api.mergeQueue();
+      if (!current()) return;
+      setQueue(next);
       reportSuccess();
     } catch (cause) {
+      if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load the merge queue");
     }
   }, [reportSuccess, reportFailure]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 4000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const refresh = useBackendPolling(load, 4000);
 
   const enqueue = useCallback(async (sessionId: string, target?: string) => {
     const entry = await api.enqueueMerge(sessionId, target);
     setQueue((current) => [...current, entry]);
+    void refresh();
     return entry;
-  }, []);
+  }, [refresh]);
 
   const dequeue = useCallback(async (id: number) => {
     await api.dequeueMerge(id);
     setQueue((current) => current.filter((entry) => entry.id !== id));
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   const run = useCallback(async (target?: string) => {
     const updated = await api.runMergeQueue(target);
     setQueue((current) =>
       current.map((entry) => updated.find((changed) => changed.id === entry.id) ?? entry),
     );
+    void refresh();
     return updated;
-  }, []);
+  }, [refresh]);
 
   return { queue, error, refresh, enqueue, dequeue, run };
 }

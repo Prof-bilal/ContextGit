@@ -66,14 +66,19 @@ export default function EditorView({
     const bridge = window.contextgit;
     if (!bridge) return;
     setMessage(null);
-    const status = await bridge.editorStatus();
-    if (status.running && status.url) {
-      await show(status.url);
-      return;
-    }
-    setState("absent");
-    if (!status.available) {
-      setMessage("The editor is not installed. Run `npm run fetch:editor` in desktop/.");
+    try {
+      const status = await bridge.editorStatus();
+      if (status.running && status.url) {
+        await show(status.url);
+        return;
+      }
+      setState("absent");
+      if (!status.available) {
+        setMessage("The editor is not installed. Run `npm run fetch:editor` in desktop/.");
+      }
+    } catch (cause) {
+      setState("error");
+      setMessage(cause instanceof Error ? cause.message : "Could not read editor status");
     }
   }, [show]);
 
@@ -82,14 +87,19 @@ export default function EditorView({
     if (!bridge) return;
     setState("starting");
     setMessage(null);
-    const result = await bridge.editorStart();
-    if (!result.ok || !result.url) {
+    try {
+      const result = await bridge.editorStart();
+      if (!result.ok || !result.url) {
+        setState("error");
+        setMessage(result.error ?? "Could not start the editor");
+        return;
+      }
+      await show(result.url);
+      onStarted();
+    } catch (cause) {
       setState("error");
-      setMessage(result.error ?? "Could not start the editor");
-      return;
+      setMessage(cause instanceof Error ? cause.message : "Could not start the editor");
     }
-    await show(result.url);
-    onStarted();
   }, [show, onStarted]);
 
   // (Re)load whenever the tab is opened or the rail asks to (re)start.

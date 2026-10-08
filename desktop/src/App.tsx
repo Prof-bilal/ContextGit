@@ -34,6 +34,8 @@ export default function App() {
     setRestarting(true);
     try {
       setBackend(await bridge.restartBackend());
+    } catch (cause) {
+      setBackend({ apiBase: bridge.apiBase, status: { state: "error", message: cause instanceof Error ? cause.message : "Backend restart failed." } });
     } finally {
       setRestarting(false);
     }

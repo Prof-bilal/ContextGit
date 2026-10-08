@@ -21,7 +21,11 @@ export default function EditorRail({
 
   const load = useCallback(async () => {
     const bridge = window.contextgit;
-    if (bridge) setStatus(await bridge.editorStatus());
+    try {
+      if (bridge) setStatus(await bridge.editorStatus());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not read editor status");
+    }
   }, []);
 
   const start = useCallback(async () => {
@@ -29,14 +33,19 @@ export default function EditorRail({
     if (!bridge) return;
     setBusy(true);
     setError(null);
-    const result = await bridge.editorStart();
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error ?? "Could not start the editor");
-      return;
+    try {
+      const result = await bridge.editorStart();
+      if (!result.ok) {
+        setError(result.error ?? "Could not start the editor");
+        return;
+      }
+      await load();
+      onStarted();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the editor");
+    } finally {
+      setBusy(false);
     }
-    await load();
-    onStarted();
   }, [load, onStarted]);
 
   useEffect(() => {

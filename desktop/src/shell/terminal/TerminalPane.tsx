@@ -1,6 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IMarker } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
@@ -93,7 +93,10 @@ export default function TerminalPane({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const stagedRowRef = useRef(0);
+  // Markers move when scrollback is trimmed; a raw row number stops advancing
+  // once the buffer reaches its configured maximum length.
+  const stagedMarkerRef = useRef<IMarker | null>(null);
+  const stagingRef = useRef(false);
   /**
    * A unique PTY id per launched process, not the session id. Otherwise a
    * process we replaced could deliver a stale data/exit event to this pane and
@@ -108,6 +111,7 @@ export default function TerminalPane({
   const needsInstall = Boolean(harnessFor(command)?.npmPackage);
   const [nonce, setNonce] = useState(0);
   const [stagedCount, setStagedCount] = useState(0);
+  const [stagingOutput, setStagingOutput] = useState(false);
   const [exited, setExited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -340,7 +344,8 @@ export default function TerminalPane({
   const restart = () => {
     restartingRef.current = true;
     ptyIdRef.current = newPtyId(session.id);
-    stagedRowRef.current = 0;
+    stagedMarkerRef.current?.dispose();
+    stagedMarkerRef.current = null;
     setStagedCount(0);
     setExited(false);
     setError(null);
@@ -349,25 +354,39 @@ export default function TerminalPane({
 
   const stageOutput = async () => {
     const term = termRef.current;
-    if (!term) return;
+    if (!term || stagingRef.current) return;
+    stagingRef.current = true;
+    setStagingOutput(true);
+    let checkpoint: IMarker | undefined;
     try {
       const buffer = term.buffer.active;
-      const start = Math.min(stagedRowRef.current, Math.max(0, buffer.length - 1));
+      const marker = stagedMarkerRef.current;
+      const start = marker && !marker.isDisposed ? Math.max(0, marker.line) : 0;
       const lines: string[] = [];
       for (let row = start; row < buffer.length; row += 1) {
         const line = buffer.getLine(row);
         if (line) lines.push(line.translateToString(true));
       }
       const text = lines.join("\n").trim();
-      stagedRowRef.current = buffer.length;
       if (!text) return;
+      checkpoint = term.registerMarker(buffer.length - 1 - buffer.baseY - buffer.cursorY);
       await api.stage(session.id, [{ role: "tool", content: text }]);
+      // A restart during the request must not attach the old buffer's marker
+      // to the replacement terminal. Advance only after persistence succeeds.
+      if (termRef.current !== term) return;
+      stagedMarkerRef.current?.dispose();
+      stagedMarkerRef.current = checkpoint ?? null;
+      checkpoint = undefined;
       const staged = await api.staging(session.id);
       setStagedCount(staged.length);
       setError(null);
       onStaged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not stage output");
+    } finally {
+      checkpoint?.dispose();
+      stagingRef.current = false;
+      setStagingOutput(false);
     }
   };
 
@@ -384,8 +403,8 @@ export default function TerminalPane({
         <span className="cg-pane-cwd">{session.name}</span>
         <span className="cg-toolbar-spacer" />
         <span className="cg-pane-staged">{stagedCount} staged</span>
-        <button type="button" className="cg-btn cg-btn-sm" onClick={() => void stageOutput()}>
-          Stage output
+        <button type="button" className="cg-btn cg-btn-sm" onClick={() => void stageOutput()} disabled={stagingOutput}>
+          {stagingOutput ? "Staging…" : "Stage output"}
         </button>
         <StatusIcon status={exited ? "done" : session.status} />
         <button

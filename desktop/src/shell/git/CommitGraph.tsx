@@ -1,8 +1,10 @@
 import {
   Background,
   Controls,
+  Handle,
   MarkerType,
   MiniMap,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -48,9 +50,11 @@ function visibleHistory(commits: Commit[], branches: Branch[]) {
 function GraphCommit({ data, selected }: { data: GraphNode["data"]; selected: boolean }) {
   return (
     <div className={`cg-graph-node${selected ? " is-selected" : ""}`}>
+      <Handle type="target" position={Position.Left} isConnectable={false} />
       <span className={`cg-graph-kind kind-${data.commit.kind}`}>{data.commit.kind}</span>
       <strong className="cg-graph-id">{data.commit.id.slice(0, 7)}</strong>
       <span className="cg-graph-branches">{data.branches.join(" · ") || "unlabelled"}</span>
+      <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   );
 }
@@ -108,7 +112,7 @@ function buildGraph(
 
   const edges: GraphEdge[] = ordered.flatMap((commit) =>
     commit.parent_ids
-      .filter((parent) => visible.has(parent))
+      .filter((parent) => visible.has(parent) && byId.has(parent))
       .map((parent, index) => ({
         id: `${parent}-${commit.id}-${index}`,
         source: parent,
@@ -164,7 +168,6 @@ export default function CommitGraph({
         nodesFocusable
         nodesDraggable={false}
         edgesFocusable
-        proOptions={{ hideAttribution: true }}
       >
         <Background color="#3a332b" gap={22} />
         <MiniMap

@@ -1211,6 +1211,66 @@ button.cg-chip[aria-pressed="true"] {
 .cg-view[data-active="true"] {
   display: flex;
 }
+.cg-slot,
+.cg-dock-host {
+  display: contents;
+}
+.cg-dock-host[hidden] {
+  display: none;
+}
+.cg-feature-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+.cg-feature-content > :last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cg-feature-error {
+  padding: 1.25rem;
+  min-width: 0;
+  overflow: auto;
+  color: var(--cg-ink, #f4efe6);
+  background: var(--cg-surface, #211d18);
+}
+.cg-feature-error h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+.cg-feature-error pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cg-resource-errors {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  max-width: 28rem;
+  max-height: 70vh;
+  overflow: auto;
+  z-index: 1000;
+}
+.cg-resource-errors:empty {
+  display: none;
+}
+.cg-feature-modal-error {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(32rem, 90vw);
+  padding-bottom: 1rem;
+  background: var(--cg-surface);
+  border: 1px solid var(--cg-line);
+  box-shadow: 0 1rem 3rem #0008;
+  z-index: 1000;
+}
+.cg-feature-modal-error > button {
+  margin-left: 1.25rem;
+}
 .cg-view > :last-child {
   flex: 1 1 auto;
   min-height: 0;
@@ -1391,7 +1451,11 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-pane-canvas[data-layout="tiled"] {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  /* Keep two rows in view; additional terminals use equally sized rows below. */
+  grid-template-rows: repeat(2, calc((100% - 0.6rem) / 2));
+  grid-auto-rows: calc((100% - 0.6rem) / 2);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .cg-pane {
@@ -2540,6 +2604,10 @@ button.cg-chip[aria-pressed="true"] {
   border-color: var(--cg-signal);
   box-shadow: 0 0 0 1px var(--cg-signal);
 }
+.cg-graph-node .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
 .cg-graph-kind {
   font:
     500 0.55rem/1 "Martian Mono",
@@ -2567,9 +2635,6 @@ button.cg-chip[aria-pressed="true"] {
 }
 .cg-graph .react-flow__controls-button:hover {
   background: var(--cg-surface-3);
-}
-.cg-graph .react-flow__attribution {
-  display: none;
 }
 
 /* Git lane graph (git-log style) */

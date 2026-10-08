@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 import {
   _electron as electron,
@@ -17,6 +18,8 @@ import {
  * Run `npm run build --prefix desktop` first.
  */
 let app: ElectronApplication;
+let fixtureDirectory: string;
+let testWorkdir: string;
 
 /** A 1x1 PNG, seeded into the asset library so the gallery has an image to render. */
 const SEED_PNG =
@@ -43,7 +46,9 @@ test.beforeAll(async () => {
   const root = path.resolve(__dirname, "..");
   // Runs get real git worktrees, so the workspace must be a throwaway git repo
   // (not the ContextGit checkout itself).
-  const workdir = path.join(root, ".playwright-workdir");
+  // Keep scanned fixtures outside a .contextgit worktree ancestor.
+  fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-desktop-e2e-"));
+  const workdir = testWorkdir = path.join(fixtureDirectory, ".playwright-workdir");
   // The backend repo persists between runs; without clearing it, seeded commits
   // accumulate and every "seeded commit N" assertion matches duplicates.
   const contextgitRepo = path.join(root, ".playwright-contextgit-desktop");
@@ -160,7 +165,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app.close();
+  await app?.close();
+  if (fixtureDirectory) fs.rmSync(fixtureDirectory, { recursive: true, force: true });
 });
 
 test("workspace shell renders with the top nav", async () => {
@@ -342,7 +348,7 @@ test("the DB tab connects to SQLite and runs a query", async () => {
   const page = await openShell();
   await nav(page, "Database").click();
 
-  const dbPath = path.join(path.resolve(__dirname, ".."), ".playwright-workdir", "e2e.sqlite");
+  const dbPath = path.join(testWorkdir, "e2e.sqlite");
   fs.rmSync(dbPath, { force: true });
 
   await page.getByLabel("Engine").selectOption("sqlite");
@@ -803,7 +809,7 @@ test("a run can be queued and removed from the merge queue", async () => {
 test("a run's code and context integrate together", async () => {
   const page = await openShell();
   await nav(page, "Code").click();
-  const workdir = path.join(path.resolve(__dirname, ".."), ".playwright-workdir");
+  const workdir = testWorkdir;
 
   const name = `pair ${Date.now()}`;
   await page.getByRole("button", { name: "New run" }).click();
@@ -1354,7 +1360,7 @@ test("team mode: a dependent task waits, then starts when its dependency is done
   await expect(page.locator(".cg-pane", { hasText: "e2e web" })).toBeVisible({ timeout: 20_000 });
 
   // The board file both agents read names both tasks.
-  const workdir = path.join(path.resolve(__dirname, ".."), ".playwright-workdir");
+  const workdir = testWorkdir;
   const boardFile = fs.readFileSync(path.join(workdir, ".contextgit", "team.md"), "utf8");
   expect(boardFile).toContain("e2e api");
   expect(boardFile).toContain("e2e web");
@@ -1422,6 +1428,12 @@ test("live CLI survives missing and duplicate polls, mode switches, and backend 
     await expect.poll(() => polls, { timeout: 15000 }).toBeGreaterThanOrEqual(2);
     await expect(pane).toHaveCount(1);
     await expect(pane.locator(".cg-pane-exited")).toHaveCount(0);
+    // Duplicate payloads must not leave local controls or backend actions unusable.
+    await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+    await expect(pane.locator(".cg-pane-staged")).toHaveText("1 staged");
+    await page.getByRole("button", { name: "New run", exact: true }).click();
+    await expect(page.getByLabel("Run name")).toBeVisible();
+    await page.getByRole("button", { name: "New run", exact: true }).click();
     await nav(page, "Chat").click();
     await page.keyboard.press("Escape");
     await nav(page, "Code").click();
@@ -1446,9 +1458,167 @@ test("live CLI survives missing and duplicate polls, mode switches, and backend 
   } finally { await page.unroute("**/api/v1/sessions"); }
 });
 
+test("a stalled create request releases the button and retains the run name", async () => {
+  test.setTimeout(60000);
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("tablist", { name: "Code mode" }).getByRole("tab", { name: "Single", exact: true }).click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("stalled create recovery");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  let intercepted: import("@playwright/test").Route | undefined;
+  let submissions = 0;
+  await page.route("**/api/v1/sessions", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    submissions++;
+    intercepted = route; // Deliberately leave this request unanswered.
+  });
+  try {
+    await page.getByRole("button", { name: "Start run", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Starting…", exact: true })).toBeDisabled();
+    await expect(page.getByText(/The backend took too long to respond/)).toBeVisible({ timeout: 35000 });
+    await expect(page.getByRole("button", { name: "Start run", exact: true })).toBeEnabled();
+    await expect(page.getByLabel("Run name")).toHaveValue("stalled create recovery");
+    expect(submissions).toBe(1);
+  } finally {
+    await intercepted?.abort().catch(() => {});
+    await page.unroute("**/api/v1/sessions");
+  }
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  await expect(page.getByRole("region", { name: "stalled create recovery terminal", exact: true })).toBeVisible();
+});
+
+test("concurrent backend reconnects preserve the live terminal and restore actions", async () => {
+  test.setTimeout(60000);
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("real reconnect survivor");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  const pane = page.getByRole("region", { name: "real reconnect survivor terminal", exact: true });
+  await expect(pane).toBeVisible();
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('CG_RESTART_KEEP=alive; printf "CG_RESTART_BEFORE=%s\\n" "$$"');
+  await page.keyboard.press("Enter");
+  const output = pane.locator(".xterm-accessibility-tree");
+  await expect(output).toContainText(/CG_RESTART_BEFORE=\d+/, { timeout: 15000 });
+  const pid = (await output.innerText()).match(/CG_RESTART_BEFORE=(\d+)/)?.[1];
+  expect(pid).toBeTruthy();
+  const previous = await page.evaluate(() => window.contextgit!.getStatus().status);
+  const statuses = await page.evaluate(async () => Promise.all([
+    window.contextgit!.restartBackend(), window.contextgit!.restartBackend(),
+  ]));
+  for (const value of statuses) {
+    expect(value.status.state).toBe("ready");
+    expect(value.status).toEqual(statuses[0].status);
+  }
+  expect(statuses[0].status).not.toEqual(previous);
+  await expect(pane).toHaveCount(1);
+  await expect(pane.locator(".cg-pane-exited")).toHaveCount(0);
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('printf "CG_RESTART_AFTER=%s CG_RESTART_KEEP=%s\\n" "$$" "$CG_RESTART_KEEP"');
+  await page.keyboard.press("Enter");
+  await expect(output).toContainText(`CG_RESTART_AFTER=${pid} CG_RESTART_KEEP=alive`, { timeout: 15000 });
+  await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+  await expect(pane.locator(".cg-pane-staged")).toHaveText("1 staged");
+});
+
+test("staging captures new output after scrollback fills and retains it after failure", async () => {
+  test.setTimeout(60000);
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("scrollback stage survivor");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  const pane = page.getByRole("region", { name: "scrollback stage survivor terminal", exact: true });
+  const output = pane.locator(".xterm-accessibility-tree");
+  await expect(output).toContainText(/\S/, { timeout: 15000 });
+  await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+  await expect(pane.locator(".cg-pane-staged")).toHaveText("1 staged");
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('python3 -u -c "[print(\'CG_FILL_%05d\' % i) for i in range(15000)]; print(\'CG_FILL_DONE\', 15000)"');
+  await page.keyboard.press("Enter");
+  await expect(output).toContainText("CG_FILL_DONE 15000", { timeout: 20000 });
+  await page.route("**/api/v1/sessions/*/staging", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({ status: 503, json: { error: "TEST staging unavailable" } });
+  });
+  try {
+    await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+    await expect(pane.getByText("TEST staging unavailable")).toBeVisible();
+    await expect(pane.getByRole("button", { name: "Stage output", exact: true })).toBeEnabled();
+    await expect(pane.locator(".cg-pane-staged")).toHaveText("1 staged");
+  } finally { await page.unroute("**/api/v1/sessions/*/staging"); }
+  await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+  await expect(pane.locator(".cg-pane-staged")).toHaveText("2 staged");
+  const content = await page.evaluate(async () => {
+    const bridge = window.contextgit!;
+    const headers = { Authorization: `Bearer ${bridge.apiToken}` };
+    const sessions = await (await fetch(`${bridge.apiBase}/api/v1/sessions`, { headers })).json();
+    const session = sessions.find((value: { name: string }) => value.name === "scrollback stage survivor");
+    const staged = await (await fetch(`${bridge.apiBase}/api/v1/sessions/${session.id}/staging`, { headers })).json();
+    return staged.at(-1).content as string;
+  });
+  expect(content).toContain("CG_FILL_14999");
+  expect(content).toContain("CG_FILL_DONE 15000");
+});
+
+// Opt in with: CONTEXTGIT_SOAK=1 npm run test:e2e -- --grep 'sustained terminal output'
+test("30-minute sustained terminal output keeps buttons and backend actions usable", async () => {
+  test.skip(process.env.CONTEXTGIT_SOAK !== "1", "Set CONTEXTGIT_SOAK=1 to run the 30-minute soak.");
+  test.setTimeout(1860000);
+  const page = await openShell();
+  const errors: string[] = [];
+  const onError = (error: Error) => errors.push(error.message);
+  page.on("pageerror", onError);
+  await nav(page, "Code").click();
+  await page.getByRole("tablist", { name: "Code mode" }).getByRole("tab", { name: "Single", exact: true }).click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("sustained output soak");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  const pane = page.getByRole("region", { name: "sustained output soak terminal", exact: true });
+  await expect(pane).toBeVisible();
+  await expect(pane.locator(".xterm-accessibility-tree")).toContainText(/\S/, { timeout: 15000 });
+  await pane.locator(".cg-term-host").click();
+  // An ordinary shell background job keeps emitting while the UI exercises actions.
+  await page.keyboard.type('python3 -u -c "import time; [(print(\'CG_SOAK_%06d \' % i + \'x\'*1800, flush=True), time.sleep(0.05)) for i in range(37000)]" & CG_SOAK_PID=$!');
+  await page.keyboard.press("Enter");
+  await expect(pane.locator(".xterm-accessibility-tree")).toContainText(/CG_SOAK_\d{6}/, { timeout: 15000 });
+  const started = Date.now();
+  let checks = 0;
+  try {
+    while (Date.now() - started < 1800000) {
+      await nav(page, "Chat").click();
+      await page.keyboard.press("Escape");
+      await nav(page, "Code").click();
+      await page.getByRole("button", { name: "New run", exact: true }).click();
+      await expect(page.getByLabel("Run name")).toBeVisible();
+      await page.getByRole("button", { name: "New run", exact: true }).click();
+      await pane.getByRole("button", { name: "Stage output", exact: true }).click();
+      const expected = ++checks;
+      await expect(pane.locator(".cg-pane-staged")).toHaveText(`${expected} staged`);
+      await expect(pane.locator(".cg-pane-exited")).toHaveCount(0);
+      expect(await page.evaluate(() => window.contextgit!.getStatus().status.state)).toBe("ready");
+      expect(errors).toEqual([]);
+      console.log(`SOAK ${Math.floor((Date.now() - started) / 1000)}s: ${checks} action checks passed`);
+      await new Promise(resolve => setTimeout(resolve, Math.min(45000, Math.max(0, 1800000 - (Date.now() - started)))));
+    }
+  } finally {
+    page.off("pageerror", onError);
+    // A failed UI assertion must remain the reported error; app teardown kills the PTY.
+    await nav(page, "Code").click({ timeout: 1000 }).catch(() => {});
+    await pane.locator(".cg-term-host").click({ timeout: 1000 }).catch(() => {});
+    await page.keyboard.type('kill "$CG_SOAK_PID"').catch(() => {});
+    await page.keyboard.press("Enter").catch(() => {});
+  }
+});
+
 test("Merge Agent authority, background progress, and conflict feedback", async () => {
   const page = await openShell();
-  let settings = { project: path.resolve(__dirname, "../.playwright-workdir"), harness: "codex", target: "main", checks: "", authority: "disabled", generation: 0, branches: ["main"] };
+  let settings = { project: testWorkdir, harness: "codex", target: "main", checks: "", authority: "disabled", generation: 0, branches: ["main"] };
   let jobState = "reviewing";
   await page.route("**/api/v1/integration/settings*", async route => {
     if (route.request().method() === "PUT") settings = { ...settings, ...route.request().postDataJSON() };
@@ -1568,4 +1738,72 @@ test("Playground expanded catalog distinguishes local installs from guided conne
   await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
   await page.locator(".cg-pg-feature-card", { hasText: "CodeAtlas" }).click();
   await page.screenshot({ path: "/tmp/contextgit-playground-refined.png", fullPage: true });
+});
+
+test("tab render and controller failures preserve navigation, API drafts, and the live PTY", async () => {
+  test.setTimeout(60000);
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("tablist", { name: "Code mode" }).getByRole("tab", { name: "Single", exact: true }).click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("tab failure survivor");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  const pane = page.getByRole("region", { name: "tab failure survivor terminal", exact: true });
+  const output = pane.locator(".xterm-accessibility-tree");
+  await expect(output).toContainText(/\S/, { timeout: 15000 });
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('CG_ISOLATION=alive; printf "CG_ISOLATION_BEFORE=%s\\n" "$$"');
+  await page.keyboard.press("Enter");
+  await expect(output).toContainText(/CG_ISOLATION_BEFORE=\d+/, { timeout: 15000 });
+  const pid = (await output.innerText()).match(/CG_ISOLATION_BEFORE=(\d+)/)?.[1];
+  expect(pid).toBeTruthy();
+
+  let badFleet = true;
+  let fleetRecovered = false;
+  await page.route("**/api/v1/fleet", async route => {
+    if (badFleet) return route.fulfill({ json: {} }); // Break Code's rail and content, not its terminals.
+    const response = await route.fetch();
+    fleetRecovered = true;
+    await route.fulfill({ response });
+  });
+  try {
+    await expect(page.locator('[data-failed-feature="Run rail"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-failed-feature="Run content"]')).toBeVisible();
+    await expect(pane).toBeVisible();
+    await nav(page, "API").click();
+    await page.getByLabel("Request URL").fill("https://example.com/isolation-draft");
+    badFleet = false;
+    await expect.poll(() => fleetRecovered, { timeout: 15000 }).toBe(true);
+    await nav(page, "Code").click();
+    await page.locator('[data-failed-feature="Run rail"]').getByRole("button", { name: "Try again" }).click();
+    await page.locator('[data-failed-feature="Run content"]').getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeEnabled();
+  } finally { await page.unroute("**/api/v1/fleet"); }
+
+  // Throw in Assets' controller calculation while it is hidden. No production fault-injection API.
+  await page.evaluate(() => {
+    const original = Array.prototype.find;
+    (window as unknown as { restoreAssetFind: () => void }).restoreAssetFind = () => { Array.prototype.find = original; };
+    Array.prototype.find = function <T>(this: T[], predicate: (value: T, index: number, array: T[]) => unknown, thisArg?: unknown): T | undefined {
+      if (this.some(item => (item as { id?: string } | null)?.id === "seed-png")) throw new Error("TEST Assets controller failure");
+      return original.call(this, predicate as (value: unknown, index: number, array: unknown[]) => unknown, thisArg) as T | undefined;
+    };
+  });
+  try {
+    await nav(page, "API").click(); // Rerenders the hidden feature controller.
+    await expect(page.getByLabel("Request URL")).toHaveValue("https://example.com/isolation-draft");
+    await nav(page, "Assets").click();
+    await expect(page.locator('[data-failed-feature="Assets"]')).toBeVisible();
+    await expect(page.locator(".backend-screen")).toHaveCount(0);
+  } finally {
+    await page.evaluate(() => (window as unknown as { restoreAssetFind: () => void }).restoreAssetFind());
+  }
+  await page.locator('[data-failed-feature="Assets"]').getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("button", { name: "Import", exact: true })).toBeVisible();
+  await nav(page, "Code").click();
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('printf "CG_ISOLATION_AFTER=%s CG_ISOLATION=%s\\n" "$$" "$CG_ISOLATION"');
+  await page.keyboard.press("Enter");
+  await expect(output).toContainText(`CG_ISOLATION_AFTER=${pid} CG_ISOLATION=alive`, { timeout: 15000 });
 });

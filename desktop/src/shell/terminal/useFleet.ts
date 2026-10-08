@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type FleetEntry } from "@/lib/api";
+import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
@@ -15,21 +16,20 @@ export function useFleet() {
   const [fleet, setFleet] = useState<FleetEntry[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
-  const refresh = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+  const load = useCallback(async (current: () => boolean) => {
+    if (!HAS_BRIDGE || !current()) return;
     try {
-      setFleet(await api.fleet());
+      const next = await api.fleet();
+      if (!current()) return;
+      setFleet(next);
       reportSuccess();
     } catch (cause) {
+      if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load run state");
     }
   }, [reportSuccess, reportFailure]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 6000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const refresh = useBackendPolling(load, 6000);
 
   return { fleet, error };
 }

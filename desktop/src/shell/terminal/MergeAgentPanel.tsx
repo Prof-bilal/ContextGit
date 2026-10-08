@@ -1,5 +1,6 @@
+import { useBackendPolling } from "../useBackendPolling";
 import HarnessLimitsPanel from "./HarnessLimitsPanel";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type IntegrationJob, type IntegrationSettings, type Session } from "@/lib/api";
 
 export default function MergeAgentPanel({ project, sessions }: { project: string; sessions: Session[] }) {
@@ -14,17 +15,22 @@ export default function MergeAgentPanel({ project, sessions }: { project: string
     void api.integrationSettings(project).then(value => {
       if (ticket === generation.current) setSettings(value);
     }).catch(cause => { if (ticket === generation.current) setError(String(cause)); });
-    const load = () => void api.integrationJobs(project).then(value => {
-      if (ticket === generation.current) setJobs(value);
-    }).catch(cause => { if (ticket === generation.current) setError(String(cause)); });
-    load();
-    const timer = setInterval(load, 1000);
-    return () => { clearInterval(timer); generation.current++; };
+    return () => { generation.current++; };
   }, [project]);
+  const load = useCallback(async (current: () => boolean) => {
+    const ticket = generation.current;
+    try {
+      const value = await api.integrationJobs(project);
+      if (current() && ticket === generation.current) { setJobs(value); setError(null); }
+    } catch (cause) {
+      if (current() && ticket === generation.current) setError(String(cause));
+    }
+  }, [project]);
+  const refresh = useBackendPolling(load, 1000);
   const act = async (operation: () => Promise<unknown>) => {
     const ticket = generation.current;
     setBusy(true); setError(null);
-    try { await operation(); if (ticket === generation.current) setJobs(await api.integrationJobs(project)); }
+    try { await operation(); if (ticket === generation.current) await refresh(); }
     catch (cause) { if (ticket === generation.current) setError(String(cause)); }
     finally { if (ticket === generation.current) setBusy(false); }
   };

@@ -11,6 +11,7 @@ import net from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { BackendRestart, launchBackend, terminateBackend } from "./backendProcess";
 import { PTY_PRESETS, PtyManager } from "./pty";
 import { UsageManager } from "./usage";
 import { repositoryId, validateBackend } from "./backendHealth";
@@ -80,25 +81,26 @@ function rendererOrigin(): string {
 }
 async function probeBackend(generation = backendGeneration): Promise<void> {
   const identity = await validateBackend(apiBase, repositoryId(backendRepoPath()), rendererOrigin(), fetch, apiToken);
-  if (generation !== backendGeneration) return;
+  if (generation !== backendGeneration || !backend) return;
   if (status.state === "ready" && status.repoId === identity.repoId && status.instanceId === identity.instanceId) return;
   setStatus({ state: "ready", apiBase, ...identity });
 }
 function startBackendMonitor(): void {
   if (backendMonitor) clearInterval(backendMonitor);
   backendMonitor = setInterval(() => {
-    if (probingBackend) return;
+    if (probingBackend || !backend) return;
     probingBackend = true;
     const generation = backendGeneration;
     void probeBackend(generation).catch((cause) => {
-      if (generation !== backendGeneration) return;
+      if (generation !== backendGeneration || !backend) return;
       const message = cause instanceof Error ? cause.message : "Backend connection lost.";
       if (status.state !== "error" || status.message !== message) setStatus({ state: "error", message });
-    }).finally(() => { probingBackend = false; });
+    }).finally(() => { if (generation === backendGeneration) probingBackend = false; });
   }, 5000);
 }
 
 async function spawnBackend(): Promise<void> {
+  const generation = backendGeneration;
   const env = {
     ...process.env,
     CONTEXTGIT_HOST: "127.0.0.1",
@@ -120,16 +122,19 @@ async function spawnBackend(): Promise<void> {
     setStatus({ state: "error", message: `Port ${backendPort} is occupied. Stop the existing backend or choose CONTEXTGIT_PORT; the desktop requires its own authenticated backend.` });
     return;
   }
-  backend = spawn(binary, args, {
+  if (generation !== backendGeneration) return;
+  const child = launchBackend(binary, args, {
     cwd: isDev ? repoRoot : process.resourcesPath,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
   });
+  backend = child;
   let stderr = "";
-  backend.stderr?.on("data", (chunk: Buffer) => {
+  child.stderr?.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000);
+    if (isDev) process.stderr.write(chunk);
   });
-  backend.on("error", (cause: Error) => {
+  child.on("error", (cause: Error) => {
+    if (generation !== backendGeneration || backend !== child) return;
     // `spawn` emits this asynchronously (e.g. ENOENT when the binary is missing).
     // Without a handler Node rethrows it, crashing the main process instead of
     // showing the "Backend failed" screen.
@@ -139,7 +144,8 @@ async function spawnBackend(): Promise<void> {
     });
     backend = null;
   });
-  backend.on("exit", (code) => {
+  child.on("exit", (code) => {
+    if (generation !== backendGeneration || backend !== child) return;
     if (status.state === "ready") {
       setStatus({ state: "error", message: `Backend exited (code ${code}). ${stderr}` });
     } else {
@@ -147,35 +153,41 @@ async function spawnBackend(): Promise<void> {
     }
     backend = null;
   });
-  await waitForHealth();
-  if (status.state === "ready") startBackendMonitor();
+  await waitForHealth(generation);
+  if (generation === backendGeneration && backend === child && status.state === "ready") startBackendMonitor();
 }
 
-async function waitForHealth(): Promise<void> {
+async function waitForHealth(generation: number): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError = "No response";
   while (Date.now() < deadline) {
-    if (!backend) return;
+    if (!backend || generation !== backendGeneration) return;
     try {
-      await probeBackend();
+      await probeBackend(generation);
       return;
     } catch (cause) {
       lastError = cause instanceof Error ? cause.message : "No response";
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
+  if (generation !== backendGeneration || !backend) return;
   setStatus({ state: "error", message: `Backend failed on ${apiBase}: ${lastError}` });
 }
 
-function stopBackend(): void {
+let backendStop: Promise<void> | null = null;
+const backendRestart = new BackendRestart();
+function stopBackend(): Promise<void> {
+  if (backendStop) return backendStop;
   backendGeneration++;
   if (backendMonitor) clearInterval(backendMonitor);
   backendMonitor = null;
-  if (backend && !backend.killed) {
-    backend.removeAllListeners("exit");
-    backend.kill("SIGTERM");
-    backend = null;
-  }
+  probingBackend = false;
+  const child = backend;
+  if (!child) return Promise.resolve();
+  backendStop = terminateBackend(child).then(() => {
+    if (backend === child) backend = null;
+  }).finally(() => { backendStop = null; });
+  return backendStop;
 }
 
 async function createWindow(): Promise<void> {
@@ -825,9 +837,15 @@ ipcMain.handle("ctx:playground-docs", async (event, id: string) => {
 });
 
 ipcMain.handle("ctx:restart-backend", async () => {
-  stopBackend();
-  setStatus({ state: "starting" });
-  await spawnBackend();
+  await backendRestart.run(async () => {
+    setStatus({ state: "starting" });
+    try {
+      await stopBackend();
+      await spawnBackend();
+    } catch (cause) {
+      setStatus({ state: "error", message: cause instanceof Error ? cause.message : "Backend restart failed." });
+    }
+  });
   return { status, apiBase };
 });
 
@@ -907,7 +925,7 @@ app.on("window-all-closed", () => {
   usageManager?.stop();
   ptys.killAll();
   killInstalls();
-  stopBackend();
+  void stopBackend().catch(cause => console.error("Backend shutdown failed:", cause));
   app.quit();
 });
 app.on("before-quit", () => {
@@ -919,5 +937,5 @@ app.on("before-quit", () => {
   usageManager?.stop();
   ptys.killAll();
   killInstalls();
-  stopBackend();
+  void stopBackend().catch(cause => console.error("Backend shutdown failed:", cause));
 });

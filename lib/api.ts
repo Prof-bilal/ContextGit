@@ -1,3 +1,6 @@
+import { apiRequest, ApiError, requestTimeout, type RequestOptions } from "./apiRequest";
+export { ApiError } from "./apiRequest";
+
 export type Role = "system" | "user" | "assistant" | "tool";
 export type CommitKind = "root" | "normal" | "merge" | "note";
 
@@ -385,13 +388,6 @@ export interface TaskInput {
   gate_command?: string | null;
 }
 
-export class ApiError extends Error {
-  constructor(message: string, public readonly status: number, public readonly kind?: string) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
 function repositoryHeaders(): Record<string, string> {
   const status = typeof window !== "undefined" ? window.contextgit?.getStatus().status : undefined;
   if (status?.state === "ready" && status.repoId) {
@@ -401,28 +397,13 @@ function repositoryHeaders(): Record<string, string> {
   return expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {};
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   const repoHeaders = repositoryHeaders();
-  let response: Response;
-  try {
-    response = await fetch(`${base}${path}`, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...launchHeaders(), ...repoHeaders, ...init?.headers },
-    });
-  } catch {
-    throw new ApiError("Cannot reach the local backend. Check the connection banner and retry.", 0, "network");
-  }
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => null);
-    const message =
-      typeof body === "object" && body !== null && "error" in body
-        ? String(body.error)
-        : `API request failed (${response.status})`;
-    const kind = typeof body === "object" && body !== null && "type" in body ? String(body.type) : undefined;
-    throw new ApiError(message, response.status, kind);
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  return apiRequest<T>(`${base}${path}`, {
+    timeoutMs: requestTimeout(path, init?.method),
+    ...init,
+    headers: { "Content-Type": "application/json", ...launchHeaders(), ...repoHeaders, ...init?.headers },
+  });
 }
 
 /** Real context size of a branch, for the inspector. */

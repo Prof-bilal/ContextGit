@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type Branch, type Session } from "@/lib/api";
+import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
@@ -15,23 +16,21 @@ export function useTrash() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
-  const refresh = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+  const load = useCallback(async (current: () => boolean) => {
+    if (!HAS_BRIDGE || !current()) return;
     try {
       const snapshot = await api.trash();
+      if (!current()) return;
       setSessions(snapshot.sessions);
       setBranches(snapshot.branches);
       reportSuccess();
     } catch (cause) {
+      if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load Storage");
     }
   }, [reportSuccess, reportFailure]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 4000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const refresh = useBackendPolling(load, 4000);
 
   return { sessions, branches, error, refresh };
 }

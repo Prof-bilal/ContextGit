@@ -2,6 +2,10 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface Props {
   children: ReactNode;
+  feature?: string;
+  fallback?: (error: Error, retry: () => void) => ReactNode;
+  onError?: (error: Error) => void;
+  onReset?: () => void;
 }
 
 interface State {
@@ -15,26 +19,34 @@ interface State {
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
-  static getDerivedStateFromError(error: Error): State {
-    return { error };
+  static getDerivedStateFromError(cause: unknown): State {
+    return { error: cause instanceof Error ? cause : new Error(String(cause)) };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error("Workspace view crashed:", error, info.componentStack);
+  componentDidCatch(cause: unknown, info: ErrorInfo): void {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    console.error(`${this.props.feature ?? "Workspace"} crashed:`, error, info.componentStack);
+    this.props.onError?.(error);
   }
+
+  private retry = (): void => {
+    this.props.onReset?.();
+    this.setState({ error: null });
+  };
 
   render(): ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
+    if (this.props.fallback) return this.props.fallback(error, this.retry);
     return (
-      <main className="backend-screen" role="alert">
+      <section className={this.props.feature ? "cg-feature-error" : "backend-screen"} role="alert" data-failed-feature={this.props.feature}>
         <p className="backend-kicker">ContextGit</p>
-        <h1>This view hit an error</h1>
+        <h1>{this.props.feature ? `${this.props.feature} hit an error` : "This view hit an error"}</h1>
         <pre className="backend-detail">{error.message}</pre>
-        <button type="button" onClick={() => this.setState({ error: null })}>
+        <button type="button" onClick={this.retry}>
           Try again
         </button>
-      </main>
+      </section>
     );
   }
 }

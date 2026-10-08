@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { api, ApiError, type Session } from "@/lib/api";
 import { SessionRevision, uniqueSessions } from "./sessionState";
+import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
@@ -22,12 +23,12 @@ export function useSessions() {
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const connected = () => !HAS_BRIDGE || window.contextgit?.getStatus().status.state === "ready";
 
-  const refresh = useCallback(async () => {
-    if (!HAS_BRIDGE || !connected()) return;
+  const load = useCallback(async (current: () => boolean) => {
+    if (!HAS_BRIDGE || !connected() || !current()) return;
     const ticket = revision.current.begin();
     try {
       const next = uniqueSessions(await api.sessions());
-      if (!revision.current.accepts(ticket)) return;
+      if (!current() || !revision.current.accepts(ticket)) return;
       const ids = new Set(next.map((session) => session.id));
       const removed: string[] = [];
       // A list omission is not evidence that a live process should die.
@@ -41,21 +42,18 @@ export function useSessions() {
           else next.push(previous);
         }
       }));
-      if (!revision.current.accepts(ticket)) return;
+      if (!current() || !revision.current.accepts(ticket)) return;
       setSessions(uniqueSessions(next));
       setRemovedIds(removed);
       setLoaded(true);
       reportSuccess();
     } catch (cause) {
+      if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load runs");
     }
   }, [reportSuccess, reportFailure]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 4000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const refresh = useBackendPolling(load, 4000);
 
   const create = useCallback(
     async (

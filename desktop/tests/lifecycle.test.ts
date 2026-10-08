@@ -8,6 +8,132 @@ import { validateBackend } from "../electron/backendHealth";
 import { codexLimits, claudeUsage, jsonRecords, geminiCounters, aiderReport, statsTotals } from "../electron/usageParsers";
 import { readCodex, UsageManager, SharedCodexUsage } from "../electron/usage";
 import { rendererCsp } from "../shared/security";
+import { apiRequest, ApiError, requestTimeout } from "../../lib/apiRequest";
+import { PollingTask } from "../src/shell/pollingTask";
+import { BackendRestart, launchBackend, terminateBackend } from "../electron/backendProcess";
+import { once } from "node:events";
+
+test("ordinary request budgets leave inference and long jobs unchanged", () => {
+  for (const route of ["sessions", "sessions/id", "sessions/id/staging", "fleet", "team", "merge-queue", "trash", "integration/jobs?project=a"]) {
+    assert.equal(requestTimeout(`/api/v1/${route}`), 10_000, route);
+  }
+  for (const [route, method] of [["sessions", "POST"], ["sessions/id", "DELETE"], ["sessions/id/commit", "POST"], ["branches?name=a", "DELETE"]]) {
+    assert.equal(requestTimeout(`/api/v1/${route}`, method), 30_000, route);
+  }
+  for (const route of ["sessions/id/integrate", "merge-queue/run", "team/tasks/id/gate", "endpoints/tests/run", "chat"]) {
+    assert.equal(requestTimeout(`/api/v1/${route}`, "POST"), undefined, route);
+  }
+});
+
+test("a stalled request or response body times out, aborts, and is never retried", async () => {
+  for (const stalledBody of [false, true]) {
+    let calls = 0;
+    let signal: AbortSignal | undefined;
+    const fetcher = (async (_url: string, init?: RequestInit) => {
+      calls++;
+      signal = init?.signal as AbortSignal;
+      if (!stalledBody) return await new Promise<Response>(() => {});
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"pending":')); } }));
+    }) as typeof fetch;
+    await assert.rejects(apiRequest("http://localhost", { timeoutMs: 20, method: "POST" }, fetcher), (cause: unknown) => cause instanceof ApiError && cause.kind === "timeout");
+    assert.equal(signal?.aborted, true);
+    assert.equal(calls, 1);
+  }
+});
+
+test("request cancellation, HTTP errors, and successful responses retain their meaning", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(apiRequest("http://localhost", { signal: controller.signal }, (() => { throw new Error("must not send"); }) as typeof fetch), (cause: unknown) => cause instanceof ApiError && cause.kind === "cancelled");
+  await assert.rejects(apiRequest("http://localhost", {}, (async () => Response.json({ error: "conflict", type: "RepositoryMismatch" }, { status: 409 })) as typeof fetch), (cause: unknown) => cause instanceof ApiError && cause.status === 409 && cause.kind === "RepositoryMismatch");
+  assert.deepEqual(await apiRequest("http://localhost", { timeoutMs: 100 }, (async () => Response.json([1])) as typeof fetch), [1]);
+  assert.equal(await apiRequest("http://localhost", {}, (async () => new Response(null, { status: 204 })) as typeof fetch), undefined);
+});
+
+test("polling stays single-flight and discards results from before a reconnect", async () => {
+  const releases: (() => void)[] = [];
+  const accepted: number[] = [];
+  let calls = 0;
+  const poll = new PollingTask(async current => {
+    const id = ++calls;
+    await new Promise<void>(resolve => releases.push(resolve));
+    if (current()) accepted.push(id);
+  });
+  poll.setAvailable(true);
+  const first = poll.tick();
+  await Promise.resolve();
+  for (let i = 0; i < 50; i++) assert.equal(poll.tick(), first);
+  assert.equal(calls, 1);
+  poll.setAvailable(false);
+  await poll.tick();
+  poll.setAvailable(true);
+  const recovered = poll.refresh();
+  releases.shift()!();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 2);
+  assert.deepEqual(accepted, []);
+  releases.shift()!();
+  await recovered;
+  assert.deepEqual(accepted, [2]);
+  poll.setAvailable(false);
+});
+
+test("explicit refresh invalidates a pre-mutation poll and queues only one new read", async () => {
+  const releases: (() => void)[] = [];
+  let applied = 0;
+  let calls = 0;
+  const poll = new PollingTask(async current => {
+    calls++;
+    await new Promise<void>(resolve => releases.push(resolve));
+    if (current()) applied++;
+  });
+  poll.setAvailable(true);
+  const pending = poll.tick();
+  await Promise.resolve();
+  for (let i = 0; i < 10; i++) poll.refresh();
+  releases.shift()!();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 2);
+  assert.equal(applied, 0);
+  releases.shift()!();
+  await pending;
+  assert.equal(applied, 1);
+});
+
+test("the backend launcher completes a log flood without an unread stdout pipe", { timeout: 5000 }, async () => {
+  const child = launchBackend(process.execPath, ["-e", "process.stdout.write('x'.repeat(16*1024*1024), () => process.exit(0));"], {});
+  child.stderr?.resume();
+  try {
+    assert.equal(child.stdout, null);
+    const [code] = await once(child, "exit");
+    assert.equal(code, 0);
+  } finally { await terminateBackend(child, 100, 1000); }
+});
+
+test("backend termination waits for exit and escalates when SIGTERM is ignored", { skip: process.platform === "win32", timeout: 5000 }, async () => {
+  const child = launchBackend(process.execPath, ["-e", "process.on('SIGTERM', () => {}); process.stderr.write('ready'); setInterval(() => {}, 1000);"], {});
+  try {
+    await once(child.stderr!, "data");
+    await terminateBackend(child, 50, 1000);
+    assert.equal(child.signalCode, "SIGKILL");
+  } finally { await terminateBackend(child, 50, 1000); }
+});
+
+test("concurrent reconnects run one stop/start and allow a later retry", async () => {
+  const restart = new BackendRestart();
+  let calls = 0;
+  let release!: () => void;
+  const operation = async () => { calls++; await new Promise<void>(resolve => { release = resolve; }); };
+  const first = restart.run(operation);
+  assert.equal(restart.run(operation), first);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  release();
+  await first;
+  await assert.rejects(restart.run(async () => { throw new Error("failed"); }));
+  await restart.run(async () => { calls++; });
+  assert.equal(calls, 2);
+});
 
 test("a response that predates creation, deletion or an update is rejected", () => {
   for (const mutation of ["create", "delete", "update"]) {
