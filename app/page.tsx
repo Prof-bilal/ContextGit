@@ -1,42 +1,62 @@
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import HeroGraph from "@/components/hero-graph";
-import MiniGraph from "@/components/mini-graph";
-import WorkflowTabs from "@/components/workflow-tabs";
 import MergeDialog from "@/components/merge-dialog";
-import HashDemo from "@/components/hash-demo";
 import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
 import FleetCanvas from "@/components/fleet-canvas";
 import AppDemo from "@/components/app-demo";
+import WorkbenchTabs from "@/components/workbench-tabs";
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
 import PricingTiers from "@/components/pricing-tiers";
+import { AGENTS, FOOTER_LINKS, GITHUB, HEADER_CTA, NAV } from "@/lib/site";
+
+export const metadata: Metadata = {
+  title: "ContextGit — the one window for AI development",
+  description:
+    "ContextGit is a desktop workbench for AI development: run parallel coding agents in isolated git worktrees, with an editor, browser, API and database client in one window, and version-controlled AI context. Local-first.",
+};
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
-const AGENT_MARQUEE = ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Aider", "Ollama", "Shell"];
-
-const NAV = [
-  { href: "#top", label: "Overview" },
-  { href: "#fleet", label: "Control tower" },
-  { href: "#problem", label: "The problem" },
-  { href: "#workflow", label: "Workflow" },
-  { href: "#merge", label: "Merge engine" },
-  { href: "#interface", label: "Interface" },
-  { href: "#internals", label: "Internals" },
-  { href: "#status", label: "Status" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "#install", label: "Install" },
-];
-
-const FOOTER_LINKS = [
-  { href: "#problem", label: "The problem" },
-  { href: "#workflow", label: "Workflow" },
-  { href: "#merge", label: "Merge engine" },
-  { href: "#interface", label: "Interface" },
-  { href: "#internals", label: "Internals" },
-  { href: "#status", label: "Status" },
-  { href: "/pricing", label: "Pricing" },
+const FAQ: Array<[string, React.ReactNode]> = [
+  [
+    "Isn't this just summarizing my chat?",
+    <>A summary replaces history. ContextGit keeps history as immutable commits and only summarizes at merge time, with a preview, a conflict check and the full branch still intact.</>,
+  ],
+  [
+    "Is a merge lossless?",
+    <>No. A merge is a compact summary of decisions, facts, dead ends and open questions. That is why the original branch is never deleted, and why merge quality is tracked with probe questions.</>,
+  ],
+  [
+    "Where does my data go?",
+    <>Commits live in a local SQLite file. The only network traffic is the calls you make to your chosen model provider.</>,
+  ],
+  [
+    "Which agents does it run?",
+    <>Eleven agent CLIs plus a plain shell — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama, Freebuff, Cline, Pi, Kilo Code and Command Code. A missing CLI is installed in the background, and you bring your own model key.</>,
+  ],
+  [
+    "Do I need an account?",
+    <>No. The local app needs no account and no sign-in. Accounts only arrive with the cloud tiers, when they ship.</>,
+  ],
+  [
+    "Does it work with my editor?",
+    <>The workbench includes an embedded VS Code with the ContextGit graph, and you can open the same files in your own editor — every run is a real git worktree on disk.</>,
+  ],
+  [
+    "Is it free?",
+    <>The local app is free: unlimited projects, runs and commits. Paid tiers (cloud sync, security audit, team) are coming, and prices are not set yet. See <a href="/pricing">Pricing</a>.</>,
+  ],
+  [
+    "Does it support teams?",
+    <>Team mode is shipped locally — tasks, roles, a quality gate, an independent verifier and an MCP channel across parallel runs. Cloud sync and multi-user collaboration are on the roadmap.</>,
+  ],
+  [
+    "Is it production-ready?",
+    <>Early build. Expect rough edges. It is open source under Apache-2.0 and built in the open — <a href={GITHUB}>read the code</a> and open an issue when something breaks.</>,
+  ],
 ];
 
 export default function Page() {
@@ -44,20 +64,17 @@ export default function Page() {
     <>
       <a className="skip-link" href="#main">Skip to content</a>
 
-      <SiteHeader links={NAV} cta={{ label: "Install", href: "#install" }} logoHref="#top" />
+      <SiteHeader links={NAV} cta={HEADER_CTA} logoHref="#top" />
 
       <nav className="rail" aria-label="Page sections">
         <ol>
           <li><a href="#top" data-label="Overview"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">01</span><span className="rail-label">Overview</span></a></li>
-          <li><a href="#fleet" data-label="Control tower"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">02</span><span className="rail-label">Control tower</span></a></li>
-          <li><a href="#problem" data-label="The problem"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">03</span><span className="rail-label">The problem</span></a></li>
-          <li><a href="#workflow" data-label="Workflow"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">04</span><span className="rail-label">Workflow</span></a></li>
+          <li><a href="#workbench" data-label="One window"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">02</span><span className="rail-label">One window</span></a></li>
+          <li><a href="#fleet" data-label="Control tower"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">03</span><span className="rail-label">Control tower</span></a></li>
+          <li><a href="#context" data-label="Versioned context"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">04</span><span className="rail-label">Versioned context</span></a></li>
           <li><a href="#merge" data-label="Merge engine"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">05</span><span className="rail-label">Merge engine</span></a></li>
-          <li><a href="#interface" data-label="Interface"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">06</span><span className="rail-label">Interface</span></a></li>
-          <li><a href="#internals" data-label="Internals"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">07</span><span className="rail-label">Internals</span></a></li>
-          <li><a href="#status" data-label="Status"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">08</span><span className="rail-label">Status</span></a></li>
-          <li><a href="/pricing" data-label="Pricing"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">09</span><span className="rail-label">Pricing</span></a></li>
-          <li><a href="#install" data-label="Install"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">10</span><span className="rail-label">Install</span></a></li>
+          <li><a href="#pricing" data-label="Pricing"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">06</span><span className="rail-label">Pricing</span></a></li>
+          <li><a href="#install" data-label="Questions"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">07</span><span className="rail-label">Questions</span></a></li>
         </ol>
       </nav>
 
@@ -70,31 +87,39 @@ export default function Page() {
             <span /><span /><span /><span /><span />
           </div>
           <div className="wrap">
-            <p className="eyebrow reveal"><span className="chip">Local-first</span><span>Version control for AI work</span></p>
+            <p className="eyebrow reveal"><span className="chip">Local-first</span><span>The one window for AI development</span></p>
             <h1 id="hero-title" className="reveal" style={d(60)}>
-              <span className="h1-a">Run a team of agents.</span>
-              <span className="h1-b">Keep every branch that worked.</span>
+              <span className="h1-a">Build in one window.</span>
+              <span className="h1-b">Keep the context that worked.</span>
             </h1>
             <p className="lede hero-lede reveal" style={d(120)}>
-              ContextGit gives each coding agent its own git worktree, flags collisions before they merge, and records every conversation as branchable commits. A dead end costs one branch, not the whole context.
+              ContextGit puts your coding agents, editor, browser, API and database clients in one desktop app. Each agent gets its own git worktree, so parallel runs never collide, and every AI conversation is a branchable history you can merge.
             </p>
             <div className="hero-actions reveal" style={d(180)}>
-              <a className="btn btn-primary" href="#status">Get the desktop app <span aria-hidden="true">&rarr;</span></a>
-              <a className="btn btn-ghost" href="#merge">Watch a merge resolve</a>
+              <a className="btn btn-primary" href={GITHUB}>Get the desktop app <span aria-hidden="true">&rarr;</span></a>
+              <a className="btn btn-ghost" href="/features">See features</a>
               <div className="install">
                 <code>pip install contextgit</code>
                 <button type="button" className="btn btn-ghost btn-copy" data-copy="pip install contextgit" aria-label="Copy install command">Copy</button>
               </div>
             </div>
-            <p className="fineprint reveal" style={d(220)}>Runs on your machine. Early build, so expect rough edges.</p>
+            <p className="fineprint reveal" style={d(200)}>Early build. Expect rough edges. Open source, Apache-2.0, and built in the open.</p>
 
-            <p className="demo-label reveal" style={d(240)}>Interactive demo <span className="demo-note">· sample data</span></p>
+            <ul className="trust-strip reveal" style={d(220)}>
+              <li>Local-first</li>
+              <li>Apache-2.0</li>
+              <li>11 agent CLIs</li>
+              <li>No account</li>
+              <li>Only your model calls leave the machine</li>
+            </ul>
+
+            <p className="demo-label reveal" style={d(240)}>Interactive demo <span className="demo-note">· sample data · click a run</span></p>
             <div className="reveal" style={d(260)}>
               <AppDemo />
             </div>
             <div className="marquee reveal" style={d(320)} aria-label="Works with common coding agents">
               <ul className="marquee-track">
-                {[...AGENT_MARQUEE, ...AGENT_MARQUEE].map((agent, index) => (
+                {[...AGENTS, ...AGENTS].map((agent, index) => (
                   <li key={`${agent}-${index}`}>{agent}</li>
                 ))}
               </ul>
@@ -102,10 +127,43 @@ export default function Page() {
           </div>
         </section>
 
+        <section className="section" id="workbench" data-section aria-labelledby="workbench-title">
+          <div className="wrap">
+            <header className="section-head reveal">
+              <p className="eyebrow"><span className="eyebrow-no">02</span>One window</p>
+              <h2 id="workbench-title">Everything the agent reaches for, in the same window.</h2>
+              <p className="lede">
+                A working day is a dozen apps: an editor, several terminals, an API client, a
+                database tool, a browser with DevTools. ContextGit ships them as tabs in one
+                native window — so switching tools stops costing you focus.
+              </p>
+            </header>
+
+            <div className="reveal" style={d(60)}>
+              <WorkbenchTabs />
+            </div>
+
+            <ul className="pillars reveal" style={d(120)}>
+              <li>
+                <h3 className="pillar-title">One window</h3>
+                <p>Agents, editor, browser, API and database clients, git. No alt-tab.</p>
+              </li>
+              <li>
+                <h3 className="pillar-title">Agents that don&apos;t collide</h3>
+                <p>One worktree per run, claimed files, a merge queue, an independent verifier.</p>
+              </li>
+              <li>
+                <h3 className="pillar-title">Context you can version</h3>
+                <p>Branch a conversation, diff it, merge what was learned, roll back.</p>
+              </li>
+            </ul>
+          </div>
+        </section>
+
         <section className="section section-tint" id="fleet" data-section aria-labelledby="fleet-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">02</span>Control tower</p>
+              <p className="eyebrow"><span className="eyebrow-no">03</span>Control tower</p>
               <h2 id="fleet-title">One project, many agents, no collisions.</h2>
               <p className="lede">
                 Each run gets its own worktree and branch. ContextGit shows what every agent
@@ -131,118 +189,28 @@ export default function Page() {
                 </li>
                 <li>
                   <strong>Code and context together</strong>
-                  <span>Merging a run lands its diff and its reasoning in one step.</span>
+                  <span>Merging a run lands its diff on the git branch and its reasoning on the context branch, in one step.</span>
+                </li>
+                <li>
+                  <strong>Team mode</strong>
+                  <span>A mission split into tasks with roles, file scopes and dependencies — each with a quality gate and an independent verifier before anything lands.</span>
                 </li>
               </ul>
             </div>
           </div>
         </section>
 
-        <section className="section" id="problem" data-section aria-labelledby="problem-title">
+        <section className="section" id="context" data-section aria-labelledby="context-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">03</span>The problem</p>
-              <h2 id="problem-title">A chat is one line. Real thinking is a tree.</h2>
-              <p className="lede">You explore, backtrack, compare and decide. Every chat app flattens that into a single scroll, and the cost shows up around message 30.</p>
+              <p className="eyebrow"><span className="eyebrow-no">04</span>Versioned context</p>
+              <h2 id="context-title">A chat is one line. Real thinking is a tree.</h2>
+              <p className="lede">
+                You explore, backtrack, compare and decide — every chat app flattens that into
+                one scroll. ContextGit gives each conversation commits, branches, diffs and
+                rollbacks, so a dead end costs one branch, not the whole context window.
+              </p>
             </header>
-
-            <div className="problem-grid">
-              <div className="problem-aside reveal">
-                <h3 className="minor">Where it hurts</h3>
-                <ul className="plain">
-                  <li><strong>Agentic coding.</strong> One wrong turn poisons the next fifty tool calls.</li>
-                  <li><strong>Research.</strong> Two hypotheses share one context and bleed into each other.</li>
-                  <li><strong>Prompt work.</strong> You cannot A/B a change without losing your place.</li>
-                </ul>
-                <p className="aside-note">Same conversation below, shown message by message: a plain chat on the left of each row, ContextGit on the right.</p>
-              </div>
-
-              <div className="table-wrap reveal" style={d(80)}>
-                <table className="diverge">
-                  <caption className="sr-only">Six moments in a long LLM conversation, and what ContextGit does at each one</caption>
-                  <thead>
-                    <tr><th scope="col">Message</th><th scope="col">In a plain chat</th><th scope="col">In ContextGit</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <th scope="row" className="mono">14</th>
-                      <td>You land on a design you like and keep talking. That state is gone the moment you send the next message.</td>
-                      <td><code className="verb">tag</code> the commit as known-good and return to it in one step.</td>
-                    </tr>
-                    <tr>
-                      <th scope="row" className="mono">17</th>
-                      <td>You want to try Redis and in-process counters. In one thread, the second attempt inherits the first.</td>
-                      <td><code className="verb">branch</code> from the same commit. Each idea gets a clean context.</td>
-                    </tr>
-                    <tr>
-                      <th scope="row" className="mono">22</th>
-                      <td>In-memory counters fail under failover. The attempt stays in the thread, spending tokens forever.</td>
-                      <td><code className="verb">note</code> records the dead end and why it failed, in a few lines.</td>
-                    </tr>
-                    <tr>
-                      <th scope="row" className="mono">27</th>
-                      <td>The model suggests in-memory counters again. It has no reason to remember they failed.</td>
-                      <td><code className="verb">merge</code> carries dead ends into the target branch inside the summary.</td>
-                    </tr>
-                    <tr>
-                      <th scope="row" className="mono">31</th>
-                      <td>The model proposes 1,000 requests per minute. You set 100 at message 9. Nothing flags it.</td>
-                      <td><code className="verb">conflict</code> detection shows both decisions side by side before anything lands.</td>
-                    </tr>
-                    <tr>
-                      <th scope="row" className="mono">38</th>
-                      <td>The context is 94% full. Your options are starting over or pasting a lossy summary.</td>
-                      <td><code className="verb">export</code> the branch as a plain prompt, or merge the work into one compact commit.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="section section-tint" id="workflow" data-section aria-labelledby="workflow-title">
-          <div className="wrap">
-            <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">04</span>Workflow</p>
-              <h2 id="workflow-title">Five verbs you already know.</h2>
-              <p className="lede">Commit, branch, diff, merge, roll back. The CLI mirrors git, so the first session needs no manual.</p>
-            </header>
-
-            <div className="verbs reveal" data-tabs>
-              <div className="verb-list" role="tablist" aria-label="Operations" aria-orientation="vertical">
-                <button type="button" role="tab" id="tab-commit" aria-controls="panel-commit" aria-selected="true" tabIndex={0}><span className="verb-name">commit</span><span className="verb-git mono">git commit</span></button>
-                <button type="button" role="tab" id="tab-branch" aria-controls="panel-branch" aria-selected="false" tabIndex={-1}><span className="verb-name">branch</span><span className="verb-git mono">git branch</span></button>
-                <button type="button" role="tab" id="tab-diff" aria-controls="panel-diff" aria-selected="false" tabIndex={-1}><span className="verb-name">diff</span><span className="verb-git mono">git diff</span></button>
-                <button type="button" role="tab" id="tab-merge" aria-controls="panel-merge" aria-selected="false" tabIndex={-1}><span className="verb-name">merge</span><span className="verb-git mono">git merge</span></button>
-                <button type="button" role="tab" id="tab-rollback" aria-controls="panel-rollback" aria-selected="false" tabIndex={-1}><span className="verb-name">roll back</span><span className="verb-git mono">git checkout</span></button>
-              </div>
-
-              <div className="verb-panels">
-                <div role="tabpanel" id="panel-commit" aria-labelledby="tab-commit" tabIndex={0}>
-                  <p className="verb-desc">A commit stores only the messages added since its parent, plus model, token count and author. Its id is a SHA-256 of that content, so history cannot change under you.</p>
-                  <pre className="term"><code><span className="t-prompt">$</span> contextgit commit -m &quot;Spec the limit&quot;{"\n"}[main 7be04d8] Spec the limit{"\n"}<span className="t-dim"> 2 messages, 640 tokens, parent a3f9c21</span></code></pre>
-                </div>
-                <div role="tabpanel" id="panel-branch" aria-labelledby="tab-branch" tabIndex={0} hidden>
-                  <p className="verb-desc">Fork from any commit. The new branch starts with exactly the context at that point, with no leftover tangents.</p>
-                  <pre className="term"><code><span className="t-prompt">$</span> contextgit branch redis-bucket 1d6c9a0{"\n"}<span className="t-prompt">$</span> contextgit checkout redis-bucket{"\n"}Switched to branch &apos;redis-bucket&apos; at 1d6c9a0{"\n"}<span className="t-dim"> 5 messages, 1,440 tokens in context</span></code></pre>
-                </div>
-                <div role="tabpanel" id="panel-diff" aria-labelledby="tab-diff" tabIndex={0} hidden>
-                  <p className="verb-desc">Compare two branches from their common ancestor on three levels: the messages, the meaning, and the token cost.</p>
-                  <pre className="term"><code><span className="t-prompt">$</span> contextgit diff main redis-bucket{"\n"}common ancestor  1d6c9a0{"\n\n"}messages   main <span className="t-add">+2</span>   redis-bucket <span className="t-add">+8</span>{"\n"}tokens     main <span className="t-add">+476</span> redis-bucket <span className="t-add">+3,192</span>{"\n\n"}semantic (redis-bucket){"\n  "}<span className="t-add">+ decision</span>  Token bucket in Redis, one Lua call per request{"\n  "}<span className="t-add">+ fact    </span>  Clock skew tolerated up to 50 ms{"\n  "}<span className="t-del">- open    </span>  Where do counters live?  <span className="t-dim">(answered)</span></code></pre>
-                </div>
-                <div role="tabpanel" id="panel-merge" aria-labelledby="tab-merge" tabIndex={0} hidden>
-                  <p className="verb-desc">Conversations do not merge line by line. ContextGit extracts what the branch learned and proposes a summary for you to approve.</p>
-                  <pre className="term"><code><span className="t-prompt">$</span> contextgit merge redis-bucket{"\n"}common ancestor  1d6c9a0{"\n"}extracting decisions, facts, dead ends, open questions{"\n"}<span className="t-del">1 conflict</span>  logging policy (main vs redis-bucket){"\n\n"}Preview written. Resolve with --keep source|target,{"\n"}or edit the summary. Nothing is applied until you approve.</code></pre>
-                </div>
-                <div role="tabpanel" id="panel-rollback" aria-labelledby="tab-rollback" tabIndex={0} hidden>
-                  <p className="verb-desc">Check out any earlier commit and keep going from there. Later commits stay put, so rolling back never destroys work.</p>
-                  <pre className="term"><code><span className="t-prompt">$</span> contextgit checkout 7be04d8{"\n"}HEAD at 7be04d8 &quot;Spec the limit&quot;{"\n"}<span className="t-dim">Later commits are untouched. Nothing was deleted.</span>{"\n"}<span className="t-prompt">$</span> contextgit branch spec-v2{"\n"}<span className="t-prompt">$</span> contextgit checkout spec-v2</code></pre>
-                </div>
-                <p className="fineprint">Illustrative output. Command names and flags may change before release.</p>
-              </div>
-              <WorkflowTabs />
-            </div>
 
             <figure className="console reveal" aria-labelledby="console-cap">
               <div className="console-bar">
@@ -264,6 +232,15 @@ export default function Page() {
               <figcaption id="console-cap">Select any commit. Its context is rebuilt by walking parents. A merge commit carries a summary, not the whole branch.</figcaption>
             </figure>
             <noscript><p className="fineprint">The interactive commit graph needs JavaScript. It shows nine commits across three branches, ending in a merge of redis-bucket into main.</p></noscript>
+
+            <dl className="actions-list reveal">
+              <div><dt className="mono">Branch from any message</dt><dd>Fork at the exact message where the conversation went somewhere new.</dd></div>
+              <div><dt className="mono">Compare mode</dt><dd>Send one prompt to two branches and read the answers side by side.</dd></div>
+              <div><dt className="mono">Cherry-pick</dt><dd>Bring a single commit from one branch onto another.</dd></div>
+              <div><dt className="mono">Tag a commit</dt><dd>Label a known-good state and return to it in one click.</dd></div>
+              <div><dt className="mono">Staged turns</dt><dd>Nothing lands on the branch until you press Commit; a pending diff shows what will land.</dd></div>
+              <div><dt className="mono">Export as plain prompt</dt><dd>Take any branch&apos;s context into any other tool.</dd></div>
+            </dl>
           </div>
         </section>
 
@@ -377,183 +354,15 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="section" id="interface" data-section aria-labelledby="interface-title">
-          <div className="wrap">
-            <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">06</span>Interface</p>
-              <h2 id="interface-title">Three panels, one conversation tree.</h2>
-              <p className="lede">The desktop app puts sessions, history and an inspector on one screen — with parallel agent terminals in the sidebar. Click a commit and the chat becomes that moment.</p>
-            </header>
-
-            <figure className="app reveal" aria-labelledby="app-cap">
-              <div className="app-grid" aria-hidden="true">
-                <div className="panel panel-graph">
-                  <p className="panel-title mono">Graph</p>
-                  <MiniGraph />
-                </div>
-                <div className="panel panel-chat">
-                  <p className="panel-title mono">Chat <span className="panel-sub">redis-bucket &middot; 4c07a1e</span></p>
-                  <div className="msg msg-user">
-                    <p className="msg-role mono">you</p>
-                    <p>Skew between regions can reach 40 ms. Does the token bucket still hold?</p>
-                  </div>
-                  <div className="msg msg-ai">
-                    <p className="msg-role mono">assistant</p>
-                    <p id="typed">Yes, if refill reads Redis server time instead of the client clock. Compute tokens inside the Lua script with TIME, so every region sees one clock. Skew then only affects how fast a key&apos;s state replicates, and the bucket tolerates up to 50 ms of that.</p>
-                  </div>
-                  <div className="composer"><span className="composer-input">Message redis-bucket</span><span className="composer-send mono">Send</span></div>
-                </div>
-                <div className="panel panel-inspect">
-                  <p className="panel-title mono">Inspector</p>
-                  <dl className="kv">
-                    <div><dt>Commit</dt><dd className="mono">4c07a1e</dd></div>
-                    <div><dt>Branch</dt><dd className="mono">redis-bucket</dd></div>
-                    <div><dt>Messages</dt><dd>4 in commit, 9 in context</dd></div>
-                  </dl>
-                  <div className="budget">
-                    <p className="budget-label"><span>Token budget</span><span className="mono">4,632 / 8,000</span></p>
-                    <div className="budget-bar"><span style={{ width: "58%" }}></span></div>
-                  </div>
-                  <p className="insp-sum">Refill reads Redis server time. Tolerates 50 ms of replication skew. Counters only, no per-request logging.</p>
-                  <p className="health"><span className="health-tag mono">health &middot; planned</span>Possible contradiction with 7be04d8: burst of 20 versus a strict 100 per minute.</p>
-                </div>
-              </div>
-              <figcaption id="app-cap">Illustrative layout. Graph on the left, chat at the selected commit in the middle, tokens, summary and warnings on the right.</figcaption>
-            </figure>
-
-            <dl className="actions-list reveal">
-              <div><dt className="mono">Branch from any message</dt><dd>Fork at the exact message where the conversation went somewhere new.</dd></div>
-              <div><dt className="mono">Compare mode</dt><dd>Send one prompt to two branches and read the answers side by side.</dd></div>
-              <div><dt className="mono">Cherry-pick</dt><dd>Bring a single commit from one branch onto another.</dd></div>
-              <div><dt className="mono">Tag a commit</dt><dd>Label a known-good state and return to it in one click.</dd></div>
-              <div><dt className="mono">Token budget bar</dt><dd>See what a branch costs before you send the next message.</dd></div>
-              <div><dt className="mono">Export as plain prompt</dt><dd>Take any branch&apos;s context into any other tool.</dd></div>
-            </dl>
-
-            <p className="build-note reveal">Built to stay usable at 500 commits by collapsing linear chains. The graph is fully keyboard navigable, and branches carry text labels, never color alone.</p>
-          </div>
-        </section>
-
-        <section className="section section-tint" id="internals" data-section aria-labelledby="internals-title">
-          <div className="wrap">
-            <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">07</span>Internals</p>
-              <h2 id="internals-title">Immutable commits, one source of truth.</h2>
-              <p className="lede">The same ideas that make git trustworthy, applied to messages. The core library owns every rule. The CLI and the API are thin wrappers.</p>
-            </header>
-
-            <div className="internals-grid">
-              <div className="layers reveal" role="img" aria-label="Architecture layers. The Electron desktop UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
-                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Desktop UI (Electron)</span><span className="layer">CLI (typer)</span></div>
-                <p className="layer-link mono" aria-hidden="true">calls</p>
-                <div className="layer-row" aria-hidden="true"><span className="layer">FastAPI &middot; HTTP and SSE</span></div>
-                <p className="layer-link mono" aria-hidden="true">calls</p>
-                <div className="layer-row" aria-hidden="true"><span className="layer layer-core">Core library &middot; commits, branches, HEAD</span></div>
-                <p className="layer-link mono" aria-hidden="true">uses</p>
-                <div className="layer-row layer-three" aria-hidden="true"><span className="layer">Storage<br /><span className="layer-sub">SQLite</span></span><span className="layer">LLM adapter<br /><span className="layer-sub">one file per provider</span></span><span className="layer">Merge engine<br /><span className="layer-sub">diff + summarize</span></span></div>
-                <p className="layer-foot">Dependencies point down only. Core never imports from the API, the CLI or the UI.</p>
-              </div>
-
-              <div className="hash-demo reveal" style={d(80)}>
-                <h3 className="minor">Change one character, get a different commit</h3>
-                <HashDemo />
-              </div>
-            </div>
-
-            <ul className="principles reveal">
-              <li><h3 className="principle-title">Local-first</h3><p>Everything lives in one SQLite file on your machine. Only the LLM calls leave it.</p></li>
-              <li><h3 className="principle-title">Provider-agnostic</h3><p>Every call goes through one adapter. A new provider is one new file.</p></li>
-              <li><h3 className="principle-title">Streaming</h3><p>Chat replies stream over server-sent events and append token by token.</p></li>
-              <li><h3 className="principle-title">On the roadmap</h3><p>Cloud sync, teams and real-time collaboration.</p></li>
-            </ul>
-          </div>
-        </section>
-
-        <section className="section" id="status" data-section aria-labelledby="status-title">
-          <div className="wrap">
-            <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">08</span>Status</p>
-              <h2 id="status-title">Merge quality is measured, not assumed.</h2>
-              <p className="lede">Before and after every merge, a fixed set of probe questions checks what the summary kept. A lost fact becomes a failing eval.</p>
-            </header>
-
-            <div className="eval reveal">
-              <div className="table-wrap">
-                <table className="eval-table">
-                  <caption>Example probe run: one merge, four questions</caption>
-                  <thead>
-                    <tr><th scope="col">Probe question</th><th scope="col">Answer on source branch</th><th scope="col">Answer on main after merge</th><th scope="col">Result</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><th scope="row">Where do counters live?</th><td>Redis, per region</td><td>Redis, per region</td><td><span className="result result-ok"><span aria-hidden="true">&#10003;</span> Retained</span></td></tr>
-                    <tr><th scope="row">What skew is tolerated?</th><td>50 ms</td><td>50 ms</td><td><span className="result result-ok"><span aria-hidden="true">&#10003;</span> Retained</span></td></tr>
-                    <tr><th scope="row">Is per-request logging on?</th><td>No, counters only</td><td>No, counters only</td><td><span className="result result-ok"><span aria-hidden="true">&#10003;</span> Retained</span></td></tr>
-                    <tr><th scope="row">What was rejected, and why?</th><td>Sliding window log, memory grows</td><td>No mention</td><td><span className="result result-lost"><span aria-hidden="true">&#10005;</span> Lost</span></td></tr>
-                  </tbody>
-                </table>
-              </div>
-              <p className="eval-summary">3 of 4 retained. The lost dead end fails the eval, and the merge prompt is revised until it passes. Real runs live in <code className="mono">tests/evals/</code>.</p>
-            </div>
-
-            <div className="roadmap-head reveal">
-              <h3 className="minor">Status</h3>
-              <p className="roadmap-honest">What has shipped, and what is next. Team mode is planned, not built.</p>
-            </div>
-
-            <ol className="roadmap reveal">
-              <li className="phase" data-status="done">
-                <p className="phase-meta mono">Shipped &middot; <span className="phase-status">Core</span></p>
-                <h4 className="phase-title">Conversation git</h4>
-                <ul className="tasks">
-                  <li>Data model, SHA-256 commits, SQLite storage</li>
-                  <li>init, commit, branch, checkout, log, diff</li>
-                  <li>Semantic merge with a conflict preview</li>
-                  <li>CLI, FastAPI, and the desktop app</li>
-                </ul>
-              </li>
-              <li className="phase" data-status="done">
-                <p className="phase-meta mono">Shipped &middot; <span className="phase-status">Agents</span></p>
-                <h4 className="phase-title">Parallel runs</h4>
-                <ul className="tasks">
-                  <li>One git worktree and branch per run</li>
-                  <li>Fleet visibility: changed files and overlaps</li>
-                  <li>Claims, scopes, and a managed AGENTS.md block</li>
-                  <li>Merge queue with a conflict pre-check</li>
-                  <li>Paired code and context merge</li>
-                </ul>
-              </li>
-              <li className="phase" data-status="next">
-                <p className="phase-meta mono">Next &middot; <span className="phase-status">Team</span></p>
-                <h4 className="phase-title">Team mode</h4>
-                <ul className="tasks">
-                  <li>Tasks, roles and dependencies</li>
-                  <li>A shared board and an MCP channel</li>
-                  <li>An independent verifier before merge</li>
-                  <li>Per-worktree ports, budgets and limits</li>
-                </ul>
-              </li>
-              <li className="phase" data-status="planned">
-                <p className="phase-meta mono">Later &middot; <span className="phase-status">Polish</span></p>
-                <h4 className="phase-title">Polish</h4>
-                <ul className="tasks">
-                  <li>Cherry-pick, tags, export and import</li>
-                  <li>Context health checks</li>
-                  <li>Multi-model per branch</li>
-                </ul>
-              </li>
-            </ol>
-            <p className="parking reveal"><span className="mono">Parking lot</span> Token-aware merge suggestions &middot; plugin API for other chat apps &middot; an A2A bridge for remote peers</p>
-          </div>
-        </section>
-
         <section className="section section-tint" id="pricing" data-section aria-labelledby="pricing-teaser-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">09</span>Pricing</p>
+              <p className="eyebrow"><span className="eyebrow-no">06</span>Pricing</p>
               <h2 id="pricing-teaser-title">Free on your machine. Paid to scale.</h2>
               <p className="lede">
-                The whole local workbench is free, forever. Pro adds the security audit, cloud
-                sync and cloud agents; Team adds collaboration. No numbers yet — early access.
+                The whole local workbench is free, forever — unlimited projects, runs and
+                commits, no account. Pro adds the security audit, cloud sync and cloud agents;
+                Team adds collaboration. No numbers yet — early access.
               </p>
             </header>
 
@@ -568,48 +377,27 @@ export default function Page() {
         <section className="section section-end" id="install" data-section aria-labelledby="install-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">10</span>Questions</p>
+              <p className="eyebrow"><span className="eyebrow-no">07</span>Questions</p>
               <h2 id="install-title">Before you try it.</h2>
             </header>
 
             <div className="faq reveal">
-              <details>
-                <summary>Isn&apos;t this just summarizing my chat?</summary>
-                <p>A summary replaces history. ContextGit keeps history as immutable commits and only summarizes at merge time, with a preview, a conflict check and the full branch still intact.</p>
-              </details>
-              <details>
-                <summary>Is a merge lossless?</summary>
-                <p>No. A merge is a compact summary of decisions, facts, dead ends and open questions. That is why the original branch is never deleted, and why merge quality is tracked with probe questions.</p>
-              </details>
-              <details>
-                <summary>Where does my data go?</summary>
-                <p>Commits live in a local SQLite file. The only network traffic is the calls you make to your chosen LLM provider.</p>
-              </details>
-              <details>
-                <summary>Which models does it work with?</summary>
-                <p>Any model with an adapter. Every LLM call goes through one provider interface, so supporting a new provider means writing one new file. Phase 1 ships a fake provider for tests and one real adapter.</p>
-              </details>
-              <details>
-                <summary>Can I use it with the chat app I already have?</summary>
-                <p>Not yet. A plugin API for other chat apps is on the parking lot, and any branch can already be exported as a plain prompt.</p>
-              </details>
-              <details>
-                <summary>Does it support teams?</summary>
-                <p>Team mode is local today — tasks, roles and an ownership board across parallel runs. Cloud sync and multi-user collaboration are on the roadmap (see <a href="/pricing">Pricing</a>).</p>
-              </details>
+              {FAQ.map(([q, a]) => (
+                <details key={q}>
+                  <summary>{q}</summary>
+                  <p>{a}</p>
+                </details>
+              ))}
             </div>
 
             <div className="cta reveal">
-              <h2 className="cta-title">Keep the branch that worked. Drop the one that did not.</h2>
-              <p className="cta-lede">Start with the CLI. Add the graph when you want to see the tree.</p>
+              <h2 className="cta-title">One window. Every agent. Context you can keep.</h2>
+              <p className="cta-lede">Run it from source in five minutes, or start with the CLI. It all stays on your machine.</p>
               <div className="cta-actions">
-                <div className="install install-night">
-                  <code>pip install contextgit</code>
-                  <button type="button" className="btn btn-copy-cta" data-copy="pip install contextgit" aria-label="Copy install command">Copy</button>
-                </div>
-                <a className="btn btn-link-cta" href="#status">Read the roadmap <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-signal" href="/download">Download <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-link-cta" href={GITHUB}>View on GitHub <span aria-hidden="true">&rarr;</span></a>
               </div>
-              <p className="fineprint cta-fine">Pre-release. Everything stays on your machine except the model calls you make.</p>
+              <p className="fineprint cta-fine">Early build. Everything stays on your machine except the model calls you make.</p>
             </div>
           </div>
         </section>

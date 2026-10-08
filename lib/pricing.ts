@@ -59,7 +59,7 @@ export const TIERS: Tier[] = [
       "Priority support",
     ],
     ctaLabel: "Notify me",
-    ctaHref: "#waitlist",
+    ctaHref: "/pricing#waitlist",
   },
   {
     id: "team",
@@ -77,7 +77,7 @@ export const TIERS: Tier[] = [
       "SSO and role-based access",
     ],
     ctaLabel: "Notify me",
-    ctaHref: "#waitlist",
+    ctaHref: "/pricing#waitlist",
   },
   {
     id: "enterprise",
@@ -94,7 +94,7 @@ export const TIERS: Tier[] = [
       "Dedicated support and SLA",
     ],
     ctaLabel: "Contact us",
-    ctaHref: "#waitlist",
+    ctaHref: "/pricing#waitlist",
   },
 ];
 

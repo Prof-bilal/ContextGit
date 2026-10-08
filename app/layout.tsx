@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ContextGit: version control for AI work",
+  title: "ContextGit — the one window for AI development",
   description:
-    "Run several coding agents on one project without collisions, and keep every conversation as a branchable commit history. Local-first, on your machine.",
+    "ContextGit is a desktop workbench for AI development: run parallel coding agents in isolated git worktrees, with an editor, browser, API and database client in one window, and version-controlled AI context. Local-first.",
 };
 
 export const viewport: Viewport = {

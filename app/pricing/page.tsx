@@ -5,34 +5,15 @@ import SiteFooter from "@/components/site-footer";
 import PricingTiers from "@/components/pricing-tiers";
 import Effects from "@/components/effects";
 import { COMPARE_ROWS, TIERS, WAITLIST_HREF } from "@/lib/pricing";
+import { FOOTER_LINKS, HEADER_CTA, NAV } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Pricing — ContextGit",
   description:
-    "ContextGit is free on your machine. Pro adds a security audit, cloud sync and cloud agents. Team adds collaboration. No prices yet — early access.",
+    "ContextGit is free on your machine. Paid plans add cloud sync, security audit and team features. Prices are coming; join the waitlist.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
-
-const NAV = [
-  { href: "/", label: "Overview" },
-  { href: "/#fleet", label: "Control tower" },
-  { href: "/#workflow", label: "Workflow" },
-  { href: "/#merge", label: "Merge engine" },
-  { href: "/#interface", label: "Interface" },
-  { href: "/#status", label: "Status" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/#install", label: "Install" },
-];
-
-const FOOTER_LINKS = [
-  { href: "/#workflow", label: "Workflow" },
-  { href: "/#merge", label: "Merge engine" },
-  { href: "/#interface", label: "Interface" },
-  { href: "/#status", label: "Status" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/#install", label: "Install" },
-];
 
 function Cell({ value }: { value: boolean | string }) {
   if (value === true) return <span className="cmp-yes" role="img" aria-label="Included">&#10003;</span>;
@@ -45,7 +26,7 @@ export default function PricingPage() {
     <>
       <a className="skip-link" href="#main">Skip to content</a>
 
-      <SiteHeader links={NAV} cta={{ label: "Install", href: "/#install" }} logoHref="/" />
+      <SiteHeader links={NAV} cta={HEADER_CTA} logoHref="/" />
 
       <main id="main">
         <section className="section pricing-hero" data-section aria-labelledby="pricing-title">
