@@ -10,6 +10,17 @@ isolated checkouts and their reasoning merges together with their diffs.
 
 > Status: early / experimental. Interfaces and schema may change.
 
+## Full workbench archive
+
+The complete pre-five-tab workbench is preserved in the private
+[`ContextGit-legacy-features`](https://github.com/Prof-bilal/ContextGit-legacy-features)
+repository. It is anchored to commit `f8a9b68cf58ec90b5e970839811fa70bdef00821`
+and the immutable tag
+[`archive/full-workbench-before-five-tabs`](https://github.com/Prof-bilal/ContextGit-legacy-features/tree/archive/full-workbench-before-five-tabs).
+The same archive tag is also present in this repository. Future UI reduction work
+can remove archived surfaces from the main app without losing the original
+implementation.
+
 ## Why
 
 A chat thread is a terrible place to keep a project's state: it grows, it forks
