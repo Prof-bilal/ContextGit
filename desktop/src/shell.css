@@ -1449,9 +1449,9 @@ button.cg-chip[aria-pressed="true"] {
 .cg-pane-canvas[data-layout="split"] {
   grid-template-columns: 1fr 1fr;
 }
-.cg-pane-canvas[data-layout="rows"] {
-  grid-template-columns: 1fr;
-  /* Every terminal gets a row; the canvas scrolls when many are open. */
+.cg-pane-canvas[data-layout="tiled"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Four terminals form a 2×2 quarter-grid; more terminals add rows below. */
   grid-auto-rows: minmax(18rem, 1fr);
   overflow-y: auto;
   overflow-x: hidden;

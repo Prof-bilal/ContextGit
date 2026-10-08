@@ -7,13 +7,13 @@ import type { Session } from "@/lib/api";
 /** xterm is heavy and only needed once a terminal pane exists. */
 const TerminalPane = lazy(() => import("./TerminalPane"));
 
-export type PaneLayout = "single" | "split" | "rows";
+export type PaneLayout = "single" | "split" | "tiled";
 
 /** Layout follows the number of open terminals; there is no manual mode switch. */
 export function layoutForCount(count: number): PaneLayout {
   if (count <= 1) return "single";
   if (count === 2) return "split";
-  return "rows";
+  return "tiled";
 }
 
 /** Open runs, in the order they were opened. */
