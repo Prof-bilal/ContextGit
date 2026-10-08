@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { LuRefreshCw } from "react-icons/lu";
 
 import type { HarnessLimits, LimitWindow } from "@/lib/api";
@@ -64,12 +65,15 @@ export default function HarnessLimitsPanel({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 1000); return () => clearInterval(timer); }, []);
+  const aged = !!limits && Date.now() - new Date(limits.fetched_at).getTime() > (limits.scope === "account" ? 360_000 : 90_000);
   const label = limits?.label ?? agentLabel(harness);
   return (
     <section className="cg-limits" aria-label={`${label} limits`}>
       <header className="cg-block-head">
         <AgentMark agent={harness} label={agentMonogram(harness)} />
-        <span className="cg-kicker">Usage &amp; limits</span>
+        <span className="cg-kicker">{limits?.scope === "session" ? "Session usage" : limits?.scope === "local_project" ? "Project usage" : "Usage & limits"}</span>
         {limits?.plan && <Chip>{limits.plan}</Chip>}
         <span className="cg-toolbar-spacer" />
         <IconButton label="Refresh limits" pressed={loading} onClick={onRefresh}>
@@ -77,13 +81,16 @@ export default function HarnessLimitsPanel({
         </IconButton>
       </header>
 
+      {limits?.account_reading && <HarnessLimitsPanel harness={harness} limits={limits.account_reading} loading={loading} onRefresh={onRefresh} />}
+
       {!limits && (
         <p className="cg-empty-note">
           {loading ? "Loading limits…" : "No usage limits reported by this harness."}
         </p>
       )}
 
-      {limits?.stale && <p className="cg-view-sub" role="status">Last reading · refresh unavailable</p>}
+      {(limits?.stale || aged) && <p className="cg-view-sub" role="status">Last reading · refresh unavailable</p>}
+      {loading && <p className="cg-view-sub" role="status">Refreshing…</p>}
       {limits?.source && <p className="cg-view-sub">{limits.source} · {new Date(limits.fetched_at).toLocaleTimeString()}</p>}
       {harness === "ollama" && <p className="cg-view-sub"><a href="https://ollama.com/usage" target="_blank" rel="noreferrer">Open Ollama cloud usage</a></p>}
       {limits && !limits.signed_in && limits.state !== "available" && (

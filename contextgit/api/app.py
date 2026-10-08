@@ -9,6 +9,7 @@ import secrets
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Literal, cast
@@ -252,6 +253,20 @@ def create_app(
             return state["repo"]
 
     repo_dep = Depends(get_repo)
+
+    from contextgit.integration.api import router as integration_router
+
+    app.include_router(integration_router(get_repo))
+
+    @asynccontextmanager
+    async def integration_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        get_repo().integration.start()
+        try:
+            yield
+        finally:
+            get_repo().integration.stop()
+
+    app.router.lifespan_context = integration_lifespan
 
     def _live_openapi(root: Path) -> dict[str, object] | None:
         """The running server's own spec — only when it is this project's server."""
@@ -1204,9 +1219,11 @@ def create_app(
     # ---------- harness limits (each CLI's own account limits) ----------
 
     @app.get("/api/v1/limits", response_model=list[HarnessLimits])
-    def limits(refresh: bool = False) -> list[HarnessLimits]:
+    def limits(refresh: bool = False, harness: str | None = None) -> list[HarnessLimits]:
         """Account adapters and explicit availability for every registered CLI."""
-        return all_limits(refresh=refresh)
+        return (
+            all_limits(refresh=refresh, harness=harness) if harness else all_limits(refresh=refresh)
+        )
 
     # ---------- documents (Chat "Document" mode: generate a file) ----------
 

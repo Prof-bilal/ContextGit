@@ -1,3 +1,4 @@
+import MergeAgentPanel from "./terminal/MergeAgentPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "react-icons/lu";
 
@@ -315,6 +316,21 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
   const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
 
   // Each CLI harness's own account limits (cmd's 5-hour/weekly windows, …).
+  const [mergeAgentOpen, setMergeAgentOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const update = async () => {
+      let active = false;
+      if (workspace) {
+        try { active = (await api.integrationJobs()).some(job => ["building", "reviewing", "checking", "publishing"].includes(job.state)); }
+        catch { /* Authority may not be configured on an external backend. */ }
+      }
+      if (alive) window.contextgit?.usageActivity?.(tab === "code", active);
+    };
+    void update();
+    const timer = setInterval(() => void update(), 5000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [tab, workspace]);
   const { limits, loading: limitsLoading, refresh: refreshLimits } = useLimits(tab === "code", activeSession);
   const limitsByHarness = new Map(limits.map((entry) => [entry.harness, entry]));
   const runHarness = activeSession?.agent ?? "shell";
@@ -1113,6 +1129,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
       case "code":
         return mode === "team" ? (
           <TeamRail
+            onMergeAgent={() => setMergeAgentOpen(value => !value)}
             tasks={teamTasks}
             sessions={sessions}
             selectedId={selectedTaskId}
@@ -1121,6 +1138,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
           />
         ) : (
           <ProjectsRail
+            onMergeAgent={() => setMergeAgentOpen(value => !value)}
             sessions={sessions.filter((session) => session.kind === "terminal")}
             fleet={fleet}
             openIds={openIds}
@@ -2070,6 +2088,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
         >
           {/* Code stays mounted (hidden) so live terminals survive tab switches. */}
           <div className="cg-view" data-active={tab === "code"} data-code-mode={mode}>
+            {mergeAgentOpen && workspace && <MergeAgentPanel project={workspace.path} sessions={sessions} />}
             {mode === "team" ? (
               <TeamView
                 tasks={teamTasks}

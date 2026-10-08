@@ -98,6 +98,7 @@ export default function ProjectsRail({
   projects,
   activePath,
   onSelect,
+  onMergeAgent,
   onNew,
   onDelete,
   onUseProject,
@@ -114,6 +115,7 @@ export default function ProjectsRail({
   /** Every remembered project folder. */
   projects: Workspace[];
   activePath: string | null;
+  onMergeAgent?: () => void;
   onSelect: (session: Session) => void;
   onNew: (name: string, agent: string, scope: string[], roleId: string) => Promise<void>;
   onDelete: (session: Session) => void;
@@ -274,6 +276,7 @@ export default function ProjectsRail({
 
   return (
     <nav className="cg-rail" aria-label="Projects and runs">
+      {onMergeAgent && <button className="cg-row" onClick={onMergeAgent}>Merge Agent</button>}
       <div className="cg-rail-head">
         <h2>Projects</h2>
         <span className="cg-count">{sessions.length}</span>

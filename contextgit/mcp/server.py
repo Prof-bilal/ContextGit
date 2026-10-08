@@ -7,7 +7,7 @@ knows which task it belongs to via `CONTEXTGIT_TASK`.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from mcp.server.mcpserver import MCPServer
 
@@ -52,6 +52,33 @@ def build_server(repo_path: str | None = None) -> MCPServer:
     @server.tool(description="Finish a task; the quality gate runs and it lands in review.")
     def complete_task(task_id: str | None = None, evidence: str = "") -> dict[str, Any]:
         return tools.finish_task(repo(), task_id, evidence)
+
+    @server.tool(
+        description=(
+            "Submit committed code for integration; requires a clean worker "
+            "and enabled project authority."
+        )
+    )
+    def ready_for_integration(session_id: str | None = None) -> dict[str, Any]:
+        current = repo()
+        if not session_id:
+            task_id = tools.current_task_id()
+            if not task_id:
+                return {"error": "Provide session_id or run inside a Team task"}
+            session_id = current.get_task(task_id).session_id
+        if not session_id:
+            return {"error": "Task has no worker session"}
+        try:
+            return cast(dict[str, Any], current.integration.ready(session_id))
+        except ValueError as error:
+            return {"error": str(error)}
+
+    @server.tool(description="Read integration progress and worker feedback for a readiness job.")
+    def integration_status(job_id: str) -> dict[str, Any]:
+        try:
+            return cast(dict[str, Any], repo().integration.job(job_id))
+        except ValueError as error:
+            return {"error": str(error)}
 
     @server.tool(description="Post an update to the team board.")
     def post_update(text: str, task_id: str | None = None) -> dict[str, Any]:

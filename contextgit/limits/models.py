@@ -54,6 +54,7 @@ class HarnessLimits(BaseModel):
     scope: Literal["account", "session", "local_project"] = "account"
     session_id: str | None = None
     stale: bool = False
+    retry_after_seconds: float | None = None
     label: str
     # True when this package has an adapter for the harness at all.
     supported: bool = True

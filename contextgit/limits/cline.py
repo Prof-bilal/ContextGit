@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from contextgit.limits.models import HarnessLimits, LimitCredits
-from contextgit.limits.util import error_message
+from contextgit.limits.util import error_message, retry_after
 
 BASE_URL = "https://api.cline.bot"
 DEFAULT_AUTH_PATH = Path.home() / ".cline" / "data" / "settings" / "providers.json"
@@ -122,6 +122,8 @@ def fetch_limits(
     except Exception as exc:  # noqa: BLE001 - surface any failure as a message
         result.signed_in = False
         result.message = error_message("Cline", exc)
+        result.state = "not_signed_in" if "sign-in expired" in (result.message or "") else "error"
+        result.retry_after_seconds = retry_after(exc)
         return result
     finally:
         if owned:

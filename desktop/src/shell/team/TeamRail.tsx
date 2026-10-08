@@ -24,11 +24,13 @@ export default function TeamRail({
   sessions,
   selectedId,
   onSelect,
+  onMergeAgent,
   onNew,
 }: {
   tasks: Task[];
   sessions: Session[];
   selectedId: string | null;
+  onMergeAgent?: () => void;
   onSelect: (task: Task) => void;
   onNew: () => void;
 }) {
@@ -39,6 +41,7 @@ export default function TeamRail({
 
   return (
     <nav className="cg-rail" aria-label="Team tasks">
+      {onMergeAgent && <button className="cg-row" onClick={onMergeAgent}>Merge Agent</button>}
       <div className="cg-rail-head">
         <h2>Tasks</h2>
         <span className="cg-count">{tasks.length}</span>

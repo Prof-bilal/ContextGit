@@ -6,7 +6,7 @@ import path from "node:path";
 import { SessionRevision, uniqueSessions } from "../src/shell/terminal/sessionState";
 import { validateBackend } from "../electron/backendHealth";
 import { codexLimits, claudeUsage, jsonRecords, geminiCounters, aiderReport, statsTotals } from "../electron/usageParsers";
-import { readCodex, UsageManager } from "../electron/usage";
+import { readCodex, UsageManager, SharedCodexUsage } from "../electron/usage";
 import { rendererCsp } from "../shared/security";
 
 test("a response that predates creation, deletion or an update is rejected", () => {
@@ -147,4 +147,78 @@ test("packaged CSP permits local resources and does not allow evaluated scripts"
   assert.ok(!production.includes("script-src 'self' 'unsafe-inline'"));
   assert.ok(production.includes("http://127.0.0.1:*"));
   assert.ok(development.includes("ws://127.0.0.1:*"));
+});
+
+test("observer events use file observation time and ignore unchanged or partial records", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-live-usage-"));
+  fs.writeFileSync(path.join(directory, "usage-pi.mjs"), "");
+  const manager = new UsageManager(directory, directory);
+  const updates: import("../../lib/api").HarnessLimits[] = [];
+  const unsubscribe = manager.subscribe(value => updates.push(value));
+  try {
+    const launch = manager.prepare("pi-live", "session", "pi", directory);
+    const file = launch.env.CONTEXTGIT_USAGE_FILE;
+    fs.writeFileSync(file, JSON.stringify({ total_tokens: 123, total_cost: .02, requests: 1 }));
+    const first = await manager.read("pi", "session");
+    const count = updates.length;
+    assert.equal(first.totals?.total_tokens, 123);
+    assert.ok(first.launch_id);
+    assert.equal(first.fetched_at, new Date(fs.statSync(file).mtimeMs).toISOString());
+    assert.equal((await manager.read("pi", "session")).fetched_at, first.fetched_at);
+    assert.equal(updates.length, count);
+    fs.writeFileSync(file, '{"total_tokens":');
+    assert.equal((await manager.read("pi", "session")).totals?.total_tokens, 123);
+    fs.writeFileSync(file, JSON.stringify({ total_tokens: 456, total_cost: .03, requests: 2 }));
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.equal(updates.at(-1)?.totals?.total_tokens, 456);
+    assert.equal((await manager.read("pi", "other")).state, "waiting");
+  } finally { unsubscribe(); manager.stop(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("shared Codex connection publishes quota notifications and clears readings on auth changes", { skip: process.platform === "win32" }, async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-shared-codex-"));
+  const command = path.join(directory, "codex");
+  fs.writeFileSync(command, `#!/usr/bin/env node
+process.stdin.setEncoding('utf8'); let pending='';
+process.stdin.on('data', data => { pending+=data; let index; while((index=pending.indexOf('\\n'))>=0) {
+const request=JSON.parse(pending.slice(0,index)); pending=pending.slice(index+1);
+if (!['initialize','initialized','account/read','account/rateLimits/read'].includes(request.method)) process.exit(2);
+const send = value => process.stdout.write(JSON.stringify(value)+'\\n');
+if (request.method==='initialize') send({id:request.id,result:{}});
+if (request.method==='account/read') send({id:request.id,result:{account:{type:'chatgpt'}}});
+if (request.method==='account/rateLimits/read') {
+ send({id:request.id,result:{rateLimits:{primary:{usedPercent:22,windowDurationMins:300}}}});
+ setTimeout(()=>send({method:'account/rateLimits/updated',params:{rateLimits:{primary:{usedPercent:35,windowDurationMins:300}}}}),25);
+ setTimeout(()=>send({method:'account/updated',params:{}}),50);
+}
+}});
+`, { mode: 0o700 });
+  const updates: import("../../lib/api").HarnessLimits[] = [];
+  const connection = new SharedCodexUsage(value => updates.push(value), command);
+  try {
+    assert.equal((await connection.read()).windows[0].used, 22);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(updates.some(value => value.windows[0]?.used === 35));
+    assert.ok(updates.some(value => value.state === "waiting" && value.windows.length === 0));
+  } finally { connection.stop(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("session totals and account quotas keep independent keys and reject old launches", async () => {
+  const { mergeUsageReadings, displayedUsageReadings } = await import("../shared/usage");
+  const value: import("../../lib/api").HarnessLimits = {
+    harness: "claude", label: "Claude Code", scope: "session", session_id: "selected", launch_id: "new",
+    launch_started_at: "2026-10-08T10:00:00Z", fetched_at: "2026-10-08T10:05:00Z",
+    state: "available", supported: true, signed_in: true, source: "status line", plan: null, credits: null, message: null,
+    windows: [{ label: "5-hour", used: 30, cap: 100, unit: "%", reset_at: null }],
+    totals: { total_tokens: 123, total_cost: .1, requests: null, period: "this launch" },
+  };
+  const readings = mergeUsageReadings([], value);
+  assert.equal(readings.length, 2);
+  assert.equal(readings[0].scope, "account");
+  assert.equal(readings[0].session_id, undefined);
+  assert.equal(readings[0].totals, null);
+  assert.equal(readings[1].windows.length, 0);
+  assert.equal(displayedUsageReadings(readings, "selected")[1].account_reading?.windows[0].used, 30);
+  assert.equal(displayedUsageReadings(readings, "other").length, 1);
+  assert.equal(mergeUsageReadings(readings, { ...value, launch_started_at: "2026-10-08T09:00:00Z" }), readings);
 });

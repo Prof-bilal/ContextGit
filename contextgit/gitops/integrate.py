@@ -35,7 +35,7 @@ class IntegrationResult:
     target: str
 
 
-def integrate(
+def _integrate(
     project: Path | str,
     target: str,
     branch: str,
@@ -67,3 +67,12 @@ def integrate(
     ).stdout.strip()
     git.run("update-ref", f"refs/heads/{target}", commit, old)
     return IntegrationResult(commit_id=commit, target=target)
+
+
+def integrate(
+    project: Path | str, target: str, branch: str, *, message: str, target_commit: str | None = None
+) -> IntegrationResult:
+    from contextgit.integration.service import project_lock
+
+    with project_lock(str(Path(project).resolve())):
+        return _integrate(project, target, branch, message=message, target_commit=target_commit)

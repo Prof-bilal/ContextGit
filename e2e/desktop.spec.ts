@@ -1446,6 +1446,61 @@ test("live CLI survives missing and duplicate polls, mode switches, and backend 
   } finally { await page.unroute("**/api/v1/sessions"); }
 });
 
+test("Merge Agent authority, background progress, and conflict feedback", async () => {
+  const page = await openShell();
+  let settings = { project: path.resolve(__dirname, "../.playwright-workdir"), harness: "codex", target: "main", checks: "", authority: "disabled", generation: 0, branches: ["main"] };
+  let jobState = "reviewing";
+  await page.route("**/api/v1/integration/settings*", async route => {
+    if (route.request().method() === "PUT") settings = { ...settings, ...route.request().postDataJSON() };
+    await route.fulfill({ json: settings });
+  });
+  await page.route("**/api/v1/integration/jobs*", async route => {
+    await route.fulfill({ json: [{ id: "fixture-job", session_id: "fixture-worker", source_sha: "a".repeat(40), target_sha: "b".repeat(40), state: jobState, attempts: 1, candidate_commit: null, conflicts: ["app.py"], feedback: jobState === "failed" ? "Resolution uncertain; return to worker" : "Reviewing candidate", resolution_diff: "", check_output: "", verdict: null, conversation_branch: "fixture-evidence", usage: null }] });
+  });
+  try {
+    await nav(page, "Code").click();
+    await page.getByRole("button", { name: "Merge Agent", exact: true }).click();
+    const panel = page.getByRole("region", { name: "Merge Agent", exact: true });
+    await expect(panel).toContainText("Authority: disabled");
+    await expect(panel.getByRole("button", { name: "Enable automatic integration" })).toBeDisabled();
+    await panel.getByLabel("Required integration checks").fill("npm test");
+    await panel.getByRole("button", { name: "Enable automatic integration" }).click();
+    await expect(panel).toContainText("Authority: enabled");
+    await expect(panel).toContainText("Conflict files: app.py");
+    await nav(page, "Assets").click();
+    jobState = "failed";
+    await nav(page, "Code").click();
+    await expect(panel).toContainText("Resolution uncertain; return to worker");
+    await panel.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(panel).toContainText("Authority: paused");
+    await panel.getByRole("button", { name: "Revoke authority" }).click();
+    await expect(panel).toContainText("Authority: disabled");
+    await page.getByRole("button", { name: "Merge Agent", exact: true }).click();
+  } finally {
+    await page.unroute("**/api/v1/integration/settings*").catch(() => {});
+    await page.unroute("**/api/v1/integration/jobs*").catch(() => {});
+  }
+});
+
+test("Code usage changes from preload events without Refresh", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run" }).click();
+  await page.getByLabel("Run name").fill("live usage fixture");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await page.locator(".cg-row", { hasText: "live usage fixture" }).first().click();
+  const session = await page.evaluate(async () => {
+    const rows = await (await fetch(`${window.contextgit!.apiBase}/api/v1/sessions`, { headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } })).json();
+    return rows.find((row: { name: string }) => row.name === "live usage fixture");
+  });
+  const value = { harness: "shell", label: "Shell", state: "available", scope: "session", session_id: session.id, signed_in: true, supported: true, source: "Fixture CLI event", plan: null, windows: [], credits: null, message: null, fetched_at: new Date().toISOString(), totals: { total_tokens: 123, total_cost: null, requests: null, period: "this launch" } };
+  await app.evaluate(({ BrowserWindow }, reading) => BrowserWindow.getAllWindows()[0].webContents.send("ctx:usage-update", reading), value);
+  await expect(page.locator(".cg-dock .cg-limits")).toContainText("123 tokens");
+  await app.evaluate(({ BrowserWindow }, reading) => BrowserWindow.getAllWindows()[0].webContents.send("ctx:usage-update", reading), { ...value, totals: { ...value.totals, total_tokens: 456 } });
+  await expect(page.locator(".cg-dock .cg-limits")).toContainText("456 tokens");
+});
+
 test("Playground browses the curated catalog and installs a bundled role skill", async () => {
   const page = await openShell();
   await nav(page, "Playground").click();

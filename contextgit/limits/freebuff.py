@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 
 from contextgit.limits.models import HarnessLimits, LimitCredits, LimitWindow
-from contextgit.limits.util import error_message
+from contextgit.limits.util import error_message, retry_after
 
 # The API host (freebuff.com is the marketing site; the API lives on codebuff).
 BASE_URLS = ("https://www.codebuff.com", "https://codebuff.com")
@@ -108,6 +108,8 @@ def fetch_limits(
     if data is None:
         result.signed_in = False
         result.message = error_message("Freebuff", last_error or RuntimeError("no response"))
+        result.state = "not_signed_in" if "sign-in expired" in (result.message or "") else "error"
+        result.retry_after_seconds = retry_after(last_error or RuntimeError("no response"))
         return result
 
     freebucks = data.get("freebucks")

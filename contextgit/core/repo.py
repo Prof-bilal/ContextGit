@@ -82,6 +82,7 @@ from contextgit.gitops.integrate import IntegrationConflict, integrate
 from contextgit.gitops.repo import Git
 from contextgit.gitops.status import FleetEntry, WorkspaceStatus, workspace_status
 from contextgit.gitops.team import team_document, write_team_board
+from contextgit.integration.service import IntegrationService
 from contextgit.llm.base import LLMProvider
 from contextgit.mcp.config import ensure_mcp_config
 from contextgit.merge.engine import common_ancestor, messages_since
@@ -161,6 +162,33 @@ class Repo:
         self._storage = storage or SqliteStorage(self._root / _DB_NAME)
         # One-time: fill in project_path for runs recorded before the column.
         self._projects_backfilled = False
+        self._integration = IntegrationService(self)
+
+    @property
+    def integration(self) -> IntegrationService:
+        """One integration coordinator per repository instance."""
+        return self._integration
+
+    def _queue_completed_task(self, task: Task) -> Task:
+        if task.status == "review" and task.session_id:
+            session = self.get_session(task.session_id)
+            if (
+                session.project_path
+                and session.git_branch
+                and self.integration.settings(session.project_path)["authority"] == "enabled"
+            ):
+                try:
+                    job = self.integration.ready(task.session_id, task.id)
+                    if job["state"] == "succeeded":
+                        self.integration.finish_task(job)
+                except ValueError as error:
+                    self.post_message(
+                        task.team_id,
+                        f"Integration readiness blocked: {error}",
+                        kind="review",
+                        task_id=task.id,
+                    )
+        return task
 
     @property
     def root(self) -> Path:
@@ -1120,9 +1148,7 @@ class Repo:
             )
         owners = [self._storage.get_session(sid).name for sid in self.claim_conflicts(task.scope)]
         if owners:
-            raise ScopeConflict(
-                f"'{task.title}' claims files already owned by {', '.join(owners)}"
-            )
+            raise ScopeConflict(f"'{task.title}' claims files already owned by {', '.join(owners)}")
         session = self.create_session(
             f"{team.name}/{task.title}",
             kind="terminal",
@@ -1176,9 +1202,7 @@ class Repo:
                 self._storage.get_session(sid).name for sid in self.claim_conflicts(task.scope)
             ]
             colliding = [
-                title
-                for title, other in claimed
-                if task.scope and any_overlap(task.scope, other)
+                title for title, other in claimed if task.scope and any_overlap(task.scope, other)
             ]
             if owners or colliding:
                 raise ScopeConflict(
@@ -1213,7 +1237,7 @@ class Repo:
         if task.status == "done":
             return self.get_task(task_id)
         if task.session_id and self._gate_command_for(task, team, None):
-            return self.run_task_gate(task_id)
+            return self._queue_completed_task(self.run_task_gate(task_id))
         task.status = "review"
         task.updated_at = utcnow()
         self._storage.update_task(task)
@@ -1222,7 +1246,7 @@ class Repo:
             team.id, f"'{task.title}' is ready for review", kind="review", task_id=task.id
         )
         self.sync_team_board(team.id)
-        return self.get_task(task_id)
+        return self._queue_completed_task(self.get_task(task_id))
 
     def run_task_gate(self, task_id: str) -> Task:
         """Run the project's gate inside the task's worktree and record the verdict."""
@@ -1610,9 +1634,7 @@ class Repo:
             # A PTY agent's live usage is not observable, so record an estimate
             # from the text we own, attributed to the CLI harness. Chat turns are
             # recorded at call time instead (so we never double count).
-            prompt = sum(
-                self._estimate_text(m.content) for m in messages if m.role != "assistant"
-            )
+            prompt = sum(self._estimate_text(m.content) for m in messages if m.role != "assistant")
             completion = sum(
                 self._estimate_text(m.content) for m in messages if m.role == "assistant"
             )

@@ -662,7 +662,11 @@ ipcMain.handle("ctx:restfox-stop", () => {
 
 let usageManager: UsageManager | null = null;
 function usage(): UsageManager {
-  return usageManager ??= new UsageManager(path.join(app.getPath("userData"), "usage"), __dirname);
+  if (!usageManager) {
+    usageManager = new UsageManager(path.join(app.getPath("userData"), "usage"), __dirname);
+    usageManager.subscribe(value => mainWindow?.webContents.send("ctx:usage-update", value));
+  }
+  return usageManager;
 }
 const pendingPtyStarts = new Map<string, symbol>();
 const ptys = new PtyManager(
@@ -745,6 +749,9 @@ ipcMain.on("ctx:pty-kill", (_event, id: string) => {
   pendingPtyStarts.delete(id);
   usageManager?.finish(id);
   ptys.kill(id);
+});
+ipcMain.on("ctx:usage-activity", (event, visible: boolean, integrationActive: boolean) => {
+  if (event.sender === mainWindow?.webContents) usage().activity(visible === true, integrationActive === true);
 });
 ipcMain.handle("ctx:harness-usage", (event, harness: string, sessionId?: string, refresh = false) => {
   if (event.sender !== mainWindow?.webContents || !HARNESS_BY_ID[harness] || (sessionId !== undefined && typeof sessionId !== "string")) throw new Error("Invalid usage request");

@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld("contextgit", {
   ptyKill: (id: string) => ipcRenderer.send("ctx:pty-kill", id),
   ptyPresets: () => ipcRenderer.invoke("ctx:pty-presets") as Promise<string[]>,
   harnessUsage: (harness: string, sessionId?: string, refresh = false) => ipcRenderer.invoke("ctx:harness-usage", harness, sessionId, refresh),
+  usageActivity: (visible: boolean, integrationActive = false) => ipcRenderer.send("ctx:usage-activity", visible, integrationActive),
+  onUsage: (callback: (value: import("../../lib/api").HarnessLimits) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: import("../../lib/api").HarnessLimits) => callback(value);
+    ipcRenderer.on("ctx:usage-update", listener);
+    return () => ipcRenderer.removeListener("ctx:usage-update", listener);
+  },
   // ---------- Harness detection + install ----------
   harnessCheck: (id: string) => ipcRenderer.invoke("ctx:harness-check", id) as Promise<HarnessCheck>,
   harnessInstall: (id: string) =>

@@ -233,3 +233,68 @@ def test_limits_registry_covers_every_desktop_harness(monkeypatch: pytest.Monkey
     assert {value.harness for value in results} == expected
     assert len(results) == len(expected)
     registry.clear_cache()
+
+
+def test_filtered_active_cache_backoff_and_manual_refresh(monkeypatch):
+    registry.clear_cache()
+    clock = [0.0]
+    calls = []
+    fail = [False]
+    monkeypatch.setattr(registry.time, "monotonic", lambda: clock[0])
+
+    def fetch():
+        calls.append(clock[0])
+        return HarnessLimits(
+            harness="cline",
+            label="Cline",
+            signed_in=not fail[0],
+            state="error" if fail[0] else "available",
+            message="failed" if fail[0] else None,
+        )
+
+    monkeypatch.setattr(registry, "ADAPTERS", [("cline", "Cline", fetch)])
+    first = registry.all_limits(harness="cline")[0]
+    clock[0] = 29
+    assert registry.all_limits(harness="cline")[0] == first
+    clock[0] = 30
+    first = registry.all_limits(harness="cline")[0]
+    assert len(calls) == 2
+    fail[0] = True
+    clock[0] = 60
+    stale = registry.all_limits(harness="cline")[0]
+    assert stale.stale and stale.fetched_at == first.fetched_at
+    clock[0] = 61
+    registry.all_limits(harness="cline")
+    assert len(calls) == 3
+    registry.all_limits(harness="cline", refresh=True)
+    assert len(calls) == 4
+    clock[0] = 100
+    registry.all_limits(harness="cline")
+    assert len(calls) == 4
+    registry.clear_cache()
+
+
+def test_provider_requests_deduplicate(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    registry.clear_cache()
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def fetch():
+        calls.append(1)
+        entered.set()
+        release.wait(3)
+        return HarnessLimits(harness="cline", label="Cline", signed_in=True)
+
+    monkeypatch.setattr(registry, "ADAPTERS", [("cline", "Cline", fetch)])
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(registry.all_limits, harness="cline")
+        assert entered.wait(1)
+        second = pool.submit(registry.all_limits, harness="cline")
+        release.set()
+        assert first.result() == second.result()
+    assert len(calls) == 1
+    registry.clear_cache()

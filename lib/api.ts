@@ -512,6 +512,9 @@ export interface HarnessLimits {
   state?: "available" | "waiting" | "not_signed_in" | "unsupported" | "error";
   scope?: "account" | "session" | "local_project";
   session_id?: string;
+  launch_id?: string;
+  launch_started_at?: string;
+  account_reading?: HarnessLimits;
   stale?: boolean;
   harness: string;
   label: string;
@@ -856,8 +859,13 @@ export const api = {
     ),
   usage: (days?: number) =>
     request<UsageSummary>(`/api/v1/usage${days ? `?days=${days}` : ""}`),
-  limits: (refresh = false) =>
-    request<HarnessLimits[]>(`/api/v1/limits${refresh ? "?refresh=true" : ""}`),
+  limits: (refresh = false, harness?: string) =>
+    request<HarnessLimits[]>(`/api/v1/limits?refresh=${refresh}${harness ? `&harness=${encodeURIComponent(harness)}` : ""}`),
+  integrationSettings: (project: string) => request<IntegrationSettings>(`/api/v1/integration/settings?project=${encodeURIComponent(project)}`),
+  configureIntegration: (settings: IntegrationSettings) => request<IntegrationSettings>("/api/v1/integration/settings", { method: "PUT", body: JSON.stringify(settings) }),
+  integrationJobs: (project?: string) => request<IntegrationJob[]>(`/api/v1/integration/jobs${project ? `?project=${encodeURIComponent(project)}` : ""}`),
+  readyForIntegration: (session: string) => request<IntegrationJob>(`/api/v1/integration/ready/${encodeURIComponent(session)}`, { method: "POST" }),
+  integrationAction: (id: string, action: "cancel" | "retry") => request<IntegrationJob>(`/api/v1/integration/jobs/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
   documents: () => request<DocumentInfo[]>("/api/v1/documents"),
   branchBlame: (name: string) =>
     request<BlameEntry[]>(`/api/v1/branches/${encodeURIComponent(name)}/blame`),
@@ -1703,4 +1711,15 @@ export async function streamDocument(
 /** Download URL for a rendered document. */
 export function documentUrl(id: string, format: DocumentFormat): string {
   return `${base}/api/v1/documents/${encodeURIComponent(id)}?format=${format}`;
+}
+
+export interface IntegrationSettings {
+  project: string; harness: "codex" | "claude"; target: string; checks: string;
+  authority: "enabled" | "paused" | "disabled"; generation: number; branches: string[];
+}
+export interface IntegrationJob {
+  id: string; session_id: string; source_sha: string; target_sha: string | null;
+  state: string; attempts: number; candidate_commit: string | null; conflicts: string[];
+  feedback: string; resolution_diff: string; check_output: string; verdict: string | null;
+  conversation_branch: string; usage: (HarnessLimits & { reading: unknown }) | null;
 }
