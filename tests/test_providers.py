@@ -39,15 +39,29 @@ def test_builtin_catalog_states() -> None:
     assert infos["openrouter"].kind == "gateway"
 
 
-def test_chat_catalog_has_ten_presets_and_keeps_existing_connections() -> None:
+def test_chat_catalog_is_exactly_the_ten_presets() -> None:
     from contextgit.llm.spec import CHAT_PRESET_IDS
 
     fresh = all_provider_infos([], environ={}, capability="chat")
     assert [info.id for info in fresh if info.kind != "mock"] == list(CHAT_PRESET_IDS)
+    assert len(CHAT_PRESET_IDS) == 10
+    # The ten the product asks for, by id.
+    assert set(CHAT_PRESET_IDS) == {
+        "openrouter", "omniroute", "agnes", "openai", "anthropic",
+        "gemini", "groq", "freellm", "ollama", "mistral",
+    }
+
+    # A saved connection or an env key must not smuggle another built-in back
+    # into the chat catalog — the list is closed.
     saved = ProviderRecord(id="together", label="Together", base_url="https://api.together.xyz/v1")
     connected = all_provider_infos([saved], environ={"CTX_LLM_FIREWORKS_API_KEY": "test-key"}, capability="chat")
-    assert {"together", "fireworks", "mock"} <= {info.id for info in connected}
-    assert "hyperbolic" not in {info.id for info in connected}
+    ids = {info.id for info in connected}
+    assert {"mock", *CHAT_PRESET_IDS} <= ids
+    assert "together" not in ids
+    assert "fireworks" not in ids
+    assert "hyperbolic" not in ids
+    # Hidden is not deleted: a provider id still resolves, so an old model
+    # selection keeps working.
     assert resolve_provider("hyperbolic", [], {}).spec.id == "hyperbolic"
 
 

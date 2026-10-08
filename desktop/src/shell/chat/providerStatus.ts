@@ -14,7 +14,7 @@ export function isReady(provider: ProviderInfo): boolean {
 
 /** Providers worth offering first, per capability. */
 export const RECOMMENDED: Record<ProviderCapability, string[]> = {
-  chat: ["agnes", "openrouter", "groq", "anthropic", "openai"],
+  chat: ["openrouter", "omniroute", "agnes", "openai", "anthropic"],
   image: ["openai-images", "local-sd"],
   search: ["tavily"],
 };

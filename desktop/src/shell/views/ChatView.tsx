@@ -28,6 +28,7 @@ import { AgentMark, Chip, MiniSeg } from "../primitives";
 import BlameSheet, { type BlameView } from "../chat/BlameSheet";
 import ComposerModes, { councilMembers, type CouncilCandidate } from "../chat/ComposerModes";
 import ConnectProviderCard from "../chat/ConnectProviderCard";
+import Markdown from "../chat/Markdown";
 import { isReady } from "../chat/providerStatus";
 import CouncilCard, { type CouncilMemberView } from "../chat/CouncilCard";
 import DocsCreator from "../chat/DocsCreator";
@@ -833,7 +834,13 @@ export default function ChatView({
             return (
               <article key={index} className="cg-msg" data-role={entry.role}>
                 <span className="cg-msg-role">{entry.role}</span>
-                <p>{entry.content}</p>
+                {entry.role === "user" ? (
+                  <p>{entry.content}</p>
+                ) : (
+                  // Everything the model wrote is markdown — render it, don't
+                  // show the reader raw `#` and ``` syntax.
+                  <Markdown text={entry.content} />
+                )}
                 <button
                   type="button"
                   className="cg-blame-btn"
@@ -899,10 +906,10 @@ export default function ChatView({
         {streamed && (
           <div className="cg-msg" data-role="assistant">
             <span className="cg-msg-role">assistant · streaming</span>
-            <p>
-              {streamed}
-              <span className="cg-caret" aria-hidden="true" />
-            </p>
+            <Markdown
+              text={streamed}
+              tail={<span className="cg-caret" aria-hidden="true" />}
+            />
           </div>
         )}
       </div>

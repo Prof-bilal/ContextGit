@@ -246,11 +246,14 @@ def all_provider_infos(
         infos.append(
             provider_info(effective_spec(record), record, environ=environ, is_builtin=False)
         )
+    # Chat mode shows a closed catalog: the ten presets plus the offline mock.
+    # A built-in that is not a preset never reappears, even with a stored key or
+    # an env key; custom endpoints the user typed in stay listed so they can be
+    # managed and removed.
     infos = [
         info for info in infos
         if info.capability != "chat" or info.kind == "mock"
-        or info.id in CHAT_PRESET_IDS or info.user_configured or info.has_key
-        or not info.is_builtin
+        or info.id in CHAT_PRESET_IDS or not info.is_builtin
     ]
     order = {provider_id: index for index, provider_id in enumerate(CHAT_PRESET_IDS)}
     infos.sort(key=lambda info: order.get(info.id, len(order)))

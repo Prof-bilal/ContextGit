@@ -25,6 +25,12 @@ The rail (`desktop/src/shell/rail/ChatRail.tsx`) lists conversations with a
 `main`). A filter row shows one type at a time. Deleting removes the branch
 pointer and the chat session — every commit survives.
 
+A row appears only for a branch that **is** a conversation: one bound to a chat
+session, or one carrying a conversation prefix. Code branches (runs, worktrees,
+plain git branches) are never listed — they inherit the messages of the history
+they forked from, so "has messages" (or being the current branch) does not make
+one a conversation.
+
 ## Commit on demand (staging)
 
 Turns are **staged, not committed**. The Chat tab passes `session_id` +

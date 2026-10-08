@@ -391,11 +391,13 @@ BUILTIN_PROVIDERS: list[ProviderSpec] = [
 
 BUILTIN_BY_ID: dict[str, ProviderSpec] = {spec.id: spec for spec in BUILTIN_PROVIDERS}
 
-# The small catalog offered on a fresh install. Other built-ins remain resolvable
-# so saved connections and existing conversations continue to work.
+# Chat mode's closed catalog: exactly these ten providers (plus the offline
+# mock) are ever offered. Other built-ins stay in `BUILTIN_PROVIDERS` so saved
+# connections and existing conversations still resolve, but they no longer
+# appear in the chat picker.
 CHAT_PRESET_IDS = (
-    "openrouter", "openai", "anthropic", "omniroute", "agnes",
-    "gemini", "groq", "deepseek", "mistral", "ollama",
+    "openrouter", "omniroute", "agnes", "openai", "anthropic",
+    "gemini", "groq", "freellm", "ollama", "mistral",
 )
 
 

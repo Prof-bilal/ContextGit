@@ -7,9 +7,11 @@ per applied migration number).
 
 import json
 import sqlite3
+import threading
+from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from contextgit.core.errors import (
     BranchNotFound,
@@ -51,22 +53,115 @@ from contextgit.core.models import (
 _MIGRATIONS_DIR = "migrations"
 
 
+class _Result:
+    """One statement's outcome, captured while the connection lock is held.
+
+    Rows are materialized (and `rowcount`/`lastrowid` snapshotted) at execute
+    time, so no cursor is ever stepped after another thread has run its own
+    statement on the shared connection — that interleaving surfaced as
+    `sqlite3.InterfaceError: bad parameter or other API misuse`.
+    """
+
+    __slots__ = ("_rows", "rowcount", "lastrowid")
+
+    def __init__(self, cursor: sqlite3.Cursor) -> None:
+        rows: list[Any] = []
+        try:
+            if cursor.description is not None:  # SELECT: hold the rows, not the cursor
+                rows = list(cursor.fetchall())
+            self.rowcount = cursor.rowcount
+            self.lastrowid = cursor.lastrowid
+        finally:
+            cursor.close()
+        self._rows = rows
+
+    def fetchone(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list[Any]:
+        return list(self._rows)
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._rows)
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+
+class _GuardedConnection:
+    """One SQLite connection, serialized across threads.
+
+    FastAPI runs the sync routes on a thread pool, so several threads reach this
+    connection at once — the Chat screen alone fires `/repo`,
+    `/branches/{name}/budget`, `/sessions` and `/staging` together. Every
+    statement runs under one re-entrant lock, `with conn:` holds it for the whole
+    transaction, and rows are materialized before it drops. Two callers can no
+    longer interleave statements or commit each other's work (bugs.md B4,
+    codebase-audit A3).
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._lock = threading.RLock()
+
+    def execute(self, sql: str, parameters: Any = ()) -> _Result:
+        with self._lock:
+            return _Result(self._conn.execute(sql, parameters))
+
+    def executemany(self, sql: str, parameters: Any) -> _Result:
+        with self._lock:
+            return _Result(self._conn.executemany(sql, parameters))
+
+    def executescript(self, sql: str) -> None:
+        with self._lock:
+            self._conn.executescript(sql)
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    @property
+    def row_factory(self) -> Any:
+        return self._conn.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value: Any) -> None:
+        self._conn.row_factory = value
+
+    def __enter__(self) -> "_GuardedConnection":
+        self._lock.acquire()
+        try:
+            self._conn.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
+        try:
+            return bool(self._conn.__exit__(exc_type, exc_value, traceback))
+        finally:
+            self._lock.release()
+
+
 class SqliteStorage:
     """Owns the SQLite file and all persistence for one repository."""
 
     def __init__(self, db_path: Path | str) -> None:
         self._db_path = Path(db_path)
-        self._conn: sqlite3.Connection
+        self._conn: _GuardedConnection
         self._connect()
         self._migrate()
 
     # ---------- connection / schema ----------
 
     def _connect(self) -> None:
-        # FastAPI handlers and TestClient can execute requests on a different thread.
-        # SQLite serializes operations on this connection; API uses one worker by default.
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        # FastAPI handlers and TestClient can execute requests on a different
+        # thread, so the connection is shared and every statement runs under the
+        # guard's lock. (SQLite itself does not serialize statements for us.)
+        raw = sqlite3.connect(self._db_path, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        self._conn = _GuardedConnection(raw)
         self._conn.execute("PRAGMA foreign_keys = ON")
 
     def close(self) -> None:

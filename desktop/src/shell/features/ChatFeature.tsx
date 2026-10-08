@@ -83,9 +83,12 @@ export default function ChatFeature() {
     .filter(
       (conversation) =>
         !terminalSessionBranches.has(conversation.name) &&
-        (conversation.messages > 0 ||
-          conversation.mode !== "other" ||
-          conversation.name === snapshot?.current_branch),
+        // A conversation is a branch bound to a chat session, or one carrying a
+        // conversation prefix (chat/council/research/image). Every other branch
+        // — runs, worktrees, plain git branches — inherits the messages of the
+        // history it forked from, so "has messages" (or being the current
+        // branch) never makes a code branch a conversation.
+        (chatSessionsByBranch.has(conversation.name) || conversation.mode !== "other"),
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 

@@ -942,6 +942,12 @@ test("a new conversation starts empty and can be deleted", async () => {
   await expect(row).toHaveAttribute("aria-current", "true");
   await expect(page.locator(".cg-chat-log .cg-msg")).toHaveCount(0);
 
+  // Code branches are not conversations: `main` (and any run or plain git
+  // branch) holds chat turns only by inheritance, so it never gets a row here.
+  const rail = page.getByRole("navigation", { name: "Conversations" });
+  await expect(rail.locator(".cg-row", { hasText: "main" })).toHaveCount(0);
+  await expect(rail.locator(".cg-row")).toHaveCount(1);
+
   // Delete it (with confirmation) — the row disappears.
   await page.getByRole("button", { name: /Move conversation chat\/e2e-convo to Storage/ }).click();
   const confirm = page.getByRole("dialog", { name: "Move conversation to Storage" });

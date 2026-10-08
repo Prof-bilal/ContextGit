@@ -20,7 +20,8 @@
     "fetch:restfox": "node scripts/fetch-restfox.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
-    "test:lifecycle": "node scripts/test-lifecycle.mjs"
+    "test:lifecycle": "node scripts/test-lifecycle.mjs",
+    "test:markdown": "node scripts/test-markdown.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

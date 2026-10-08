@@ -2067,6 +2067,129 @@ button.cg-chip[aria-pressed="true"] {
   line-height: 1.6;
 }
 
+/* Model replies render as markdown — headings, lists, fences, tables — so the
+   reader sees prose and code instead of raw `#` and ``` syntax. Block spacing
+   comes from the grid, which keeps the flat, rail-free transcript look. */
+.cg-md {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  color: var(--cg-ink);
+}
+.cg-md p {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.cg-md h1,
+.cg-md h2,
+.cg-md h3,
+.cg-md h4,
+.cg-md h5,
+.cg-md h6 {
+  margin: 0.3rem 0 0;
+  font-family: "Schibsted Grotesk", sans-serif;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--cg-ink);
+}
+.cg-md h1 {
+  font-size: 1.22rem;
+}
+.cg-md h2 {
+  font-size: 1.1rem;
+}
+.cg-md h3 {
+  font-size: 1.02rem;
+}
+.cg-md h4,
+.cg-md h5,
+.cg-md h6 {
+  font-size: 0.94rem;
+  color: var(--cg-ink-2);
+}
+.cg-md ul,
+.cg-md ol {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: grid;
+  gap: 0.3rem;
+}
+.cg-md li {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.cg-md li::marker {
+  color: var(--cg-ink-3);
+}
+.cg-md a {
+  color: var(--cg-signal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cg-md strong {
+  font-weight: 600;
+}
+.cg-md del {
+  color: var(--cg-ink-3);
+}
+.cg-md code {
+  font: 400 0.85em/1.5 "Martian Mono", monospace;
+  background: var(--cg-surface-2);
+  border: 1px solid var(--cg-line);
+  border-radius: 5px;
+  padding: 0.05em 0.3em;
+  overflow-wrap: anywhere;
+}
+.cg-md pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: var(--cg-surface-2);
+  border: 1px solid var(--cg-line);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.cg-md pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.cg-md blockquote {
+  margin: 0;
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--cg-line-strong);
+  color: var(--cg-ink-2);
+}
+.cg-md blockquote p {
+  color: inherit;
+}
+.cg-md hr {
+  margin: 0.15rem 0;
+  border: 0;
+  border-top: 1px solid var(--cg-line);
+}
+.cg-md table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+}
+.cg-md th,
+.cg-md td {
+  border: 1px solid var(--cg-line);
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+.cg-md th {
+  background: var(--cg-surface-2);
+  font-weight: 600;
+}
+
 .cg-composer {
   border-top: 1px solid var(--cg-line);
   background: var(--cg-surface);
