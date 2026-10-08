@@ -98,7 +98,7 @@ export default function WhyView({ state }: { state: WhyState }) {
           <div className="cg-why-empty">
             <h2 className="cg-why-empty-title">Trace why a line exists</h2>
             <p className="cg-empty-note">
-              Point at a file — or an endpoint in the Endpoints tab — and
+              Point at a file — or an endpoint from the Code workflow — and
               ContextGit reads the decisions, the rejected alternatives and the
               open questions from the run that produced it.
             </p>

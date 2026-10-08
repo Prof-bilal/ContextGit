@@ -9,7 +9,13 @@ const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
   { label: "Today", days: 1 },
 ];
 
-export default function UsageFeature() {
+export default function UsageFeature({
+  embedded = false,
+  onClose,
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const { providers } = useWorkbench();
   const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
   const rail = () => {
@@ -36,8 +42,20 @@ export default function UsageFeature() {
   const view = () => {
     return <UsageView days={usageDays} providers={providers} />;
   };
-  return <FeaturePorts id="usage"
+  const footer = () => onClose ? (
+    <footer className="cg-bottombar" aria-label="Usage actions">
+      <span className="cg-bb-info">
+        <strong>Usage</strong>
+        <span className="cg-view-sub">Provider activity across the workspace.</span>
+      </span>
+      <span className="cg-bb-actions cg-bb-end">
+        <button type="button" className="cg-btn" onClick={onClose}>Back to agents</button>
+      </span>
+    </footer>
+  ) : null;
+  return <FeaturePorts id={embedded ? "agent" : "usage"}
     title={"Usage"}
     rail={rail}
-    view={view} />;
+    view={view}
+    footer={footer} />;
 }

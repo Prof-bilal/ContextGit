@@ -9,7 +9,13 @@ import { useWorkbench } from "../WorkbenchContext";
 import { FeaturePorts } from "../FeaturePorts";
 
 
-export default function StorageFeature() {
+export default function StorageFeature({
+  embedded = false,
+  onClose,
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const { setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, closedPanes, trashError } = useWorkbench();
   const [barError, setBarError] = useState<string | null>(null);
 
@@ -193,6 +199,11 @@ export default function StorageFeature() {
           </span>
         </span>
         <span className="cg-bb-actions cg-bb-end">
+          {onClose && (
+            <button type="button" className="cg-btn" onClick={onClose}>
+              Back to history
+            </button>
+          )}
           <button
             type="button"
             className="cg-btn"
@@ -256,8 +267,8 @@ export default function StorageFeature() {
         onClose={() => setEmptyTrashOpen(false)}
       />
     )}</>;
-  return <FeaturePorts id="storage"
-    title={"Storage"}
+  return <FeaturePorts id={embedded ? "git" : "storage"}
+    title={embedded ? "Git storage" : "Storage"}
     rail={rail}
     view={view}
     dock={dock}

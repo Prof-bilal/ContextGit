@@ -22,7 +22,7 @@ export default function EndpointsFeature() {
         state={endpointsState}
         onWhy={(path, line) => {
           setWhyRequest({ path, line, nonce: Date.now() });
-          setTab("why");
+          setTab("code");
         }}
       />
     );

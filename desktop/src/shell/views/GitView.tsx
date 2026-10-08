@@ -71,6 +71,7 @@ export default function GitView({
   tags,
   loading,
   onRefresh,
+  onOpenStorage,
 }: {
   branches: Branch[];
   commits: Commit[];
@@ -84,6 +85,7 @@ export default function GitView({
   tags: RepoSnapshot["tags"];
   loading: boolean;
   onRefresh: () => void;
+  onOpenStorage: () => void;
 }) {
   const [view, setView] = useState<"list" | "graph" | "git" | "activity">("list");
 
@@ -127,6 +129,9 @@ export default function GitView({
         </div>
         <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>
           Refresh
+        </button>
+        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenStorage}>
+          Storage
         </button>
         <MiniSeg value={view} options={VIEW_OPTIONS} onChange={setView} label="History view" />
       </div>

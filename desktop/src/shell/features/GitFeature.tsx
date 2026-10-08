@@ -5,6 +5,7 @@ import { commitsOnBranch } from "../git/branchCommits";
 import DiffSheet from "../git/DiffSheet";
 import DeleteBranchDialog from "../git/DeleteBranchDialog";
 import MergeDialog from "../git/MergeDialog";
+import StorageFeature from "./StorageFeature";
 import { Chip, Field } from "../primitives";
 import GitRail from "../rail/GitRail";
 import GitView, { type CommitFilter } from "../views/GitView";
@@ -32,6 +33,8 @@ export default function GitFeature() {
   const [branchToDelete, setBranchToDelete] = useState<string | null>(null);
 
   const [mergeOpen, setMergeOpen] = useState(false);
+
+  const [surface, setSurface] = useState<"history" | "storage">("history");
 
   const branchHead =
     branches.find((branch) => branch.name === selectedBranch)?.head_commit_id ?? null;
@@ -76,6 +79,11 @@ export default function GitFeature() {
       setBarError(cause instanceof Error ? cause.message : "Could not switch branch");
     }
   };
+
+  if (surface === "storage") {
+    return <StorageFeature embedded onClose={() => setSurface("history")} />;
+  }
+
   const rail = () => {
     return (
       <GitRail
@@ -104,6 +112,7 @@ export default function GitFeature() {
         tags={snapshot?.tags ?? []}
         loading={repoLoading}
         onRefresh={() => void refreshRepo()}
+        onOpenStorage={() => setSurface("storage")}
       />
     );
   };

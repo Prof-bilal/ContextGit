@@ -19,6 +19,8 @@ export default function CodeView({
   workspace,
   onNewTerminal,
   onChooseProject,
+  onOpenEditor,
+  onOpenWhy,
 }: {
   sessions: Session[];
   backendAvailable?: boolean;
@@ -29,6 +31,8 @@ export default function CodeView({
   workspace: Workspace | null;
   onNewTerminal: () => void;
   onChooseProject: () => void;
+  onOpenEditor: () => void;
+  onOpenWhy: () => void;
 }) {
   const clashing = fleet.filter((entry) => entry.overlaps.length > 0).length;
   const open = openSessions(sessions, openIds);
@@ -54,6 +58,12 @@ export default function CodeView({
           </Chip>
         )}
         <span className="cg-toolbar-spacer" />
+        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenWhy}>
+          Why this code?
+        </button>
+        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenEditor}>
+          Editor
+        </button>
         <MiniSeg value={layout} options={LAYOUT_OPTIONS} onChange={onLayout} label="Pane layout" />
         <button
           type="button"

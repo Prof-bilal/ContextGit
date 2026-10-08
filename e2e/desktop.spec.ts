@@ -206,6 +206,33 @@ test("legacy tab URLs redirect to the reduced navigation", async () => {
   expect(new URL(await page.url()).searchParams.get("tab")).toBe("agent");
 });
 
+test("Git and Code expose their consolidated workflows", async () => {
+  const page = await openShell();
+
+  await nav(page, "Git").click();
+  await page.getByRole("button", { name: "Storage", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Storage");
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("History");
+
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "Editor", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Editor");
+  await page.getByRole("button", { name: "Back to terminals", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Terminals");
+
+  await page.getByRole("button", { name: "Why this code?", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Why");
+  await page.getByRole("button", { name: "Back to runs", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Terminals");
+
+  await nav(page, "Agent").click();
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveText("Usage");
+  await page.getByRole("button", { name: "Back to agents", exact: true }).click();
+  await expect(page.locator('.cg-view[data-active="true"] h1')).toHaveCount(1);
+});
+
 test("the Assets tab renders the gallery and its controls", async () => {
   const page = await openShell();
   await nav(page, "Assets").click();

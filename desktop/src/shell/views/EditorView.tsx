@@ -15,6 +15,7 @@ export default function EditorView({
   nonce,
   obscured,
   onStarted,
+  onClose,
 }: {
   active: boolean;
   nonce: number;
@@ -22,6 +23,8 @@ export default function EditorView({
   obscured: boolean;
   /** The sidecar was started here — let the rail refresh its status. */
   onStarted: () => void;
+  /** Return to the Code terminal surface when the editor is embedded there. */
+  onClose?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const createdRef = useRef(false);
@@ -142,6 +145,11 @@ export default function EditorView({
         <h1>Editor</h1>
         <span className="cg-view-sub">VS Code</span>
         <span className="cg-toolbar-spacer" />
+        {onClose && (
+          <button type="button" className="cg-btn cg-btn-sm" onClick={onClose}>
+            Back to terminals
+          </button>
+        )}
         <span className="cg-browser-status" data-status={state === "ready" ? "loaded" : state}>
           {state}
         </span>

@@ -5,6 +5,7 @@ import { DEFAULT_DRAFT, draftFrom, humanSchedule, newSeed, type MissionDraft } f
 import { Chip, Field } from "../primitives";
 import RosterRail from "../rail/RosterRail";
 import AgentView from "../views/AgentView";
+import UsageFeature from "./UsageFeature";
 import { useWorkbench } from "../WorkbenchContext";
 import { FeaturePorts } from "../FeaturePorts";
 
@@ -18,6 +19,7 @@ export default function AgentFeature() {
   const [agentDialog, setAgentDialog] = useState<{ mode: "create" | "edit"; draft: MissionDraft } | null>(
     null,
   );
+  const [surface, setSurface] = useState<"agents" | "usage">("agents");
 
   const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
 
@@ -67,6 +69,11 @@ export default function AgentFeature() {
     },
     [agentDialog?.mode, activeAgent.id],
   );
+
+  if (surface === "usage") {
+    return <UsageFeature embedded onClose={() => setSurface("agents")} />;
+  }
+
   const rail = () => {
     return (
       <RosterRail
@@ -117,6 +124,9 @@ export default function AgentFeature() {
             onClick={() => setAgentDialog({ mode: "edit", draft: draftFrom(activeAgent) })}
           >
             Edit brief
+          </button>
+          <button type="button" className="cg-btn" onClick={() => setSurface("usage")}>
+            Usage
           </button>
         </div>
       </>

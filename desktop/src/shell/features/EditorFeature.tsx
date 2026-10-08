@@ -5,7 +5,13 @@ import { useWorkbench } from "../WorkbenchContext";
 import { FeaturePorts } from "../FeaturePorts";
 
 
-export default function EditorFeature() {
+export default function EditorFeature({
+  embedded = false,
+  onClose,
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const { tab, overlayOpen, activePath, setProjectOpen } = useWorkbench();
   const [editorNonce, setEditorNonce] = useState(0);
 
@@ -23,14 +29,15 @@ export default function EditorFeature() {
 
   const view = () => <>
     <EditorView
-      active={tab === "editor"}
+      active={embedded || tab === "editor"}
       nonce={editorNonce}
       obscured={overlayOpen}
       onStarted={bumpEditor}
+      onClose={onClose}
     />
   </>;
-  return <FeaturePorts id="editor"
-    title={"Editor"}
+  return <FeaturePorts id={embedded ? "code" : "editor"}
+    title={embedded ? "Code editor" : "Editor"}
     rail={rail}
     view={view} />;
 }
