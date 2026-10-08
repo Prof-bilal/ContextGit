@@ -18,6 +18,8 @@ Python core library, a CLI, and a FastAPI + React web UI.
 | codestyle.md | Always, before writing any code. |
 | design.md | Building the landing page or any marketing UI. |
 | roadmap.md | Deciding what to build next. |
+| plans.md (repo root, gitignored) | **Starting work now** — the local state file: uncommitted work, what is verified, gotchas. May not exist on a fresh clone. |
+| embedding-clients.md | Working on the embedded DB/API clients (DbGate, Restfox) or the browser chrome. |
 | remaining-phases.md | Deciding what to build next **now** — the endpoint graph, the "Why" lens, MCP memory, bisect/replay, and the backlog. |
 
 ## Ground rules

@@ -1299,7 +1299,7 @@ export default function Shell() {
           />
         );
       case "api":
-        return <ApiView client={apiClient} />;
+        return <ApiView client={apiClient} obscured={overlayOpen} />;
       case "endpoints":
         return (
           <EndpointsView

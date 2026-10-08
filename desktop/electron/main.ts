@@ -25,6 +25,7 @@ import { AssetLibrary } from "./library";
 import { ViewManager } from "./viewmanager";
 import { EditorSidecar } from "./editor";
 import { DbGateSidecar } from "./dbgate";
+import { RestfoxSidecar } from "./restfox";
 import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
 
@@ -452,6 +453,11 @@ ipcMain.on("ctx:view-forward", (_event, id: string) => views().forward(id));
 ipcMain.on("ctx:view-reload", (_event, id: string) => views().reload(id));
 ipcMain.on("ctx:view-devtools", (_event, id: string) => views().devtools(id));
 ipcMain.on("ctx:view-destroy", (_event, id: string) => views().destroy(id));
+ipcMain.on("ctx:view-find", (_event, id: string, text: string) => views().find(id, text));
+ipcMain.on("ctx:view-find-stop", (_event, id: string) => views().stopFind(id));
+ipcMain.on("ctx:view-set-zoom", (_event, id: string, level: number) =>
+  views().setZoom(id, level),
+);
 
 // ---------- Editor tab (embedded VS Code sidecar) ----------
 
@@ -588,6 +594,33 @@ ipcMain.handle("ctx:dbgate-start", () => dbgate().start());
 ipcMain.handle("ctx:dbgate-stop", () => {
   dbgate().stop();
   return dbgate().status();
+});
+
+// ---------- API tab (embedded Restfox sidecar) ----------
+
+/** The Restfox web-standalone entry: bundled (packaged) or build/restfox (dev). */
+function resolveRestfoxEntry(): string | null {
+  const root = isDev
+    ? path.join(app.getAppPath(), "build", "restfox")
+    : path.join(process.resourcesPath, "restfox");
+  const entry = path.join(root, "packages", "web-standalone", "app.js");
+  return fs.existsSync(entry) ? entry : null;
+}
+
+let restfoxSidecar: RestfoxSidecar | null = null;
+
+function restfox(): RestfoxSidecar {
+  if (!restfoxSidecar) {
+    restfoxSidecar = new RestfoxSidecar(resolveRestfoxEntry, process.execPath);
+  }
+  return restfoxSidecar;
+}
+
+ipcMain.handle("ctx:restfox-status", () => restfox().status());
+ipcMain.handle("ctx:restfox-start", () => restfox().start());
+ipcMain.handle("ctx:restfox-stop", () => {
+  restfox().stop();
+  return restfox().status();
 });
 
 // ---------- PTY sessions (parallel agent terminals) ----------
@@ -761,6 +794,7 @@ app.on("window-all-closed", () => {
   views().destroyAll();
   editor().stop();
   dbgate().stop();
+  restfox().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();
@@ -770,6 +804,7 @@ app.on("before-quit", () => {
   views().destroyAll();
   editor().stop();
   dbgate().stop();
+  restfox().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();

@@ -4,6 +4,7 @@ import type { HttpAuthKind, HttpBodyKind, HttpResponseResult } from "@/lib/api";
 import CodeEditor, { type CodeEditorHandle } from "../api/CodeEditor";
 import { parseForm, serializeForm } from "../api/formBody";
 import KeyValueEditor from "../api/KeyValueEditor";
+import RestfoxPanel from "../api/RestfoxPanel";
 import type { ApiClientState } from "../api/useApiClient";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -82,8 +83,16 @@ function prettyBody(result: HttpResponseResult): string {
   }
 }
 
-/** The API tab: compose a request on top, read the response underneath. */
-export default function ApiView({ client }: { client: ApiClientState }) {
+/** The API tab: the native request builder, or the embedded Restfox client. */
+export default function ApiView({
+  client,
+  obscured = false,
+}: {
+  client: ApiClientState;
+  /** A dialog is open; hide the embedded native view so it is not covered. */
+  obscured?: boolean;
+}) {
+  const [mode, setMode] = useState<"native" | "restfox">("native");
   const [pane, setPane] = useState<RequestPane>("params");
   const [responsePane, setResponsePane] = useState<"body" | "headers">("body");
   const [markers, setMarkers] = useState({ errors: 0, warnings: 0 });
@@ -123,6 +132,36 @@ export default function ApiView({ client }: { client: ApiClientState }) {
 
   return (
     <div className="cg-view" data-active="true">
+      <div className="cg-view-toolbar">
+        <h1>API</h1>
+        <span className="cg-view-sub">
+          {mode === "restfox"
+            ? "Restfox — an embedded API client"
+            : "Compose a request and read the response"}
+        </span>
+        <span className="cg-toolbar-spacer" />
+        <div className="cg-mini-seg" role="tablist" aria-label="API view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "native"}
+            onClick={() => setMode("native")}
+          >
+            Native
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "restfox"}
+            onClick={() => setMode("restfox")}
+          >
+            Restfox
+          </button>
+        </div>
+      </div>
+      {mode === "restfox" ? (
+        <RestfoxPanel obscured={obscured} />
+      ) : (
       <div className="cg-view-body cg-api">
         <section className="cg-api-request">
           <div className="cg-api-bar">
@@ -418,6 +457,7 @@ export default function ApiView({ client }: { client: ApiClientState }) {
           )}
         </section>
       </div>
+      )}
     </div>
   );
 }

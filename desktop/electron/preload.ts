@@ -108,6 +108,9 @@ contextBridge.exposeInMainWorld("contextgit", {
   viewReload: (id: string) => ipcRenderer.send("ctx:view-reload", id),
   viewDevtools: (id: string) => ipcRenderer.send("ctx:view-devtools", id),
   viewDestroy: (id: string) => ipcRenderer.send("ctx:view-destroy", id),
+  viewFind: (id: string, text: string) => ipcRenderer.send("ctx:view-find", id, text),
+  viewFindStop: (id: string) => ipcRenderer.send("ctx:view-find-stop", id),
+  viewSetZoom: (id: string, level: number) => ipcRenderer.send("ctx:view-set-zoom", id, level),
   onViewEvent: (callback: (event: import("../shared/browser").ViewEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, next: import("../shared/browser").ViewEvent) =>
       callback(next);
@@ -128,6 +131,13 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.invoke("ctx:dbgate-start") as Promise<import("../shared/dbgate").DbGateStartResult>,
   dbgateStop: () =>
     ipcRenderer.invoke("ctx:dbgate-stop") as Promise<import("../shared/dbgate").DbGateStatus>,
+  // ---------- API tab (embedded Restfox sidecar) ----------
+  restfoxStatus: () =>
+    ipcRenderer.invoke("ctx:restfox-status") as Promise<import("../shared/restfox").RestfoxStatus>,
+  restfoxStart: () =>
+    ipcRenderer.invoke("ctx:restfox-start") as Promise<import("../shared/restfox").RestfoxStartResult>,
+  restfoxStop: () =>
+    ipcRenderer.invoke("ctx:restfox-stop") as Promise<import("../shared/restfox").RestfoxStatus>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

@@ -4086,6 +4086,160 @@ img.cg-tile-art {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Tab strip */
+.cg-browser-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.25rem 0.5rem 0;
+  border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cg-browser-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cg-browser-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 14rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  color: var(--cg-ink-3);
+}
+.cg-browser-tab[aria-selected="true"] {
+  background: var(--cg-bg);
+  border-color: var(--cg-line);
+  color: var(--cg-ink);
+}
+.cg-browser-tab-btn {
+  max-width: 12rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font:
+    500 0.74rem/1 "Schibsted Grotesk",
+    sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cg-browser-tab-close {
+  display: grid;
+  place-items: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--cg-ink-3);
+  font-size: 0.75rem;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.cg-browser-tab:hover .cg-browser-tab-close {
+  opacity: 1;
+}
+.cg-browser-tab-close:hover {
+  color: var(--cg-bad);
+  background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
+}
+.cg-browser-tab-new {
+  align-self: center;
+  margin: 0 0.1rem 0.15rem;
+}
+
+/* Find bar */
+.cg-browser-find {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface);
+}
+.cg-browser-find .cg-input {
+  width: min(20rem, 40vw);
+}
+
+/* Zoom */
+.cg-browser-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+.cg-browser-zoom-label {
+  min-width: 2.6rem;
+  padding: 0 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--cg-ink-2);
+  font:
+    600 0.7rem/1 "Martian Mono",
+    monospace;
+  cursor: pointer;
+}
+.cg-browser-zoom-label:hover {
+  color: var(--cg-ink);
+}
+
+/* Browser rail: bookmarks and history as titled groups. */
+.cg-br-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0 0.25rem 0.5rem;
+}
+.cg-br-group > .cg-row {
+  width: 100%;
+  margin: 0.0625rem 0;
+}
+.cg-br-group > .cg-empty-note {
+  padding: 0.15rem 0.5rem;
+}
+.cg-br-divider {
+  margin-top: 0.3rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--cg-line);
+}
+.cg-br-history {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+}
+.cg-br-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.cg-br-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink-3);
+  font:
+    400 0.68rem/1.3 "Martian Mono",
+    ui-monospace,
+    monospace;
+}
+.cg-br-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem 1rem;
+  border-top: 1px solid var(--cg-line);
+  color: var(--cg-ink-3);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .cg-browser-host {
   flex: 1 1 auto;
   min-height: 0;
@@ -4186,6 +4340,41 @@ img.cg-tile-art {
   padding: 2rem 1.4rem;
 }
 .cg-dbgate-start h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+/* --------------------------------------------------------------- restfox -- */
+
+.cg-restfox {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cg-restfox-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface);
+}
+.cg-restfox-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--cg-bg);
+}
+.cg-restfox-start {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 2rem 1.4rem;
+}
+.cg-restfox-start h2 {
   margin: 0;
   font-size: 1.1rem;
 }

@@ -67,9 +67,10 @@ export class ViewManager {
       },
     });
     const contents = view.webContents;
-    // Popups (OAuth, target=_blank) navigate the same view instead of spawning windows.
+    // Popups (OAuth, target=_blank) become a new in-app tab; anything that is
+    // not a web page goes to the OS instead.
     contents.setWindowOpenHandler(({ url: target }) => {
-      if (isNavigable(target)) void contents.loadURL(target);
+      if (isNavigable(target)) this.emit({ id, type: "open", url: target });
       else void shell.openExternal(target);
       return { action: "deny" };
     });
@@ -91,6 +92,9 @@ export class ViewManager {
       this.emit({ id, type: "navigate", url: target }),
     );
     contents.on("page-title-updated", (_event, title) => this.emit({ id, type: "title", title }));
+    contents.on("found-in-page", (_event, result) =>
+      this.emit({ id, type: "found", matches: result.matches, active: result.activeMatchOrdinal }),
+    );
     contents.on("did-fail-load", (_event, code, description, target, isMainFrame) => {
       if (isMainFrame) this.emit({ id, type: "error", url: target, error: `${description} (${code})` });
     });
@@ -144,6 +148,25 @@ export class ViewManager {
     if (!contents) return;
     if (contents.isDevToolsOpened()) contents.closeDevTools();
     else contents.openDevTools({ mode: "detach" });
+  }
+
+  /** Find text in the page; results arrive as `found` events. */
+  find(id: string, text: string): void {
+    const contents = this.views.get(id)?.webContents;
+    if (!contents) return;
+    if (!text) {
+      contents.stopFindInPage("clearSelection");
+      return;
+    }
+    contents.findInPage(text);
+  }
+
+  stopFind(id: string): void {
+    this.views.get(id)?.webContents.stopFindInPage("clearSelection");
+  }
+
+  setZoom(id: string, level: number): void {
+    this.views.get(id)?.webContents.setZoomLevel(level);
   }
 
   destroy(id: string): void {

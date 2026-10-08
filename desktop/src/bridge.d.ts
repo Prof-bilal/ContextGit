@@ -61,6 +61,9 @@ export interface ContextGitBridge {
   viewReload: (id: string) => void;
   viewDevtools: (id: string) => void;
   viewDestroy: (id: string) => void;
+  viewFind: (id: string, text: string) => void;
+  viewFindStop: (id: string) => void;
+  viewSetZoom: (id: string, level: number) => void;
   onViewEvent: (callback: (event: import("../shared/browser").ViewEvent) => void) => () => void;
   /** Editor tab: the embedded VS Code sidecar. */
   editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
@@ -70,6 +73,10 @@ export interface ContextGitBridge {
   dbgateStatus: () => Promise<import("../shared/dbgate").DbGateStatus>;
   dbgateStart: () => Promise<import("../shared/dbgate").DbGateStartResult>;
   dbgateStop: () => Promise<import("../shared/dbgate").DbGateStatus>;
+  /** API tab: the embedded Restfox sidecar. */
+  restfoxStatus: () => Promise<import("../shared/restfox").RestfoxStatus>;
+  restfoxStart: () => Promise<import("../shared/restfox").RestfoxStartResult>;
+  restfoxStop: () => Promise<import("../shared/restfox").RestfoxStatus>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

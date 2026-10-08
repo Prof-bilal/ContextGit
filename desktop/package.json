@@ -16,6 +16,7 @@
     "build:backend": "bash scripts/build-backend.sh",
     "fetch:editor": "node scripts/fetch-editor.mjs",
     "fetch:dbgate": "node scripts/fetch-dbgate.mjs",
+    "fetch:restfox": "node scripts/fetch-restfox.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir"
   },
@@ -61,6 +62,10 @@
       {
         "from": "build/dbgate",
         "to": "dbgate"
+      },
+      {
+        "from": "build/restfox",
+        "to": "restfox"
       },
       {
         "from": "build/extension",
