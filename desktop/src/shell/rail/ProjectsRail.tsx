@@ -90,6 +90,7 @@ interface ProjectNode {
  */
 export default function ProjectsRail({
   sessions,
+  backendAvailable = true,
   fleet,
   openIds,
   activeId,
@@ -104,6 +105,7 @@ export default function ProjectsRail({
   onChooseProject,
 }: {
   sessions: Session[];
+  backendAvailable?: boolean;
   fleet: FleetEntry[];
   openIds: string[];
   activeId: string | null;
@@ -254,7 +256,7 @@ export default function ProjectsRail({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed || busy || !backendAvailable) return;
     setBusy(true);
     try {
       await onNew(trimmed, agent, parseScope(scopeText), roleId);
@@ -397,7 +399,7 @@ export default function ProjectsRail({
             </p>
           )}
           <p>Gets its own branch, terminal and worktree; nothing commits until you do.</p>
-          <button type="submit" className="cg-btn" data-variant="primary" disabled={busy || !name.trim()}>
+          <button type="submit" className="cg-btn" data-variant="primary" disabled={busy || !name.trim() || !backendAvailable}>
             {busy ? "Starting…" : "Start run"}
           </button>
         </form>

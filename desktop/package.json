@@ -10,7 +10,7 @@
     "dev:mock": "vite",
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:extension",
     "build:extension": "node scripts/build-extension.mjs",
     "build:backend": "bash scripts/build-backend.sh",
@@ -18,7 +18,8 @@
     "fetch:dbgate": "node scripts/fetch-dbgate.mjs",
     "fetch:restfox": "node scripts/fetch-restfox.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
-    "dist:dir": "npm run build && npm run build:backend && electron-builder --dir"
+    "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
+    "test:lifecycle": "node scripts/test-lifecycle.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

@@ -11,6 +11,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { PTY_PRESETS, PtyManager } from "./pty";
+import { UsageManager } from "./usage";
+import { repositoryId, validateBackend } from "./backendHealth";
 import {
   augmentedPath,
   cancelInstall,
@@ -63,6 +65,35 @@ function getPortFree(port: number): Promise<boolean> {
   });
 }
 
+let backendMonitor: ReturnType<typeof setInterval> | null = null;
+let probingBackend = false;
+let backendGeneration = 0;
+function backendRepoPath(): string {
+  return process.env.CONTEXTGIT_REPO ?? path.join(app.getPath("userData"), "contextgit");
+}
+function rendererOrigin(): string {
+  return process.env.VITE_DEV_SERVER_URL ? new URL(process.env.VITE_DEV_SERVER_URL).origin : "null";
+}
+async function probeBackend(generation = backendGeneration): Promise<void> {
+  const identity = await validateBackend(apiBase, repositoryId(backendRepoPath()), rendererOrigin());
+  if (generation !== backendGeneration) return;
+  if (status.state === "ready" && status.repoId === identity.repoId && status.instanceId === identity.instanceId) return;
+  setStatus({ state: "ready", apiBase, ...identity });
+}
+function startBackendMonitor(): void {
+  if (backendMonitor) clearInterval(backendMonitor);
+  backendMonitor = setInterval(() => {
+    if (probingBackend) return;
+    probingBackend = true;
+    const generation = backendGeneration;
+    void probeBackend(generation).catch((cause) => {
+      if (generation !== backendGeneration) return;
+      const message = cause instanceof Error ? cause.message : "Backend connection lost.";
+      if (status.state !== "error" || status.message !== message) setStatus({ state: "error", message });
+    }).finally(() => { probingBackend = false; });
+  }, 5000);
+}
+
 async function spawnBackend(): Promise<void> {
   const env = {
     ...process.env,
@@ -81,8 +112,13 @@ async function spawnBackend(): Promise<void> {
     ? ["contextgit.api.main:app", "--host", "127.0.0.1", "--port", String(backendPort)]
     : [];
   if (isDev && !(await getPortFree(backendPort))) {
-    // A dev server is already running; reuse it instead of failing.
-    setStatus({ state: "ready", apiBase });
+    // Never trust a listener merely because the port is occupied.
+    try {
+      await probeBackend();
+      startBackendMonitor();
+    } catch (cause) {
+      setStatus({ state: "error", message: cause instanceof Error ? cause.message : "Backend validation failed." });
+    }
     return;
   }
   backend = spawn(binary, args, {
@@ -113,29 +149,29 @@ async function spawnBackend(): Promise<void> {
     backend = null;
   });
   await waitForHealth();
+  if (status.state === "ready") startBackendMonitor();
 }
 
 async function waitForHealth(): Promise<void> {
   const deadline = Date.now() + 30_000;
+  let lastError = "No response";
   while (Date.now() < deadline) {
-    if (!backend) return; // exited already; error status set by handler
+    if (!backend) return;
     try {
-      const response = await fetch(`${apiBase}/api/v1/health`, {
-        signal: AbortSignal.timeout(1500),
-      });
-      if (response.ok) {
-        setStatus({ state: "ready", apiBase });
-        return;
-      }
-    } catch {
-      // not up yet
+      await probeBackend();
+      return;
+    } catch (cause) {
+      lastError = cause instanceof Error ? cause.message : "No response";
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  setStatus({ state: "error", message: `Backend health check timed out on ${apiBase}` });
+  setStatus({ state: "error", message: `Backend failed on ${apiBase}: ${lastError}` });
 }
 
 function stopBackend(): void {
+  backendGeneration++;
+  if (backendMonitor) clearInterval(backendMonitor);
+  backendMonitor = null;
   if (backend && !backend.killed) {
     backend.removeAllListeners("exit");
     backend.kill("SIGTERM");
@@ -625,9 +661,14 @@ ipcMain.handle("ctx:restfox-stop", () => {
 
 // ---------- PTY sessions (parallel agent terminals) ----------
 
+let usageManager: UsageManager | null = null;
+function usage(): UsageManager {
+  return usageManager ??= new UsageManager(path.join(app.getPath("userData"), "usage"), __dirname);
+}
+const pendingPtyStarts = new Map<string, symbol>();
 const ptys = new PtyManager(
-  (id, data) => mainWindow?.webContents.send("ctx:pty-data", id, data),
-  (id, code) => mainWindow?.webContents.send("ctx:pty-exit", id, code),
+  (id, data) => { usageManager?.observe(id, data); mainWindow?.webContents.send("ctx:pty-data", id, data); },
+  (id, code) => { usageManager?.finish(id); mainWindow?.webContents.send("ctx:pty-exit", id, code); },
 );
 
 /**
@@ -656,6 +697,7 @@ ipcMain.on(
     options: {
       id: string;
       command: string;
+      sessionId?: string;
       cols: number;
       rows: number;
       cwd?: string;
@@ -663,8 +705,11 @@ ipcMain.on(
       env?: Record<string, string>;
     },
   ) => {
+    const ticket = Symbol();
+    pendingPtyStarts.set(options.id, ticket);
     const cwd = resolvePtyCwd(options.cwd);
     if (!cwd) {
+      pendingPtyStarts.delete(options.id);
       // No project folder yet: tell the pane instead of spawning in the app dir.
       mainWindow?.webContents.send(
         "ctx:pty-data",
@@ -676,20 +721,36 @@ ipcMain.on(
     }
     // GUI-launched Electron has a bare PATH; use the augmented one so a CLI in
     // ~/.local/bin, a mise shim or an npm global prefix is actually spawnable.
-    const PATH = await augmentedPath();
-    ptys.start({
-      ...options,
-      cwd,
-      // A run's own PORT keeps its dev server off every other run's.
-      env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}) },
-    });
+    try {
+      const PATH = await augmentedPath();
+      if (pendingPtyStarts.get(options.id) !== ticket) return;
+      pendingPtyStarts.delete(options.id);
+      const observer = usage().prepare(options.id, options.sessionId ?? options.id, options.command, cwd);
+      ptys.start({
+        ...options, cwd, extraArgs: observer.args,
+        env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}), ...observer.env },
+      });
+    } catch {
+      pendingPtyStarts.delete(options.id);
+      usageManager?.finish(options.id);
+      mainWindow?.webContents.send("ctx:pty-data", options.id, "\r\nCould not launch the CLI. Check that it is installed and the project folder exists.\r\n");
+      mainWindow?.webContents.send("ctx:pty-exit", options.id, 1);
+    }
   },
 );
 ipcMain.on("ctx:pty-write", (_event, id: string, data: string) => ptys.write(id, data));
 ipcMain.on("ctx:pty-resize", (_event, id: string, cols: number, rows: number) =>
   ptys.resize(id, cols, rows),
 );
-ipcMain.on("ctx:pty-kill", (_event, id: string) => ptys.kill(id));
+ipcMain.on("ctx:pty-kill", (_event, id: string) => {
+  pendingPtyStarts.delete(id);
+  usageManager?.finish(id);
+  ptys.kill(id);
+});
+ipcMain.handle("ctx:harness-usage", (event, harness: string, sessionId?: string, refresh = false) => {
+  if (event.sender !== mainWindow?.webContents || !HARNESS_BY_ID[harness] || (sessionId !== undefined && typeof sessionId !== "string")) throw new Error("Invalid usage request");
+  return usage().read(harness, sessionId, refresh === true);
+});
 ipcMain.handle("ctx:pty-presets", () => Object.keys(PTY_PRESETS));
 
 // ---------- Harness detection + hidden install ----------
@@ -795,6 +856,8 @@ app.on("window-all-closed", () => {
   editor().stop();
   dbgate().stop();
   restfox().stop();
+  pendingPtyStarts.clear();
+  usageManager?.stop();
   ptys.killAll();
   killInstalls();
   stopBackend();
@@ -805,6 +868,8 @@ app.on("before-quit", () => {
   editor().stop();
   dbgate().stop();
   restfox().stop();
+  pendingPtyStarts.clear();
+  usageManager?.stop();
   ptys.killAll();
   killInstalls();
   stopBackend();

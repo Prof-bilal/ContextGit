@@ -37,12 +37,39 @@ def all_limits(*, refresh: bool = False) -> list[HarnessLimits]:
             continue
         try:
             value = fetch()
-        except Exception as exc:  # noqa: BLE001 - adapters must not raise; be safe
+        except Exception:  # noqa: BLE001 - adapters must not raise; be safe
             value = HarnessLimits(
-                harness=harness, label=label, signed_in=False, message=str(exc)
+                harness=harness,
+                label=label,
+                signed_in=False,
+                state="error",
+                message=f"Could not read {label} limits.",
             )
         _cache[harness] = (now, value)
         results.append(value)
+    # Desktop collectors supplement these explicit capability states.
+    for harness, label in [
+        ("claude", "Claude Code"),
+        ("codex", "Codex"),
+        ("opencode", "OpenCode"),
+        ("gemini", "Gemini CLI"),
+        ("aider", "Aider"),
+        ("ollama", "Ollama"),
+        ("shell", "Shell"),
+        ("pi", "Pi"),
+        ("kilo", "Kilo Code"),
+    ]:
+        results.append(
+            HarnessLimits(
+                harness=harness,
+                label=label,
+                supported=False,
+                state="unsupported",
+                message="Desktop usage is available through the CLI collector."
+                if harness != "shell"
+                else "Usage tracking does not apply to a plain shell.",
+            )
+        )
     return results
 
 

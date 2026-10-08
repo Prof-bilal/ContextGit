@@ -1,12 +1,13 @@
 """FastAPI routes are thin validation and serialization wrappers around Repo."""
 
 import asyncio
+import hashlib
 import importlib
 import json
 import os
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Literal, cast
@@ -14,8 +15,7 @@ from uuid import uuid4
 
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from contextgit.agents.asset_agent import (
     SYSTEM_PROMPT as ASSET_AGENT_SYSTEM,
@@ -26,6 +26,7 @@ from contextgit.agents.asset_agent import (
 from contextgit.agents.asset_agent import (
     parse_actions as parse_asset_actions,
 )
+from contextgit.api.cors import LocalAPI
 from contextgit.api.schemas import (
     AssetAgentRequest,
     AssetAgentResponse,
@@ -189,23 +190,35 @@ def create_app(
 ) -> FastAPI:
     """Create the local API, optionally injecting a repo and deterministic provider."""
     env_repo = os.getenv("CONTEXTGIT_REPO")
-    path = Path(repo_path if repo_path is not None else env_repo or ".contextgit").expanduser()
+    path = Path(
+        repo.root
+        if repo is not None
+        else repo_path
+        if repo_path is not None
+        else env_repo or ".contextgit"
+    ).expanduser()
     llm = provider or (
         OpenAICompatibleProvider() if os.getenv("CTX_LLM_API_KEY") else FakeProvider()
     )
-    app = FastAPI(title="ContextGit API", version="1.0.0")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=os.getenv(
-            "CONTEXTGIT_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-        ).split(","),
-        # The desktop dev server and the packaged app talk to this API from a
-        # local origin on a shifting port (Vite :5173, file://, …). Allow any
-        # localhost origin so a manually-started backend is not blocked by CORS.
-        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    app = LocalAPI(title="ContextGit API", version="1.0.0")
+    instance_id = uuid4().hex
+
+    @app.middleware("http")
+    async def require_repository(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        expected = request.headers.get("x-contextgit-repo")
+        actual = hashlib.sha256(str(path.resolve()).encode()).hexdigest()
+        if expected and expected != actual:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "Backend repository changed. Reopen the workspace to continue.",
+                    "type": "RepositoryMismatch",
+                },
+            )
+        return await call_next(request)
+
     state: dict[str, Repo] = {"repo": repo} if repo is not None else {}
     # The first render fires several requests at once; without this lock two of
     # them can race open/init and the loser opens a half-written database.
@@ -286,7 +299,13 @@ def create_app(
 
     @app.get("/api/v1/health")
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "service": "contextgit",
+            "api_version": "1",
+            "instance_id": instance_id,
+            "repo_id": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
+        }
 
     @app.post("/api/v1/repo/init", response_model=RepoSnapshot)
     def init_repo(body: InitRequest) -> RepoSnapshot:
@@ -374,8 +393,7 @@ def create_app(
     ) -> list[dict[str, str]]:
         head = commit_id or current.log(branch)[0].id
         return [
-            {"role": item.role, "content": item.content}
-            for item in current.build_context(head)
+            {"role": item.role, "content": item.content} for item in current.build_context(head)
         ]
 
     @app.post("/api/v1/commits", response_model=CommitResponse)
@@ -460,9 +478,7 @@ def create_app(
         return session.model_dump(mode="json")
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
-    def delete_session(
-        session_id: str, permanent: bool = False, current: Repo = repo_dep
-    ) -> None:
+    def delete_session(session_id: str, permanent: bool = False, current: Repo = repo_dep) -> None:
         """Move a run to Storage. Pass `permanent=true` to delete it for good."""
         if permanent:
             current.delete_session(session_id)
@@ -598,9 +614,7 @@ def create_app(
         return [m.model_dump(mode="json") for m in current.team_messages(team.id, limit=limit)]
 
     @app.post("/api/v1/team/messages", status_code=201)
-    def post_team_message(
-        body: TeamMessageRequest, current: Repo = repo_dep
-    ) -> dict[str, object]:
+    def post_team_message(body: TeamMessageRequest, current: Repo = repo_dep) -> dict[str, object]:
         team = current.current_team()
         if team is None:
             raise TeamNotFound("no team yet")
@@ -782,9 +796,7 @@ def create_app(
         return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
 
     @app.post("/api/v1/providers/{provider_id}/models", response_model=ProviderModelsResult)
-    def fetch_provider_models(
-        provider_id: str, current: Repo = repo_dep
-    ) -> ProviderModelsResult:
+    def fetch_provider_models(provider_id: str, current: Repo = repo_dep) -> ProviderModelsResult:
         """`GET {base}/models` when supported, else the static list; persists it."""
         adapter, resolved = build_for(provider_id, current.list_providers())
         models = resolved.spec.models
@@ -851,9 +863,7 @@ def create_app(
         latency = int((time.perf_counter() - started) * 1000)
         return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
 
-    @app.post(
-        "/api/v1/agent-providers/{provider_id}/models", response_model=ProviderModelsResult
-    )
+    @app.post("/api/v1/agent-providers/{provider_id}/models", response_model=ProviderModelsResult)
     def fetch_agent_provider_models(
         provider_id: str, current: Repo = repo_dep
     ) -> ProviderModelsResult:
@@ -1005,9 +1015,7 @@ def create_app(
         return run_suite(root, base_url)
 
     @app.post("/api/v1/endpoints/tests/bisect", response_model=BisectResult)
-    def endpoints_bisect(
-        body: EndpointBisectRequest, current: Repo = repo_dep
-    ) -> BisectResult:
+    def endpoints_bisect(body: EndpointBisectRequest, current: Repo = repo_dep) -> BisectResult:
         """Binary-search the history for the change that broke the gate."""
         root = Path(body.project_path).expanduser()
         provider = None
@@ -1017,11 +1025,7 @@ def create_app(
         good = body.good
         if not good and body.endpoint_id:
             entry = next(
-                (
-                    item
-                    for item in remembered(root).files
-                    if item.endpoint_id == body.endpoint_id
-                ),
+                (item for item in remembered(root).files if item.endpoint_id == body.endpoint_id),
                 None,
             )
             good = entry.verified_at_commit if entry else None
@@ -1186,7 +1190,7 @@ def create_app(
 
     @app.get("/api/v1/limits", response_model=list[HarnessLimits])
     def limits(refresh: bool = False) -> list[HarnessLimits]:
-        """Usage limits for the CLI harnesses that report them (cmd, cline)."""
+        """Account adapters and explicit availability for every registered CLI."""
         return all_limits(refresh=refresh)
 
     # ---------- documents (Chat "Document" mode: generate a file) ----------

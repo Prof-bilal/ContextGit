@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useRef } from "react";
 
+import { uniqueSessions } from "./sessionState";
 import type { Session } from "@/lib/api";
 
 /** xterm is heavy and only needed once a terminal pane exists. */
@@ -17,7 +18,7 @@ export const LAYOUT_LIMIT: Record<PaneLayout, number> = { single: 1, split: 2, t
 
 /** Open runs, in the order they were opened. */
 export function openSessions(sessions: Session[], openIds: string[]): Session[] {
-  return openIds
+  return [...new Set(openIds)]
     .map((id) => sessions.find((session) => session.id === id))
     .filter((session): session is Session => Boolean(session));
 }
@@ -70,7 +71,11 @@ export default function PaneCanvas({
   onStaged: () => void;
   onStatus: () => void;
 }) {
-  const open = openSessions(sessions, openIds);
+  const retained = useRef(new Map<string, Session>());
+  const ids = new Set(openIds);
+  for (const id of retained.current.keys()) if (!ids.has(id)) retained.current.delete(id);
+  for (const session of uniqueSessions(sessions)) if (ids.has(session.id)) retained.current.set(session.id, session);
+  const open = openSessions([...retained.current.values()], openIds);
   if (open.length === 0) return null;
   const shownIds = new Set(visibleSessions(open, layout, activeId).map((session) => session.id));
 

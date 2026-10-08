@@ -1,15 +1,13 @@
 # CLI harness usage limits
 
-The Code tab shows each CLI harness's **own account limits** — the 5-hour /
-Weekly meters, credit balances and plan that the CLI reports to itself. It is a
-local, read-only view: no prompts or keys leave the machine, and requests go only
-to the CLI's own API host.
+The Code tab shows **Usage & limits** for every registered CLI. Account windows
+appear only when reported by the provider. Other CLIs show session tokens, cost,
+local project totals, or an explicit unavailable state. Token counts are never
+converted into invented account quota percentages.
 
 ## Where the numbers come from
 
-No harness exposes limits on a machine-readable command; `cmd` and `cline` render
-them only inside their TUI, fetched from their private APIs. This app makes the
-same read-only calls using the login each CLI already stored:
+The existing backend adapters use the login each CLI already stored:
 
 | Harness | Host | Auth | Endpoints |
 |---|---|---|---|
@@ -29,7 +27,30 @@ adapter maps the fields it recognises and otherwise degrades to a message; an
 expired OAuth token reads "sign in again" (refreshing needs a client secret we
 deliberately don't hold).
 
-`claude`, `codex`, `gemini`, `aider` and `opencode` have no account limits to show.
+Additional desktop collectors run in Electron, independently of the backend:
+
+- **Codex:** a separate, read-only app-server connection calls `account/read`
+  and `account/rateLimits/read`. Returned buckets retain their actual durations,
+  reset times, and percentages. It never creates a thread or sends a prompt.
+  API-key and Bedrock logins do not expose ChatGPT subscription quotas.
+- **Claude Code:** a launch-scoped status-line wrapper reads optional account
+  windows and session cost. The existing status-line command is preserved.
+  Global configuration is not changed.
+- **Gemini CLI:** launch-scoped local telemetry supplies cumulative token and
+  request counters. Prompt and trace logging are disabled. Account quota is
+  available inside the CLI with `/stats model`.
+- **Pi:** a launch-scoped extension observes assistant usage records and emits
+  numeric totals without sending messages or continuing the agent.
+- **Aider:** reported token and session-cost lines are observed in the existing
+  terminal output. Estimates are labeled as CLI-reported usage.
+- **OpenCode and Kilo:** local `stats --project ""` totals are read for the run's
+  working directory. Unknown output formats produce an unavailable message.
+- **Ollama:** local inference has no subscription quota; the panel links to
+  cloud usage. **Shell:** usage tracking does not apply.
+
+Observers are isolated per launch and session. Existing runs need a new launch
+to attach Claude, Gemini, or Pi instrumentation. An unavailable helper or usage
+sink must not prevent the CLI from starting.
 
 ## Normalized model + endpoint
 
@@ -40,8 +61,12 @@ deliberately don't hold).
 GET /api/v1/limits?refresh=false
 ```
 
-The registry caches results for 5 minutes (`TTL_SECONDS`); `refresh=true` (the
-panel's Refresh button) bypasses the cache.
+The registry returns every registered harness, including explicit placeholders
+for desktop collectors. The preload `harnessUsage` IPC supplies those readings.
+Account/project queries cache for 5 minutes and deduplicate simultaneous
+requests; the panel reads local observers every 2 seconds while Code is open.
+Refresh bypasses the account cache. Last valid readings are retained and labeled
+stale when a subsequent lookup fails.
 
 ## Graceful degradation
 
@@ -63,5 +88,21 @@ and a human `message` — never an exception, never a broken panel.
 ## Tests
 
 `tests/test_limits.py` drives the adapters through an `httpx.MockTransport` (no
-network): mapping the real Command Code payload shapes, the missing-auth and
-error paths, the expired-token path, the cache, and the endpoint.
+network): mapping the real Command Code payload shapes, missing-auth and error
+paths, the cache, endpoint, and coverage of the CLI registry.
+
+`npm run test:lifecycle --prefix desktop` checks quota normalization, cumulative
+telemetry, isolated observers, unavailable helpers, and the Codex read-only
+protocol. Desktop e2e verifies that the shell's PID and environment survive list
+omissions, duplicate session IDs, tab/mode switches, and a backend interruption.
+
+## Backend recovery and terminal lifetime
+
+Readiness checks validate service/version, repository identity, session loading,
+and renderer CORS. CORS wraps the server error boundary so a 500 retains its
+headers. Repository-pinned requests reject a mismatched backend with HTTP 409.
+After initial readiness, an outage displays a reconnect banner while keeping
+terminal panes mounted. New runs are disabled until the backend is available.
+Late session polls cannot overwrite mutations, and an omitted session is checked
+individually before treating it as deleted. Saved pane IDs are deduplicated and
+scoped to the validated repository.

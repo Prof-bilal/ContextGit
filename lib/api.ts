@@ -153,6 +153,7 @@ const envBase =
     ? process.env.NEXT_PUBLIC_CONTEXTGIT_API
     : undefined;
 const base = bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
+let expectedRepository: string | undefined;
 
 export type SessionKind = "chat" | "terminal";
 export type SessionStatus = "idle" | "running" | "done" | "error";
@@ -380,18 +381,36 @@ export interface TaskInput {
   gate_command?: string | null;
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly kind?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
+  const status = typeof window !== "undefined" ? window.contextgit?.getStatus().status : undefined;
+  if (status?.state === "ready" && status.repoId) {
+    expectedRepository ??= status.repoId;
+    if (expectedRepository !== status.repoId) throw new ApiError("Backend repository changed. Reopen this workspace.", 409, "RepositoryMismatch");
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {}), ...init?.headers },
+    });
+  } catch {
+    throw new ApiError("Cannot reach the local backend. Check the connection banner and retry.", 0, "network");
+  }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     const message =
       typeof body === "object" && body !== null && "error" in body
         ? String(body.error)
         : `API request failed (${response.status})`;
-    throw new Error(message);
+    const kind = typeof body === "object" && body !== null && "type" in body ? String(body.type) : undefined;
+    throw new ApiError(message, response.status, kind);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
@@ -481,6 +500,10 @@ export interface LimitTotals {
 }
 
 export interface HarnessLimits {
+  state?: "available" | "waiting" | "not_signed_in" | "unsupported" | "error";
+  scope?: "account" | "session" | "local_project";
+  session_id?: string;
+  stale?: boolean;
   harness: string;
   label: string;
   /** Whether this app has an adapter for the harness at all. */
@@ -1108,6 +1131,7 @@ export const api = {
     ),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
+  session: (id: string) => request<Session>(`/api/v1/sessions/${id}`),
   workspace: (id: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
   fleet: () => request<FleetEntry[]>("/api/v1/fleet"),

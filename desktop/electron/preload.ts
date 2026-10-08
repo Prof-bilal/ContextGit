@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("contextgit", {
   ptyStart: (options: {
     id: string;
     command: string;
+    sessionId?: string;
     cols: number;
     rows: number;
     cwd?: string;
@@ -36,6 +37,7 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.send("ctx:pty-resize", id, cols, rows),
   ptyKill: (id: string) => ipcRenderer.send("ctx:pty-kill", id),
   ptyPresets: () => ipcRenderer.invoke("ctx:pty-presets") as Promise<string[]>,
+  harnessUsage: (harness: string, sessionId?: string, refresh = false) => ipcRenderer.invoke("ctx:harness-usage", harness, sessionId, refresh),
   // ---------- Harness detection + install ----------
   harnessCheck: (id: string) => ipcRenderer.invoke("ctx:harness-check", id) as Promise<HarnessCheck>,
   harnessInstall: (id: string) =>

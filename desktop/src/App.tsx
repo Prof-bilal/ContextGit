@@ -17,6 +17,10 @@ function readBridge(): { status: BackendStatus; apiBase: string } {
 export default function App() {
   const [backend, setBackend] = useState(readBridge);
   const [restarting, setRestarting] = useState(false);
+  const [workspaceMounted, setWorkspaceMounted] = useState(() => readBridge().status.state === "ready");
+  useEffect(() => {
+    if (backend.status.state === "ready") setWorkspaceMounted(true);
+  }, [backend.status]);
 
   useEffect(() => {
     const bridge = window.contextgit;
@@ -35,7 +39,7 @@ export default function App() {
     }
   }, []);
 
-  if (backend.status.state === "starting") {
+  if (!workspaceMounted && backend.status.state === "starting") {
     return (
       <main className="backend-screen" aria-live="polite">
         <p className="backend-kicker">ContextGit</p>
@@ -45,7 +49,7 @@ export default function App() {
     );
   }
 
-  if (backend.status.state === "error") {
+  if (!workspaceMounted && backend.status.state === "error") {
     return (
       <main className="backend-screen" aria-live="assertive">
         <p className="backend-kicker">ContextGit</p>
@@ -59,8 +63,16 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <Shell />
-    </ErrorBoundary>
+    <>
+      {backend.status.state !== "ready" && (
+        <div className="cg-banner" role="alert">
+          {backend.status.state === "error" ? backend.status.message : "Reconnecting to the backend…"}
+          <button className="cg-btn cg-btn-sm" onClick={() => void restart()} disabled={restarting}>
+            {restarting ? "Reconnecting…" : "Reconnect backend"}
+          </button>
+        </div>
+      )}
+      <ErrorBoundary><Shell backendAvailable={backend.status.state === "ready"} /></ErrorBoundary>
+    </>
   );
 }

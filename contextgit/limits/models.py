@@ -7,6 +7,7 @@ instead of an error.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -49,6 +50,10 @@ class HarnessLimits(BaseModel):
     """The limits one harness reports, normalized for the Code tab."""
 
     harness: str
+    state: Literal["available", "waiting", "not_signed_in", "unsupported", "error"] | None = None
+    scope: Literal["account", "session", "local_project"] = "account"
+    session_id: str | None = None
+    stale: bool = False
     label: str
     # True when this package has an adapter for the harness at all.
     supported: bool = True

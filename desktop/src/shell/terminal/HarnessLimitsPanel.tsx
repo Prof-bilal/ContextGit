@@ -27,13 +27,13 @@ function resetIn(iso: string): string {
 }
 
 function WindowMeter({ window }: { window: LimitWindow }) {
-  const ratio = window.cap > 0 ? Math.min(1, window.used / window.cap) : 0;
+  const ratio = window.cap > 0 ? Math.max(0, Math.min(1, window.used / window.cap)) : 0;
   return (
     <div className="cg-limit">
       <div className="cg-limit-head">
         <span className="cg-limit-label">{window.label}</span>
         <span className="cg-view-sub">
-          {compact(window.used)} / {compact(window.cap)} {window.unit}
+          {window.unit === "%" ? `${compact(window.used)}% used` : `${compact(window.used)} / ${compact(window.cap)} ${window.unit}`}
         </span>
       </div>
       <div className="cg-burn-bar" data-tone={ratio > 0.85 ? "bad" : ratio > 0.6 ? "warn" : undefined}>
@@ -69,7 +69,7 @@ export default function HarnessLimitsPanel({
     <section className="cg-limits" aria-label={`${label} limits`}>
       <header className="cg-block-head">
         <AgentMark agent={harness} label={agentMonogram(harness)} />
-        <span className="cg-kicker">Limits</span>
+        <span className="cg-kicker">Usage &amp; limits</span>
         {limits?.plan && <Chip>{limits.plan}</Chip>}
         <span className="cg-toolbar-spacer" />
         <IconButton label="Refresh limits" pressed={loading} onClick={onRefresh}>
@@ -83,12 +83,16 @@ export default function HarnessLimitsPanel({
         </p>
       )}
 
-      {limits && !limits.signed_in && (
+      {limits?.stale && <p className="cg-view-sub" role="status">Last reading · refresh unavailable</p>}
+      {limits?.source && <p className="cg-view-sub">{limits.source} · {new Date(limits.fetched_at).toLocaleTimeString()}</p>}
+      {harness === "ollama" && <p className="cg-view-sub"><a href="https://ollama.com/usage" target="_blank" rel="noreferrer">Open Ollama cloud usage</a></p>}
+      {limits && !limits.signed_in && limits.state !== "available" && (
         <p className="cg-empty-note">{limits.message ?? `Sign in to ${label} to see limits.`}</p>
       )}
 
-      {limits?.signed_in && (
+      {(limits?.signed_in || limits?.state === "available") && limits && (
         <>
+          {limits.windows.length > 0 && <p className="cg-kicker">Account limits</p>}
           {limits.windows.map((window) => (
             <WindowMeter key={window.label} window={window} />
           ))}
@@ -120,10 +124,11 @@ export default function HarnessLimitsPanel({
             </dl>
           )}
 
+          {limits.totals && <p className="cg-kicker">{limits.scope === "local_project" ? "Local project usage" : limits.scope === "session" ? "Session usage" : "Account usage"}</p>}
           {limits.totals && (
             <p className="cg-view-sub">
-              {compact(limits.totals.total_tokens)} tokens
-              {limits.totals.total_cost !== null && ` · $${limits.totals.total_cost.toFixed(2)}`}
+              {limits.totals.total_tokens !== null && `${compact(limits.totals.total_tokens)} tokens` }
+              {limits.totals.total_cost !== null && `${limits.totals.total_tokens !== null ? " · " : ""}$${limits.totals.total_cost.toFixed(2)}`}
               {limits.totals.requests !== null && ` · ${compact(limits.totals.requests)} calls`}
               {limits.totals.period ? ` · ${limits.totals.period}` : ""}
             </p>

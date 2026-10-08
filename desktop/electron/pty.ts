@@ -31,6 +31,8 @@ export interface PtyStartOptions {
    * receives it.
    */
   input?: string;
+  /** Launch-scoped observer flags, separate from the shared CLI preset. */
+  extraArgs?: string[];
 }
 
 export class PtyManager {
@@ -49,7 +51,7 @@ export class PtyManager {
     const command = options.command === "" || options.command === "shell"
       ? null
       : preset?.command ?? options.command;
-    const pty = spawn(command ?? defaultShell(), preset?.args ?? [], {
+    const pty = spawn(command ?? defaultShell(), [...(preset?.args ?? []), ...(options.extraArgs ?? [])], {
       name: "xterm-256color",
       cols: Math.max(20, options.cols),
       rows: Math.max(5, options.rows),
@@ -75,7 +77,7 @@ export class PtyManager {
       setTimeout(send, 1500);
     }
     pty.onExit(({ exitCode }) => {
-      this._ptys.delete(options.id);
+      if (this._ptys.get(options.id) === pty) this._ptys.delete(options.id);
       this._onExit(options.id, exitCode);
     });
     this._ptys.set(options.id, pty);

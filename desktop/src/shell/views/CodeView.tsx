@@ -11,6 +11,7 @@ import { LAYOUT_OPTIONS, openSessions, type PaneLayout } from "../terminal/PaneC
  */
 export default function CodeView({
   sessions,
+  backendAvailable = true,
   fleet,
   openIds,
   layout,
@@ -20,6 +21,7 @@ export default function CodeView({
   onChooseProject,
 }: {
   sessions: Session[];
+  backendAvailable?: boolean;
   fleet: FleetEntry[];
   openIds: string[];
   layout: PaneLayout;
@@ -58,7 +60,7 @@ export default function CodeView({
           className="cg-btn"
           data-variant="primary"
           onClick={onNewTerminal}
-          disabled={!workspace}
+          disabled={!workspace || !backendAvailable}
           title={workspace ? "Open a plain shell terminal" : "Choose a project folder first"}
         >
           <LuPlus aria-hidden="true" /> New terminal

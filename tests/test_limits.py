@@ -116,9 +116,7 @@ def test_cline_expired_token_is_soft(tmp_path: Path) -> None:
         ),
         "utf-8",
     )
-    result = fetch_cline(
-        auth_path=path, client=_client(lambda request: httpx.Response(401))
-    )
+    result = fetch_cline(auth_path=path, client=_client(lambda request: httpx.Response(401)))
     assert result.signed_in is False
     assert result.message is not None and "expired" in result.message.lower()
 
@@ -176,9 +174,7 @@ def test_freebuff_without_keychain_is_soft() -> None:
 
 
 def test_freebuff_expired_token_is_soft() -> None:
-    result = fetch_freebuff(
-        client=_client(lambda request: httpx.Response(401)), secret="tok"
-    )
+    result = fetch_freebuff(client=_client(lambda request: httpx.Response(401)), secret="tok")
     assert result.signed_in is False
     assert result.message is not None and "login" in result.message
 
@@ -213,3 +209,27 @@ def test_limits_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     payload = client.get("/api/v1/limits").json()
     assert payload[0]["harness"] == "commandcode"
     assert payload[0]["message"] == "x"
+
+
+def test_limits_registry_covers_every_desktop_harness(monkeypatch: pytest.MonkeyPatch) -> None:
+    import re
+
+    source = (Path(__file__).parents[1] / "desktop/shared/harnesses.ts").read_text()
+    expected = set(re.findall(r'id: "([a-z]+)"', source))
+    monkeypatch.setattr(
+        registry,
+        "ADAPTERS",
+        [
+            (
+                harness,
+                label,
+                lambda harness=harness, label=label: HarnessLimits(harness=harness, label=label),
+            )
+            for harness, label, _ in registry.ADAPTERS
+        ],
+    )
+    registry.clear_cache()
+    results = registry.all_limits()
+    assert {value.harness for value in results} == expected
+    assert len(results) == len(expected)
+    registry.clear_cache()

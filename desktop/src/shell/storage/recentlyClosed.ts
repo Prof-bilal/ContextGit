@@ -55,15 +55,20 @@ export function clearClosed(): ClosedPane[] {
   return [];
 }
 
-const OPEN_KEY = "cg-open-panes";
+let verifiedRepoId: string | undefined;
+function openKey(): string {
+  const status = window.contextgit?.getStatus().status;
+  if (status?.state === "ready" && status.repoId) verifiedRepoId = status.repoId;
+  return `cg-open-panes:${verifiedRepoId ?? "unverified"}`;
+}
 
 /** The run ids that were open when the app last unloaded. */
 export function loadOpenPanes(): string[] {
   try {
-    const raw = window.localStorage.getItem(OPEN_KEY);
+    const raw = window.localStorage.getItem(openKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+    return Array.isArray(parsed) ? [...new Set(parsed.filter((id): id is string => typeof id === "string"))] : [];
   } catch {
     return [];
   }
@@ -72,7 +77,7 @@ export function loadOpenPanes(): string[] {
 /** Remember the open run ids so they can be restored after a reload. */
 export function saveOpenPanes(ids: string[]): void {
   try {
-    window.localStorage.setItem(OPEN_KEY, JSON.stringify(ids));
+    window.localStorage.setItem(openKey(), JSON.stringify([...new Set(ids)]));
   } catch {
     // ignore storage failures
   }

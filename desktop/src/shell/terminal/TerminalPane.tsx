@@ -128,13 +128,22 @@ export default function TerminalPane({
     if (needsInstall && !installReady) return;
     const ptyId = ptyIdRef.current;
     const bridge = window.contextgit;
+    let cancelled = false;
+    const cleanup = () => {
+      cancelled = true;
+      teardownRef.current = window.setTimeout(() => {
+        teardownRef.current = null;
+        disposeRef.current?.();
+        disposeRef.current = null;
+      }, 0);
+    };
 
     if (teardownRef.current !== null) {
       window.clearTimeout(teardownRef.current);
       teardownRef.current = null;
       // React StrictMode mounts -> unmounts -> mounts in dev; that throwaway
       // cleanup must not kill the agent we just launched, so reuse it as-is.
-      if (!restartingRef.current) return;
+      if (!restartingRef.current && disposeRef.current) return cleanup;
       // A real restart: drop the old terminal/process, then set up fresh.
       disposeRef.current?.();
       disposeRef.current = null;
@@ -153,7 +162,7 @@ export default function TerminalPane({
       } catch {
         // font loading is best-effort; the fallback stack still works
       }
-      if (!hostRef.current || disposeRef.current) return;
+      if (cancelled || !hostRef.current || disposeRef.current) return;
 
       const term = new Terminal({
         fontFamily: TERMINAL_FONT,
@@ -206,6 +215,7 @@ export default function TerminalPane({
 
       bridge?.ptyStart({
         id: ptyId,
+        sessionId: session.id,
         command,
         cols: term.cols,
         rows: term.rows,
@@ -296,13 +306,7 @@ export default function TerminalPane({
     };
     void setup();
 
-    return () => {
-      teardownRef.current = window.setTimeout(() => {
-        teardownRef.current = null;
-        disposeRef.current?.();
-        disposeRef.current = null;
-      }, 0);
-    };
+    return cleanup;
     // Re-runs on an explicit restart (nonce) or once an install clears the gate;
     // the agent itself never changes for a session.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -3,13 +3,19 @@ import { fileURLToPath } from "node:url";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { rendererCsp } from "./shared/security";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   base: "./",
-  plugins: [react()],
+  plugins: [react(), {
+    name: "contextgit-csp",
+    transformIndexHtml() {
+      return [{ tag: "meta", attrs: { "http-equiv": "Content-Security-Policy", content: rendererCsp(command === "serve") }, injectTo: "head-prepend" }];
+    },
+  }],
   resolve: {
     // Single React instance: shared components resolve react from the repo
     // root's node_modules, the renderer from desktop's — force one copy.
@@ -41,4 +47,4 @@ export default defineConfig({
   worker: {
     format: "es",
   },
-});
+}));

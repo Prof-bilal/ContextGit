@@ -25,7 +25,7 @@ yarn-error.log*
 next-env.d.ts
 
 # python
-.venv/
+.venv
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -44,7 +44,7 @@ coverage.xml
 
 # electron desktop
 .desktop-venv/
-desktop/node_modules/
+desktop/node_modules
 desktop/dist/
 desktop/dist-electron/
 desktop/build/

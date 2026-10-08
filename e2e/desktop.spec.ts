@@ -144,6 +144,7 @@ test.beforeAll(async () => {
     args: [path.join(root, "desktop"), "--no-sandbox", `--user-data-dir=${userData}`],
     env: {
       ...process.env,
+      VITE_DEV_SERVER_URL: "",
       CONTEXTGIT_REPO: contextgitRepo,
       CONTEXTGIT_PORT: "8757",
       CONTEXTGIT_WORKDIR: workdir,
@@ -1362,4 +1363,85 @@ test("team mode: a dependent task waits, then starts when its dependency is done
   // Leave the app on Single so nothing downstream inherits Team mode.
   await modeSwitch.getByRole("tab", { name: "Single" }).click();
   await expect(page.getByRole("button", { name: "New terminal" })).toBeVisible();
+});
+
+test("failed agent creation preserves the form and allows retry", async () => {
+  const page = await openShell();
+  await nav(page, "Code").click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("retry retained run");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.route("**/api/v1/sessions", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({ status: 409, json: { error: "Backend repository changed. Reopen the workspace to continue.", type: "RepositoryMismatch" } });
+  });
+  try {
+    await page.getByRole("button", { name: "Start run", exact: true }).click();
+    await expect(page.getByText("Backend repository changed. Reopen the workspace to continue.", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Run name")).toHaveValue("retry retained run");
+    await expect(page.getByRole("button", { name: "Start run", exact: true })).toBeEnabled();
+  } finally { await page.unroute("**/api/v1/sessions"); }
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  await expect(page.getByRole("region", { name: "retry retained run terminal", exact: true })).toBeVisible();
+});
+
+test("live CLI survives missing and duplicate polls, mode switches, and backend recovery", async () => {
+  test.setTimeout(60000);
+  const page = await openShell();
+  const keyWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("Encountered two children with the same key")) keyWarnings.push(message.text());
+  });
+  await nav(page, "Code").click();
+  const codeMode = page.getByRole("tablist", { name: "Code mode" });
+  await codeMode.getByRole("tab", { name: "Single", exact: true }).click();
+  await page.getByRole("button", { name: "New run", exact: true }).click();
+  await page.getByLabel("Run name").fill("lifecycle survivor");
+  await page.getByLabel("Agent", { exact: true }).selectOption("shell");
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
+  const pane = page.getByRole("region", { name: "lifecycle survivor terminal", exact: true });
+  await expect(pane).toBeVisible();
+  const output = pane.locator(".xterm-accessibility-tree");
+  await expect(output).toContainText(/\S/, { timeout: 15000 });
+  await pane.locator(".cg-term-host").click();
+  await page.keyboard.type('CG_KEEP=survived; printf "CG_BEFORE=%s\\n" "$$"');
+  await page.keyboard.press("Enter");
+  await expect(output).toContainText(/CG_BEFORE=\d+/, { timeout: 15000 });
+  const before = (await output.innerText()).match(/CG_BEFORE=(\d+)/)?.[1];
+  expect(before).toBeTruthy();
+  let polls = 0;
+  await page.route("**/api/v1/sessions", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const sessions = await response.json();
+    const omitted = sessions.filter((session: { name: string }) => session.name !== "lifecycle survivor");
+    polls++;
+    await route.fulfill({ response, json: [...omitted, ...omitted] });
+  });
+  try {
+    await expect.poll(() => polls, { timeout: 15000 }).toBeGreaterThanOrEqual(2);
+    await expect(pane).toHaveCount(1);
+    await expect(pane.locator(".cg-pane-exited")).toHaveCount(0);
+    await nav(page, "Chat").click();
+    await page.keyboard.press("Escape");
+    await nav(page, "Code").click();
+    await codeMode.getByRole("tab", { name: "Team", exact: true }).click();
+    await codeMode.getByRole("tab", { name: "Single", exact: true }).click();
+    const ready = await page.evaluate(() => window.contextgit!.getStatus().status);
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.send("ctx:status", { state: "error", message: "TEST connection interrupted" });
+    });
+    await expect(page.getByText("TEST connection interrupted")).toBeVisible();
+    await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeDisabled();
+    await expect(pane).toHaveCount(1);
+    await app.evaluate(({ BrowserWindow }, status) => {
+      BrowserWindow.getAllWindows()[0].webContents.send("ctx:status", status);
+    }, ready);
+    await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeEnabled();
+    await pane.locator(".cg-term-host").click();
+    await page.keyboard.type('printf "CG_AFTER=%s CG_KEEP=%s\\n" "$$" "$CG_KEEP"');
+    await page.keyboard.press("Enter");
+    await expect(output).toContainText(`CG_AFTER=${before} CG_KEEP=survived`, { timeout: 15000 });
+    expect(keyWarnings).toEqual([]);
+  } finally { await page.unroute("**/api/v1/sessions"); }
 });

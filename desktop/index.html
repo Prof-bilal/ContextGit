@@ -10,17 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Martian+Mono:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <script>
-      document.documentElement.classList.add("js");
-      try {
-        const t = localStorage.getItem("contextgit-theme");
-        const d =
-          t === "dark" ||
-          (!t && matchMedia("(prefers-color-scheme: dark)").matches);
-        document.documentElement.dataset.theme = d ? "dark" : "light";
-        document.documentElement.style.colorScheme = d ? "dark" : "light";
-      } catch {}
-    </script>
+
   </head>
   <body>
     <div id="root"></div>

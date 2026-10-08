@@ -3,6 +3,7 @@ import { LuCommand, LuCornerUpLeft, LuMoon, LuPanelRight, LuSun, LuX } from "rea
 
 import {
   api,
+  ApiError,
   type BranchBudget,
   type Message,
   type ProviderCapability,
@@ -157,7 +158,7 @@ function initialTab(): TabId {
   return TAB_IDS.find((tab) => tab === value) ?? "code";
 }
 
-export default function Shell() {
+export default function Shell({ backendAvailable = true }: { backendAvailable?: boolean }) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [theme, setTheme] = useState<Theme>("dark");
   const [dockOpen, setDockOpen] = useState(true);
@@ -169,7 +170,7 @@ export default function Shell() {
   const [layout, setLayout] = useState<PaneLayout>("single");
 
   // ---- Code tab: real sessions + terminals ----
-  const { sessions, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessions();
+  const { sessions, loaded: sessionsLoaded, removedIds, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessions();
   const { fleet, error: fleetError } = useFleet();
   const mergeQueue = useMergeQueue();
   const { board: teamBoard, error: teamError, refresh: refreshTeam, act: teamAct } = useTeam();
@@ -196,6 +197,12 @@ export default function Shell() {
   const [teamBusy, setTeamBusy] = useState(false);
   /** Session id → the one-line briefing typed into that terminal once it is up. */
   const [kickoff, setKickoff] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!removedIds.length) return;
+    setOpenIds((current) => current.filter((id) => !removedIds.includes(id)));
+    setActiveId((current) => current && removedIds.includes(current) ? null : current);
+  }, [removedIds]);
 
   // ---- Storage tab: trashed runs/branches + panes closed this session ----
   const {
@@ -302,7 +309,7 @@ export default function Shell() {
   const activeAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
 
   // Each CLI harness's own account limits (cmd's 5-hour/weekly windows, …).
-  const { limits, loading: limitsLoading, refresh: refreshLimits } = useLimits(tab === "code");
+  const { limits, loading: limitsLoading, refresh: refreshLimits } = useLimits(tab === "code", activeSession);
   const limitsByHarness = new Map(limits.map((entry) => [entry.harness, entry]));
   const runHarness = activeSession?.agent ?? "shell";
 
@@ -564,12 +571,18 @@ export default function Shell() {
         if (alive) setStaged(items);
       })
       .catch((cause: unknown) => {
-        if (alive) setBarError(cause instanceof Error ? cause.message : "Could not load staging");
+        if (!alive) return;
+        if (cause instanceof ApiError && cause.status === 404 && cause.kind === "SessionNotFound") {
+          setStaged([]);
+          setActiveId(null);
+          setBarError("This run is no longer available.");
+          void refresh();
+        } else setBarError(cause instanceof Error ? cause.message : "Could not load staging");
       });
     return () => {
       alive = false;
     };
-  }, [activeSession, revision]);
+  }, [activeSession, revision, refresh]);
 
   // Load staged (uncommitted) messages for every chat conversation, so the rail
   // can show a pending count and the dock can list what is about to be committed.
@@ -845,14 +858,14 @@ export default function Shell() {
   // Reopen the panes that were open before the last reload, once runs load.
   const restoredPanes = useRef(false);
   useEffect(() => {
-    if (restoredPanes.current || sessions.length === 0) return;
+    if (restoredPanes.current || !sessionsLoaded) return;
     restoredPanes.current = true;
     const valid = loadOpenPanes().filter((id) => sessions.some((session) => session.id === id));
     if (valid.length > 0) {
-      setOpenIds(valid);
-      setActiveId(valid[valid.length - 1]);
+      setOpenIds((current) => [...new Set([...current, ...valid])]);
+      setActiveId((current) => current ?? valid[valid.length - 1]);
     }
-  }, [sessions]);
+  }, [sessions, sessionsLoaded]);
 
   // Persist open panes so they survive a reload. Only after the restore pass, so
   // the empty initial state never clobbers the stored ids.
@@ -863,10 +876,10 @@ export default function Shell() {
 
   const deleteRun = useCallback(
     async (session: Session) => {
-      setOpenIds((current) => current.filter((id) => id !== session.id));
-      setActiveId((current) => (current === session.id ? null : current));
       try {
         await remove(session.id);
+        setOpenIds((current) => current.filter((id) => id !== session.id));
+        setActiveId((current) => (current === session.id ? null : current));
         await refreshTrash();
       } catch (cause) {
         setBarError(cause instanceof Error ? cause.message : "Could not delete run");
@@ -1108,6 +1121,7 @@ export default function Shell() {
             activePath={activePath}
             onSelect={openSession}
             onNew={startRun}
+            backendAvailable={backendAvailable}
             onDelete={(session) => void deleteRun(session)}
             onUseProject={(path) => void useProject(path)}
             onForgetProject={(path) => void forgetProject(path)}
@@ -2067,6 +2081,7 @@ export default function Shell() {
                 onLayout={setLayout}
                 workspace={workspace}
                 onNewTerminal={() => void newTerminal()}
+                backendAvailable={backendAvailable}
                 onChooseProject={() => setProjectOpen(true)}
               />
             )}
