@@ -62,19 +62,31 @@ export class PtyManager {
     if (options.input && options.input.trim()) {
       const payload = `${options.input.trim()}\r`;
       let sent = false;
+      let inputTimer: ReturnType<typeof setTimeout> | null = null;
       const send = () => {
         if (sent) return;
         sent = true;
+        if (inputTimer !== null) clearTimeout(inputTimer);
         try {
           pty.write(payload);
         } catch {
           // the process already exited
         }
       };
-      // The first output means the TUI has painted; the timer covers the case
-      // where the agent starts silently.
-      pty.onData(() => send());
-      setTimeout(send, 1500);
+      const scheduleAfterPaint = () => {
+        if (sent) return;
+        if (inputTimer !== null) clearTimeout(inputTimer);
+        // Sending on the first output can race OpenCode's prompt and silently
+        // drop the task brief. Wait for the TUI's first paint to go quiet.
+        inputTimer = setTimeout(send, 700);
+      };
+      pty.onData(scheduleAfterPaint);
+      // Slow-starting CLIs may not produce a quiet first paint; keep a bounded
+      // fallback so the task is still submitted without waiting forever.
+      inputTimer = setTimeout(send, 3000);
+      pty.onExit(() => {
+        if (inputTimer !== null) clearTimeout(inputTimer);
+      });
     }
     pty.onExit(({ exitCode }) => {
       if (this._ptys.get(options.id) === pty) this._ptys.delete(options.id);
