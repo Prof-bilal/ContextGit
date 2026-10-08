@@ -212,8 +212,11 @@ export default function ChatFeature() {
         (entry) => entry.kind === "chat" && entry.branch === name,
       );
       try {
-        if (session) await api.deleteSession(session.id);
+        // Move the branch first. If it is the current branch (or another
+        // request changed repository state), the API can reject here without
+        // leaving a deleted session pointing at a visible branch.
         await api.deleteBranch(name);
+        if (session) await api.deleteSession(session.id);
         if (chatBranch === name) setChatBranch(snapshot?.current_branch ?? "");
         await Promise.all([refreshRepo(), refresh(), refreshTrash()]);
         setBarError(null);
