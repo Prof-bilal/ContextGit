@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type SetStateAction } from "react";
 import { LuCommand, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
 import TopNav, { type PrimaryTabId, type TabDef, type TabId } from "./TopNav";
-import { IconButton, MiniSeg } from "./primitives";
+import { IconButton } from "./primitives";
 import { Dock } from "./Dock";
 import { FeatureBoundary } from "./FeatureBoundary";
 import { WorkbenchContext, type WorkbenchSlots } from "./WorkbenchContext";
@@ -23,7 +23,6 @@ const FEATURES = [
   { id: "assets", label: "Assets", title: "Asset", Controller: AssetsFeature },
 ] as const satisfies readonly (TabDef & { title: string; Controller: typeof ChatFeature })[];
 const TABS: TabDef[] = FEATURES.map(({ id, label }) => ({ id, label }));
-const MODE_OPTIONS = [{ value: "single" as const, label: "Single" }, { value: "team" as const, label: "Team" }];
 const NO_DOCK: PrimaryTabId[] = [];
 
 function initialTab(): PrimaryTabId {
@@ -73,14 +72,13 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
     };
   }, []);
   const selected = FEATURES.find(feature => feature.id === tab) ?? FEATURES[0];
-  const dockTitle = tab === "code" && shared.mode === "team" ? "Task" : selected.title;
+  const dockTitle = selected.title;
 
   return <WorkbenchContext.Provider value={{ ...shared, tab, setTab, theme, dockOpen, backendAvailable, overlayOpen, setFeatureOverlay, slots }}>
     <div className="cg-shell" data-cg-theme={theme}>
       <header className="cg-titlebar">
         <span className="cg-brand">Context<b>Git</b><small>WORKSPACE</small></span>
         <TopNav tabs={TABS} active={tab} onChange={setTab} />
-        {tab === "code" && <MiniSeg value={shared.mode} options={MODE_OPTIONS} onChange={shared.changeMode} label="Code mode" />}
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint"><LuCommand aria-hidden="true" />K</button>
         <button type="button" className="cg-theme-btn" aria-pressed={theme === "dark"} onClick={() => setTheme(value => value === "dark" ? "light" : "dark")}>
