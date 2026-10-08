@@ -24,7 +24,13 @@ from contextgit.llm.fake import FakeProvider
 from contextgit.llm.images import ImageTransport, LocalSDImages, MockImages, OpenAIImages
 from contextgit.llm.openai_compatible import OpenAICompatibleProvider
 from contextgit.llm.search import MockSearch, SearchBackend, TavilySearch
-from contextgit.llm.spec import BUILTIN_BY_ID, BUILTIN_PROVIDERS, ProviderSpec, env_var
+from contextgit.llm.spec import (
+    BUILTIN_BY_ID,
+    BUILTIN_PROVIDERS,
+    CHAT_PRESET_IDS,
+    ProviderSpec,
+    env_var,
+)
 
 _MOCK_REPLY = (
     "This is the offline mock provider: no key, no network. Add a real provider "
@@ -229,7 +235,7 @@ def all_provider_infos(
     environ: Mapping[str, str] | None = None,
     capability: ProviderCapability | None = None,
 ) -> list[ProviderInfo]:
-    """Built-in catalog (with overrides applied), then custom providers."""
+    """Curated presets, existing connections, offline adapters and custom providers."""
     infos: list[ProviderInfo] = [
         provider_info(spec, _record_for(records, spec.id), environ=environ, is_builtin=True)
         for spec in BUILTIN_PROVIDERS
@@ -240,6 +246,14 @@ def all_provider_infos(
         infos.append(
             provider_info(effective_spec(record), record, environ=environ, is_builtin=False)
         )
+    infos = [
+        info for info in infos
+        if info.capability != "chat" or info.kind == "mock"
+        or info.id in CHAT_PRESET_IDS or info.user_configured or info.has_key
+        or not info.is_builtin
+    ]
+    order = {provider_id: index for index, provider_id in enumerate(CHAT_PRESET_IDS)}
+    infos.sort(key=lambda info: order.get(info.id, len(order)))
     if capability is not None:
         infos = [info for info in infos if info.capability == capability]
     return infos

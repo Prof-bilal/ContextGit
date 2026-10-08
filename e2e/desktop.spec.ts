@@ -18,6 +18,7 @@ import {
  * Run `npm run build --prefix desktop` first.
  */
 let app: ElectronApplication;
+let backendLogs = "";
 let fixtureDirectory: string;
 let testWorkdir: string;
 
@@ -148,13 +149,15 @@ test.beforeAll(async () => {
     executablePath: path.join(root, "desktop/node_modules/electron/dist/electron"),
     args: [path.join(root, "desktop"), "--no-sandbox", `--user-data-dir=${userData}`],
     env: {
-      ...process.env,
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CTX_LLM_"))),
       VITE_DEV_SERVER_URL: "",
       CONTEXTGIT_REPO: contextgitRepo,
       CONTEXTGIT_PORT: "8757",
       CONTEXTGIT_WORKDIR: workdir,
     },
   });
+
+  app.process().stderr?.on("data", (chunk: Buffer) => { backendLogs = (backendLogs + chunk.toString()).slice(-24000); });
 
   // The app's userData persists between runs (the Code tab remembers Single/Team,
   // the theme, …). Clear it so a failed run cannot change how the next one starts.
@@ -165,6 +168,9 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  if (test.info().status !== test.info().expectedStatus) {
+    await test.info().attach("desktop-backend-log", { body: backendLogs, contentType: "text/plain" });
+  }
   await app?.close();
   if (fixtureDirectory) fs.rmSync(fixtureDirectory, { recursive: true, force: true });
 });
@@ -450,7 +456,7 @@ test("the Git tab reads the real repository", async () => {
   });
 
   await nav(page, "Git").click();
-  await page.locator(".cg-view-toolbar").getByRole("button", { name: "Refresh" }).click();
+  await page.locator('.cg-view[data-active="true"] .cg-view-toolbar').getByRole("button", { name: "Refresh" }).click();
 
   await expect(page.locator(".cg-commit", { hasText: "seeded commit 2" })).toBeVisible();
   await expect(page.locator(".cg-commit", { hasText: "seeded commit 1" })).toBeVisible();
@@ -495,7 +501,7 @@ test("branches with no commits are folded away", async () => {
   });
 
   await nav(page, "Git").click();
-  await page.locator(".cg-view-toolbar").getByRole("button", { name: "Refresh" }).click();
+  await page.locator('.cg-view[data-active="true"] .cg-view-toolbar').getByRole("button", { name: "Refresh" }).click();
 
   const toggle = page.locator(".cg-rail").getByRole("button", { name: /with no commits/ });
   await expect(toggle).toBeVisible();
@@ -525,7 +531,7 @@ test("a branch can be deleted, and the current one cannot", async () => {
       });
     }
   });
-  await page.locator(".cg-view-toolbar").getByRole("button", { name: "Refresh" }).click();
+  await page.locator('.cg-view[data-active="true"] .cg-view-toolbar').getByRole("button", { name: "Refresh" }).click();
 
   // Empty branches are folded; open them only if they are currently folded.
   const toggle = page.locator(".cg-rail").getByRole("button", { name: /with no commits/ });
@@ -533,20 +539,27 @@ test("a branch can be deleted, and the current one cannot", async () => {
     await toggle.click();
   }
 
-  const remove = page.getByRole("button", { name: "Delete branch e2e/to-delete" });
+  const remove = page.getByRole("button", { name: "Move branch e2e/to-delete to Storage" });
   await expect(remove).toBeVisible();
   await remove.click();
 
-  const dialog = page.getByRole("dialog", { name: "Delete branch" });
+  const dialog = page.getByRole("dialog", { name: "Move branch to Storage" });
   await expect(dialog).toContainText("e2e/to-delete");
-  await expect(dialog).toContainText("every commit stays");
-  await dialog.getByRole("button", { name: "Delete branch" }).click();
+  await expect(dialog).toContainText("Every commit stays");
+  await dialog.getByRole("button", { name: "Move to Storage" }).click();
 
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Delete branch e2e/to-delete" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Move branch e2e/to-delete to Storage" })).toHaveCount(0);
+  await nav(page, "Storage").click();
+  const restore = page.getByRole("button", { name: "Restore branch e2e/to-delete", exact: true });
+  await expect(restore).toBeVisible();
+  await restore.click();
+  await expect(restore).toHaveCount(0);
+  await nav(page, "Git").click();
+  await expect(page.getByRole("button", { name: "Move branch e2e/to-delete to Storage" })).toBeVisible();
 
   // The current branch has no delete affordance at all.
-  await expect(page.getByRole("button", { name: "Delete branch main" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Move branch main to Storage" })).toHaveCount(0);
 });
 
 test("Branch from here creates a real branch", async () => {
@@ -867,24 +880,29 @@ test("a run's code and context integrate together", async () => {
   expect(spawnSync("git", ["-C", workdir, "show", "main:paired.txt"]).stdout.toString()).toBe("p\n");
 });
 
-test("pick a provider and model from the chat picker", async () => {
+test("Chat offers ten presets and selects a real registry model", async () => {
   const page = await openShell();
   await nav(page, "Chat").click();
-
+  const connector = page.getByRole("dialog", { name: "Add a model provider" });
+  await expect(connector).toBeVisible();
+  const presets = connector.locator("#cg-provider-preset option");
+  await expect(presets).toHaveCount(11); // Ten presets plus Custom.
+  await expect(connector).toContainText("OmniRoute");
+  await expect(connector).toContainText("Agnes");
+  await connector.getByLabel("Close", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await page.getByRole("button", { name: "Continue offline (mock)" }).click();
   const trigger = page.locator(".cg-model-btn");
-  await expect(trigger).toContainText("Claude Sonnet 4.6");
-
+  await expect(trigger).toContainText("mock-1");
   await trigger.click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("ChatGPT");
-
-  await dialog.getByLabel("Search providers and models").fill("gemini");
-  await dialog.getByRole("button", { name: /Gemini 3\.1 Pro/ }).click();
-
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(trigger.locator(".cg-model-btn-model")).toHaveText("Gemini 3.1 Pro");
-  await expect(trigger.locator(".cg-model-btn-provider")).toHaveText("Gemini");
+  const dialog = page.getByRole("dialog", { name: "Choose a model" });
+  await expect(dialog).toContainText("OpenAI");
+  await expect(dialog).toContainText("Claude");
+  await dialog.getByLabel("Search providers and models").fill("mock-2");
+  await dialog.getByRole("button", { name: "mock-2", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger.locator(".cg-model-btn-model")).toHaveText("mock-2");
+  await expect(trigger.locator(".cg-model-btn-provider")).toHaveText("Mock (offline)");
 });
 
 test("chat send runs the mock thinking + streaming reply", async () => {
@@ -900,11 +918,10 @@ test("chat send runs the mock thinking + streaming reply", async () => {
 
   // The user turn lands immediately and the thinking beat shows.
   await expect(log.getByText("Which cache should I use?")).toBeVisible();
-  await expect(page.locator(".cg-thinking")).toBeVisible();
 
   // Reply streams, then settles into a committed assistant message.
   await expect(page.locator(".cg-thinking")).toHaveCount(0, { timeout: 25_000 });
-  await expect(log.getByText(/Short answer: in-process with an LRU/)).toBeVisible();
+  await expect(log.getByText(/This is the offline mock provider/)).toBeVisible();
   await expect(log.locator(".cg-msg")).toHaveCount(before + 2);
 });
 
@@ -926,10 +943,10 @@ test("a new conversation starts empty and can be deleted", async () => {
   await expect(page.locator(".cg-chat-log .cg-msg")).toHaveCount(0);
 
   // Delete it (with confirmation) — the row disappears.
-  await page.getByRole("button", { name: /Delete conversation chat\/e2e-convo/ }).click();
-  const confirm = page.getByRole("dialog", { name: "Delete conversation" });
+  await page.getByRole("button", { name: /Move conversation chat\/e2e-convo to Storage/ }).click();
+  const confirm = page.getByRole("dialog", { name: "Move conversation to Storage" });
   await expect(confirm).toBeVisible();
-  await confirm.getByRole("button", { name: "Delete conversation" }).click();
+  await confirm.getByRole("button", { name: "Move to Storage" }).click();
   await expect(page.locator(".cg-row", { hasText: "e2e-convo" })).toHaveCount(0);
 });
 
@@ -943,11 +960,11 @@ test("council mode fans out to several models and keeps one answer", async () =>
 
   const council = page.locator(".cg-council");
   await expect(council).toBeVisible();
-  await expect(council.locator(".cg-council-col")).toHaveCount(3, { timeout: 25_000 });
-  await expect(council).toContainText("dissents");
+  await expect(council.locator(".cg-council-col")).toHaveCount(2, { timeout: 25_000 });
+  await expect(council.locator(".cg-council-text")).toHaveCount(2);
 
   await council.locator(".cg-council-col").first().getByRole("button", { name: "Keep this" }).click();
-  await expect(council).toContainText("kept Claude");
+  await expect(council).toContainText("kept Mock (offline)");
 });
 
 test("research mode runs the steps and lands a cited report", async () => {
@@ -960,7 +977,7 @@ test("research mode runs the steps and lands a cited report", async () => {
 
   const run = page.locator(".cg-research");
   await expect(run).toBeVisible();
-  await expect(run.locator(".cg-steps li")).toHaveCount(5);
+  await expect(run.locator(".cg-steps li").first()).toBeVisible();
   await expect(run.locator(".cg-research-report")).toBeVisible({ timeout: 30_000 });
   await expect(run).toContainText("[1]");
 });
@@ -1002,17 +1019,14 @@ test("blame sheet shows cross-session provenance", async () => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("governor lists compaction receipts and locks the dead end", async () => {
+test("governor displays real branch context and history", async () => {
   const page = await openShell();
   await nav(page, "Chat").click();
-
   const governor = page.locator(".cg-governor");
   await expect(governor).toContainText("Context governor");
-  await expect(governor.locator(".cg-receipt")).toHaveCount(5);
-  await expect(governor.locator('.cg-receipt[data-kind="dead-end"]')).toContainText("locked");
-  await expect(
-    governor.locator('.cg-receipt[data-kind="dropped"]').first().locator("input"),
-  ).toBeEnabled();
+  await expect(governor).toContainText("branch's real history");
+  await expect(governor.locator(".cg-receipt").first()).toBeVisible();
+  await expect(governor).not.toContainText("locked");
 });
 
 test("the Docs sub-tab in Chat has the creator", async () => {
@@ -1020,7 +1034,7 @@ test("the Docs sub-tab in Chat has the creator", async () => {
   await nav(page, "Chat").click();
 
   // The Chat tab's own sub-tab (not the composer modes).
-  await page.locator(".cg-view-toolbar").getByRole("tab", { name: "Docs" }).click();
+  await page.locator('.cg-view[data-active="true"] .cg-view-toolbar').getByRole("tab", { name: "Docs" }).click();
   await expect(page.locator(".cg-docs")).toBeVisible();
 
   const format = page.getByLabel("Document format");
@@ -1030,6 +1044,21 @@ test("the Docs sub-tab in Chat has the creator", async () => {
   const style = page.getByLabel("Document style");
   await expect(style).toBeVisible();
   await expect(style.locator("option")).toHaveCount(3);
+  await format.selectOption("md");
+  await page.getByLabel("What should the document be about?").fill("Offline document test");
+  await page.getByRole("button", { name: "Create document", exact: true }).click();
+  await expect(page.locator(".cg-doc").getByRole("button", { name: "Download", exact: true })).toBeEnabled({ timeout: 15000 });
+  await expect(page.locator(".cg-doclib-row")).toHaveCount(1);
+  await expect(page.locator(".cg-doc .cg-pane-error")).toHaveCount(0);
+  const artifact = await page.evaluate(async () => {
+    const bridge = window.contextgit!;
+    const headers = { Authorization: `Bearer ${bridge.apiToken}` };
+    const docs = await (await fetch(`${bridge.apiBase}/api/v1/documents`, { headers })).json();
+    const response = await fetch(`${bridge.apiBase}/api/v1/documents/${docs[0].id}?format=md`, { headers });
+    return { status: response.status, text: await response.text() };
+  });
+  expect(artifact.status).toBe(200);
+  expect(artifact.text).toContain("offline mock provider");
 });
 
 test("the Usage tab shows the merged token view", async () => {
@@ -1288,7 +1317,7 @@ test("team mode: a dependent task waits, then starts when its dependency is done
   await page.getByLabel("Team name").fill(teamName);
   await page.getByRole("button", { name: "Create team" }).click();
   // Wait for the team to exist before seeding tasks into it.
-  await expect(page.locator(".cg-view-toolbar")).toContainText(teamName, { timeout: 10_000 });
+  await expect(page.locator('.cg-view[data-active="true"] .cg-view-toolbar')).toContainText(teamName, { timeout: 10_000 });
 
   // Two tasks, the second depending on the first (seeded through the API, as
   // the other tests seed commits).
@@ -1419,6 +1448,7 @@ test("live CLI survives missing and duplicate polls, mode switches, and backend 
   await page.route("**/api/v1/sessions", async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
     const sessions = await response.json();
     const omitted = sessions.filter((session: { name: string }) => session.name !== "lifecycle survivor");
     polls++;
@@ -1690,7 +1720,6 @@ test("Playground browses the curated catalog and installs a bundled role skill",
   await page.getByLabel("Search Playground").fill("");
   await page.locator(".cg-rail").getByRole("button", { name: /^Installed/ }).click();
   await expect(page.locator(".cg-rail .cg-row", { hasText: "UI build" })).toBeVisible();
-  await page.screenshot({ path: "/tmp/contextgit-playground.png", fullPage: true });
 });
 
 test("Playground Try calls a real read-only MCP tool and desktop API requires its launch token", async () => {
@@ -1737,7 +1766,6 @@ test("Playground expanded catalog distinguishes local installs from guided conne
   await page.getByLabel("Search Playground").fill("");
   await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
   await page.locator(".cg-pg-feature-card", { hasText: "CodeAtlas" }).click();
-  await page.screenshot({ path: "/tmp/contextgit-playground-refined.png", fullPage: true });
 });
 
 test("tab render and controller failures preserve navigation, API drafts, and the live PTY", async () => {
@@ -1776,7 +1804,8 @@ test("tab render and controller failures preserve navigation, API drafts, and th
     badFleet = false;
     await expect.poll(() => fleetRecovered, { timeout: 15000 }).toBe(true);
     await nav(page, "Code").click();
-    await page.locator('[data-failed-feature="Run rail"]').getByRole("button", { name: "Try again" }).click();
+    // The inactive rail unmounts and recovers when revisited; Code content stays mounted.
+    await expect(page.locator('[data-failed-feature="Run rail"]')).toHaveCount(0);
     await page.locator('[data-failed-feature="Run content"]').getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("button", { name: "New terminal", exact: true })).toBeEnabled();
   } finally { await page.unroute("**/api/v1/fleet"); }

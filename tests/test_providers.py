@@ -39,6 +39,18 @@ def test_builtin_catalog_states() -> None:
     assert infos["openrouter"].kind == "gateway"
 
 
+def test_chat_catalog_has_ten_presets_and_keeps_existing_connections() -> None:
+    from contextgit.llm.spec import CHAT_PRESET_IDS
+
+    fresh = all_provider_infos([], environ={}, capability="chat")
+    assert [info.id for info in fresh if info.kind != "mock"] == list(CHAT_PRESET_IDS)
+    saved = ProviderRecord(id="together", label="Together", base_url="https://api.together.xyz/v1")
+    connected = all_provider_infos([saved], environ={"CTX_LLM_FIREWORKS_API_KEY": "test-key"}, capability="chat")
+    assert {"together", "fireworks", "mock"} <= {info.id for info in connected}
+    assert "hyperbolic" not in {info.id for info in connected}
+    assert resolve_provider("hyperbolic", [], {}).spec.id == "hyperbolic"
+
+
 def test_env_fallback_configures_a_provider() -> None:
     infos = {info.id: info for info in all_provider_infos([], {"CTX_LLM_GROQ_API_KEY": "sk-live"})}
     assert infos["groq"].configured
@@ -337,5 +349,4 @@ def test_asset_agent_parser_drops_unknown_actions() -> None:
 
     text = '```json\n{"actions":[{"type":"rename","id":"a","name":"x"},{"type":"bogus"}]}\n```'
     assert parse_actions(text) == [{"type": "rename", "id": "a", "name": "x"}]
-
 

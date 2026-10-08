@@ -391,6 +391,13 @@ BUILTIN_PROVIDERS: list[ProviderSpec] = [
 
 BUILTIN_BY_ID: dict[str, ProviderSpec] = {spec.id: spec for spec in BUILTIN_PROVIDERS}
 
+# The small catalog offered on a fresh install. Other built-ins remain resolvable
+# so saved connections and existing conversations continue to work.
+CHAT_PRESET_IDS = (
+    "openrouter", "openai", "anthropic", "omniroute", "agnes",
+    "gemini", "groq", "deepseek", "mistral", "ollama",
+)
+
 
 def env_var(provider_id: str, suffix: str) -> str:
     """`CTX_LLM_<PROVIDER>_<SUFFIX>`, e.g. CTX_LLM_GROQ_API_KEY."""
