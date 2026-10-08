@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, type WhyAnswer, type WhyFinding } from "@/lib/api";
 
-import type { ProviderChoice } from "../endpoints/useEndpoints";
+export interface ProviderChoice {
+  providerId: string;
+  modelId: string;
+}
 
 export interface WhyRequest {
   path: string;

@@ -58,17 +58,6 @@ contextBridge.exposeInMainWorld("contextgit", {
     return () => ipcRenderer.removeListener("ctx:harness-progress", listener);
   },
   // ---------- Project folders (remembered projects + active) ----------
-  playgroundInstalled: () => ipcRenderer.invoke("ctx:playground-installed") as Promise<import("../shared/playground").PlaygroundInstalled[]>,
-  playgroundPreview: (id: string) => ipcRenderer.invoke("ctx:playground-preview", id) as Promise<import("../shared/playground").PlaygroundPreview>,
-  playgroundInstall: (token: string) => ipcRenderer.invoke("ctx:playground-install", token) as Promise<void>,
-  playgroundCancel: (id: string) => ipcRenderer.invoke("ctx:playground-cancel", id) as Promise<void>,
-  playgroundTry: (id: string, tool: string, input: Record<string, unknown>) => ipcRenderer.invoke("ctx:playground-try", id, tool, input) as Promise<import("../shared/playground").PlaygroundTryResult>,
-  playgroundDocs: (id: string) => ipcRenderer.invoke("ctx:playground-docs", id) as Promise<void>,
-  onPlaygroundProgress: (callback: (event: import("../shared/playground").PlaygroundEvent) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, event: import("../shared/playground").PlaygroundEvent) => callback(event);
-    ipcRenderer.on("ctx:playground-progress", listener);
-    return () => ipcRenderer.removeListener("ctx:playground-progress", listener);
-  },
   getWorkspace: () => ipcRenderer.invoke("ctx:workspace-get") as Promise<Workspace | null>,
   listProjects: () => ipcRenderer.invoke("ctx:projects-list") as Promise<Workspace[]>,
   useProject: (target: string) =>
@@ -145,20 +134,6 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.invoke("ctx:editor-start") as Promise<import("../shared/editor").EditorStartResult>,
   editorStop: () =>
     ipcRenderer.invoke("ctx:editor-stop") as Promise<import("../shared/editor").EditorStatus>,
-  // ---------- DB tab (embedded DbGate sidecar) ----------
-  dbgateStatus: () =>
-    ipcRenderer.invoke("ctx:dbgate-status") as Promise<import("../shared/dbgate").DbGateStatus>,
-  dbgateStart: () =>
-    ipcRenderer.invoke("ctx:dbgate-start") as Promise<import("../shared/dbgate").DbGateStartResult>,
-  dbgateStop: () =>
-    ipcRenderer.invoke("ctx:dbgate-stop") as Promise<import("../shared/dbgate").DbGateStatus>,
-  // ---------- API tab (embedded Restfox sidecar) ----------
-  restfoxStatus: () =>
-    ipcRenderer.invoke("ctx:restfox-status") as Promise<import("../shared/restfox").RestfoxStatus>,
-  restfoxStart: () =>
-    ipcRenderer.invoke("ctx:restfox-start") as Promise<import("../shared/restfox").RestfoxStartResult>,
-  restfoxStop: () =>
-    ipcRenderer.invoke("ctx:restfox-stop") as Promise<import("../shared/restfox").RestfoxStatus>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

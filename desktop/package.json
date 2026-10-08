@@ -6,7 +6,6 @@
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "test:playground": "node scripts/test-playground.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:mock": "vite",
     "typecheck": "tsc --noEmit",
@@ -16,8 +15,6 @@
     "build:extension": "node scripts/build-extension.mjs",
     "build:backend": "bash scripts/build-backend.sh",
     "fetch:editor": "node scripts/fetch-editor.mjs",
-    "fetch:dbgate": "node scripts/fetch-dbgate.mjs",
-    "fetch:restfox": "node scripts/fetch-restfox.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
     "test:lifecycle": "node scripts/test-lifecycle.mjs",
@@ -28,7 +25,6 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.12.0",
-    "monaco-editor": "^0.57.0",
     "node-pty": "^1.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -61,14 +57,6 @@
       {
         "from": "build/editor",
         "to": "editor"
-      },
-      {
-        "from": "build/dbgate",
-        "to": "dbgate"
-      },
-      {
-        "from": "build/restfox",
-        "to": "restfox"
       },
       {
         "from": "build/extension",

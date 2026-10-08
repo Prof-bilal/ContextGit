@@ -28,11 +28,8 @@ import type { Workspace } from "../shared/workspace";
 import { AssetLibrary } from "./library";
 import { ViewManager } from "./viewmanager";
 import { EditorSidecar } from "./editor";
-import { DbGateSidecar } from "./dbgate";
-import { RestfoxSidecar } from "./restfox";
 import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
-import { Playground } from "./playground";
 
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(app.getAppPath(), "..");
@@ -612,64 +609,6 @@ ipcMain.handle("ctx:editor-stop", () => {
   return editor().status();
 });
 
-// ---------- DB tab (embedded DbGate sidecar) ----------
-
-/** The dbgate-serve entry: bundled under resources (packaged) or build/dbgate (dev). */
-function resolveDbGateEntry(): string | null {
-  const root = isDev
-    ? path.join(app.getAppPath(), "build", "dbgate")
-    : path.join(process.resourcesPath, "dbgate");
-  const entry = path.join(root, "node_modules", "dbgate-serve", "bin", "dbgate-serve.js");
-  return fs.existsSync(entry) ? entry : null;
-}
-
-let dbgateSidecar: DbGateSidecar | null = null;
-
-function dbgate(): DbGateSidecar {
-  if (!dbgateSidecar) {
-    dbgateSidecar = new DbGateSidecar(
-      resolveDbGateEntry,
-      path.join(app.getPath("userData"), "dbgate"),
-      process.execPath,
-    );
-  }
-  return dbgateSidecar;
-}
-
-ipcMain.handle("ctx:dbgate-status", () => dbgate().status());
-ipcMain.handle("ctx:dbgate-start", () => dbgate().start());
-ipcMain.handle("ctx:dbgate-stop", () => {
-  dbgate().stop();
-  return dbgate().status();
-});
-
-// ---------- API tab (embedded Restfox sidecar) ----------
-
-/** The Restfox web-standalone entry: bundled (packaged) or build/restfox (dev). */
-function resolveRestfoxEntry(): string | null {
-  const root = isDev
-    ? path.join(app.getAppPath(), "build", "restfox")
-    : path.join(process.resourcesPath, "restfox");
-  const entry = path.join(root, "packages", "web-standalone", "app.js");
-  return fs.existsSync(entry) ? entry : null;
-}
-
-let restfoxSidecar: RestfoxSidecar | null = null;
-
-function restfox(): RestfoxSidecar {
-  if (!restfoxSidecar) {
-    restfoxSidecar = new RestfoxSidecar(resolveRestfoxEntry, process.execPath);
-  }
-  return restfoxSidecar;
-}
-
-ipcMain.handle("ctx:restfox-status", () => restfox().status());
-ipcMain.handle("ctx:restfox-start", () => restfox().start());
-ipcMain.handle("ctx:restfox-stop", () => {
-  restfox().stop();
-  return restfox().status();
-});
-
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 let usageManager: UsageManager | null = null;
@@ -795,47 +734,6 @@ ipcMain.handle("ctx:harness-install", (_event, id: string) => {
 
 ipcMain.on("ctx:harness-cancel", (_event, id: string) => cancelInstall(id));
 
-// Playground uses native IPC, never an unauthenticated HTTP install endpoint.
-let playgroundStore: Promise<Playground> | null = null;
-async function playground(): Promise<Playground> {
-  if (playgroundStore) return playgroundStore;
-  playgroundStore = (async () => {
-    const localMcp = path.join(repoRoot, ".venv", "bin", "contextgit-mcp");
-    const command = isDev && fs.existsSync(localMcp) ? localMcp : await import("./harness").then((module) => module.findCommand("contextgit-mcp"));
-    return new Playground(
-      path.join(app.getPath("userData"), "playground"),
-      () => currentWorkspace()?.path ?? null, backendRepo, command,
-      (event) => mainWindow?.webContents.send("ctx:playground-progress", event),
-    );
-  })();
-  return playgroundStore;
-}
-function requirePlaygroundSender(event: Electron.IpcMainInvokeEvent): void {
-  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
-    throw new Error("Playground is only available to the desktop workspace.");
-  }
-}
-ipcMain.handle("ctx:playground-installed", async (event) => {
-  requirePlaygroundSender(event); return (await playground()).installed();
-});
-ipcMain.handle("ctx:playground-preview", async (event, id: string) => {
-  requirePlaygroundSender(event); return (await playground()).preview(id);
-});
-ipcMain.handle("ctx:playground-install", async (event, token: string) => {
-  requirePlaygroundSender(event); await (await playground()).install(token);
-});
-ipcMain.handle("ctx:playground-cancel", async (event, id: string) => {
-  requirePlaygroundSender(event); (await playground()).cancel(id);
-});
-ipcMain.handle("ctx:playground-try", async (event, id: string, tool: string, input: Record<string, unknown>) => {
-  requirePlaygroundSender(event); return (await playground()).tryItem(id, tool, input);
-});
-ipcMain.handle("ctx:playground-docs", async (event, id: string) => {
-  requirePlaygroundSender(event);
-  const { playgroundItem } = await import("../shared/playground");
-  await shell.openExternal(playgroundItem(id).docsUrl);
-});
-
 ipcMain.handle("ctx:restart-backend", async () => {
   await backendRestart.run(async () => {
     setStatus({ state: "starting" });
@@ -919,8 +817,6 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   views().destroyAll();
   editor().stop();
-  dbgate().stop();
-  restfox().stop();
   pendingPtyStarts.clear();
   usageManager?.stop();
   ptys.killAll();
@@ -931,8 +827,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   views().destroyAll();
   editor().stop();
-  dbgate().stop();
-  restfox().stop();
   pendingPtyStarts.clear();
   usageManager?.stop();
   ptys.killAll();

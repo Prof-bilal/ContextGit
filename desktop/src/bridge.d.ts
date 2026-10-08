@@ -2,13 +2,6 @@
 export interface ContextGitBridge {
   apiBase: string;
   apiToken: string;
-  playgroundInstalled: () => Promise<import("../shared/playground").PlaygroundInstalled[]>;
-  playgroundPreview: (id: string) => Promise<import("../shared/playground").PlaygroundPreview>;
-  playgroundInstall: (token: string) => Promise<void>;
-  playgroundCancel: (id: string) => Promise<void>;
-  playgroundTry: (id: string, tool: string, input: Record<string, unknown>) => Promise<import("../shared/playground").PlaygroundTryResult>;
-  playgroundDocs: (id: string) => Promise<void>;
-  onPlaygroundProgress: (callback: (event: import("../shared/playground").PlaygroundEvent) => void) => () => void;
   getStatus: () => { status: import("../shared/status").BackendStatus; apiBase: string };
   restartBackend: () => Promise<{ status: import("../shared/status").BackendStatus; apiBase: string }>;
   onStatus: (callback: (status: import("../shared/status").BackendStatus) => void) => () => void;
@@ -81,14 +74,6 @@ export interface ContextGitBridge {
   editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
   editorStart: () => Promise<import("../shared/editor").EditorStartResult>;
   editorStop: () => Promise<import("../shared/editor").EditorStatus>;
-  /** DB tab: the embedded DbGate sidecar. */
-  dbgateStatus: () => Promise<import("../shared/dbgate").DbGateStatus>;
-  dbgateStart: () => Promise<import("../shared/dbgate").DbGateStartResult>;
-  dbgateStop: () => Promise<import("../shared/dbgate").DbGateStatus>;
-  /** API tab: the embedded Restfox sidecar. */
-  restfoxStatus: () => Promise<import("../shared/restfox").RestfoxStatus>;
-  restfoxStart: () => Promise<import("../shared/restfox").RestfoxStartResult>;
-  restfoxStop: () => Promise<import("../shared/restfox").RestfoxStatus>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }
