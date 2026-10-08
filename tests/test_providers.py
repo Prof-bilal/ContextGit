@@ -79,13 +79,13 @@ def test_stored_key_wins_over_env_and_is_hinted() -> None:
     resolved = resolve_provider("groq", [record], {"CTX_LLM_GROQ_API_KEY": "sk-env"})
     assert resolved.api_key == "sk-row-secret-1234"
     infos = {info.id: info for info in all_provider_infos([record])}
-    assert infos["groq"].key_hint == "sk-…1234"
+    assert infos["groq"].key_hint == "••••"
 
 
 def test_key_hint_shapes() -> None:
     assert key_hint(None) is None
     assert key_hint("tiny") == "••••"
-    assert key_hint("sk-abcdefghijklmnop") == "sk-…mnop"
+    assert key_hint("sk-abcdefghijklmnop") == "••••"
 
 
 def test_keyless_provider_does_not_inherit_the_global_env_key(
@@ -129,7 +129,7 @@ def test_provider_flow_add_test_models_delete(tmp_path: Path) -> None:
     assert added.status_code == 201
     body = added.json()
     assert body["has_key"] is True
-    assert body["key_hint"] == "sk-…ue-9"
+    assert body["key_hint"] == "••••"
     assert "sk-secret-value-9" not in added.text  # the key never comes back
 
     tested = client.post("/api/v1/providers/mock/test")
@@ -363,4 +363,3 @@ def test_asset_agent_parser_drops_unknown_actions() -> None:
 
     text = '```json\n{"actions":[{"type":"rename","id":"a","name":"x"},{"type":"bogus"}]}\n```'
     assert parse_actions(text) == [{"type": "rename", "id": "a", "name": "x"}]
-

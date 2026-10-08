@@ -32,7 +32,7 @@ class ConnectionStore:
         self._dir = Path(root) / "db"
 
     def _path(self, name: str) -> Path:
-        if not _NAME.match(name or ""):
+        if not _NAME.fullmatch(name or ""):
             raise DbError("invalid connection name (letters, digits, . _ - and spaces only)")
         return self._dir / f"{name}.json"
 

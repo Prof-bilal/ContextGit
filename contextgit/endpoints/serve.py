@@ -359,6 +359,9 @@ class ServerSupervisor:
             self._stop_locked()
             self._log.clear()
             self._error = None
+            self._fatal = None
+            self._announced_port = None
+            self._healthy = False
             detected = detect_run_command(root)
             chosen = command or (detected.command if detected else None)
             if not chosen:

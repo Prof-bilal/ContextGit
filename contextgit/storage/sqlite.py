@@ -159,10 +159,21 @@ class SqliteStorage:
         # FastAPI handlers and TestClient can execute requests on a different
         # thread, so the connection is shared and every statement runs under the
         # guard's lock. (SQLite itself does not serialize statements for us.)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         raw = sqlite3.connect(self._db_path, check_same_thread=False)
         raw.row_factory = sqlite3.Row
         self._conn = _GuardedConnection(raw)
         self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA synchronous = NORMAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
+        # Provider credentials live in this database. Enforce private file
+        # permissions both for new repositories and existing databases.
+        try:
+            self._db_path.chmod(0o600)
+        except OSError:
+            # Read-only filesystems can still be opened and reported normally.
+            pass
 
     def close(self) -> None:
         self._conn.close()
@@ -220,6 +231,44 @@ class SqliteStorage:
                     " (commit_id, seq, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
                     (commit.id, seq, msg.role, msg.content, msg.created_at.isoformat()),
                 )
+
+    def append_commit(self, name: str, commit: Commit, expected_head_id: str) -> None:
+        """Insert a commit and advance its branch atomically with a CAS."""
+        from contextgit.core.errors import StaleMergePreview
+
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO commits"
+                " (id, parent_ids, kind, model, summary, token_count, author, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    commit.id,
+                    json.dumps(commit.parent_ids),
+                    commit.kind,
+                    commit.model,
+                    commit.summary,
+                    commit.token_count,
+                    commit.author,
+                    commit.created_at.isoformat(),
+                ),
+            )
+            for seq, msg in enumerate(commit.messages):
+                self._conn.execute(
+                    "INSERT INTO messages"
+                    " (commit_id, seq, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (commit.id, seq, msg.role, msg.content, msg.created_at.isoformat()),
+                )
+            updated = self._conn.execute(
+                "UPDATE branches SET head_commit_id = ? "
+                "WHERE name = ? AND head_commit_id = ?",
+                (commit.id, name, expected_head_id),
+            )
+            if updated.rowcount == 0:
+                if self._conn.execute(
+                    "SELECT 1 FROM branches WHERE name = ?", (name,)
+                ).fetchone() is not None:
+                    raise StaleMergePreview(f"branch '{name}' moved while it was being updated")
+                raise BranchNotFound(f"branch '{name}' not found")
 
     def get_commit(self, commit_id: str) -> Commit:
         row = self._conn.execute("SELECT * FROM commits WHERE id = ?", (commit_id,)).fetchone()
@@ -309,12 +358,28 @@ class SqliteStorage:
         ).fetchone()
         return row is not None and row["deleted_at"] is not None
 
-    def update_branch_head(self, name: str, head_commit_id: str) -> None:
+    def update_branch_head(
+        self, name: str, head_commit_id: str, expected_head_id: str | None = None
+    ) -> None:
         with self._conn:
-            cur = self._conn.execute(
-                "UPDATE branches SET head_commit_id = ? WHERE name = ?", (head_commit_id, name)
-            )
+            if expected_head_id is None:
+                cur = self._conn.execute(
+                    "UPDATE branches SET head_commit_id = ? WHERE name = ?",
+                    (head_commit_id, name),
+                )
+            else:
+                cur = self._conn.execute(
+                    "UPDATE branches SET head_commit_id = ? "
+                    "WHERE name = ? AND head_commit_id = ?",
+                    (head_commit_id, name, expected_head_id),
+                )
             if cur.rowcount == 0:
+                if expected_head_id is not None and self._conn.execute(
+                    "SELECT 1 FROM branches WHERE name = ?", (name,)
+                ).fetchone() is not None:
+                    from contextgit.core.errors import StaleMergePreview
+
+                    raise StaleMergePreview(f"branch '{name}' moved while it was being updated")
                 raise BranchNotFound(f"branch '{name}' not found")
 
     def delete_branch(self, name: str) -> None:

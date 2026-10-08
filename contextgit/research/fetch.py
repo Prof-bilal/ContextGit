@@ -6,9 +6,11 @@ limit, not a silent failure — the caller simply gets less text.
 """
 
 import asyncio
+import ipaddress
+import socket
 import time
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -104,28 +106,41 @@ class Fetcher:
     async def fetch(self, url: str) -> FetchedPage | None:
         if url in self._cache:
             return self._cache[url]
-        domain = urlparse(url).netloc
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-                if not await self._allowed(client, url):
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+                current = url
+                for _ in range(6):
+                    if not await _safe_url(current):
+                        return None
+                    if not await self._allowed(client, current):
+                        return None
+                    domain = urlparse(current).netloc
+                    wait = self.domain_delay - (time.monotonic() - self._last.get(domain, 0.0))
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    response = await client.get(
+                        current, headers={"User-Agent": _USER_AGENT, "Accept": "text/html,*/*"}
+                    )
+                    self._last[domain] = time.monotonic()
+                    if response.is_redirect:
+                        location = response.headers.get("location")
+                        if not location:
+                            return None
+                        current = urljoin(current, location)
+                        continue
+                    response.raise_for_status()
+                    if "text" not in response.headers.get("content-type", "") and "html" not in (
+                        response.headers.get("content-type", "")
+                    ):
+                        return None
+                    html = response.text[: self.max_bytes]
+                    break
+                else:
                     return None
-                wait = self.domain_delay - (time.monotonic() - self._last.get(domain, 0.0))
-                if wait > 0:
-                    await asyncio.sleep(wait)
-                response = await client.get(
-                    url, headers={"User-Agent": _USER_AGENT, "Accept": "text/html,*/*"}
-                )
-                self._last[domain] = time.monotonic()
-                response.raise_for_status()
-                if "text" not in response.headers.get("content-type", "") and "html" not in (
-                    response.headers.get("content-type", "")
-                ):
-                    return None
-                html = response.text[: self.max_bytes]
         except Exception:
             return None
         title, text = extract(html)
-        page = FetchedPage(url=url, title=title or url, text=text[: self.max_chars])
+        page = FetchedPage(url=current, title=title or current, text=text[: self.max_chars])
         self._cache[url] = page
         return page
 
@@ -148,3 +163,31 @@ class Fetcher:
             self._robots[origin] = robots
         rules = self._robots[origin]
         return True if rules is None else rules.can_fetch(_USER_AGENT, url)
+
+
+async def _safe_url(url: str) -> bool:
+    """Reject local and link-local destinations before every request/redirect."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    try:
+        infos = await asyncio.to_thread(
+            socket.getaddrinfo,
+            parsed.hostname,
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        )
+    except OSError:
+        return False
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_unspecified
+            or address.is_reserved
+            or address.is_multicast
+        ):
+            return False
+    return True

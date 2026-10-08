@@ -144,7 +144,7 @@ from contextgit.documents import (
     save,
 )
 from contextgit.endpoints.provenance import graph_with_provenance
-from contextgit.endpoints.serve import fetch_live_openapi, supervisor
+from contextgit.endpoints.serve import detect_run_command, fetch_live_openapi, supervisor
 from contextgit.endpoints.staleness import annotate
 from contextgit.endpoints.tests import (
     generate_for_endpoint,
@@ -174,6 +174,7 @@ from contextgit.llm import (
 from contextgit.llm.base import UsageSink
 from contextgit.research import Fetcher, ResearchStore, extract_claims, run_research
 from contextgit.verify.bisect import bisect_gate, oldest_commit
+from contextgit.verify.detect import detect_gate
 
 # Content types for a rendered document download.
 _DOCUMENT_MEDIA: dict[str, str] = {
@@ -189,6 +190,7 @@ def create_app(
     *,
     repo: Repo | None = None,
     provider: LLMProvider | None = None,
+    api_token: str | None = None,
 ) -> FastAPI:
     """Create the local API, optionally injecting a repo and deterministic provider."""
     env_repo = os.getenv("CONTEXTGIT_REPO")
@@ -223,15 +225,15 @@ def create_app(
 
     # Electron supplies a fresh token on each launch. Standalone API deployments
     # may opt in with the same environment variable; tests remain injectable.
-    api_token = os.getenv("CONTEXTGIT_API_TOKEN")
+    launch_token = api_token if api_token is not None else os.getenv("CONTEXTGIT_API_TOKEN")
 
     @app.middleware("http")
     async def require_launch_token(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if api_token and request.method != "OPTIONS" and request.url.path != "/api/v1/health":
+        if launch_token and request.method != "OPTIONS" and request.url.path != "/api/v1/health":
             supplied = request.headers.get("Authorization", "")
-            if not secrets.compare_digest(supplied, f"Bearer {api_token}"):
+            if not secrets.compare_digest(supplied, f"Bearer {launch_token}"):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
@@ -561,6 +563,13 @@ def create_app(
 
     @app.post("/api/v1/team", status_code=201)
     def create_team(body: TeamCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        if body.gate_command is not None:
+            detected_gate = detect_gate(Path(body.project_path).expanduser())
+            if body.gate_command != detected_gate:
+                raise HTTPException(
+                    status_code=400,
+                    detail="gate_command must match the project's detected quality gate",
+                )
         team = current.create_team(
             body.name, project_path=body.project_path, base_ref=body.base_ref
         )
@@ -577,6 +586,12 @@ def create_app(
         team = current.current_team()
         if team is None:
             raise TeamNotFound("no team yet")
+        detected_gate = detect_gate(Path(team.project_path).expanduser())
+        if body.gate_command != detected_gate:
+            raise HTTPException(
+                status_code=400,
+                detail="gate_command must match the project's detected quality gate",
+            )
         return current.set_team_gate(team.id, body.gate_command).model_dump(mode="json")
 
     @app.post("/api/v1/team/tasks", status_code=201)
@@ -584,6 +599,13 @@ def create_app(
         team = current.current_team()
         if team is None:
             raise TeamNotFound("create a team first")
+        if body.gate_command is not None:
+            detected_gate = detect_gate(Path(team.project_path).expanduser())
+            if body.gate_command != detected_gate:
+                raise HTTPException(
+                    status_code=400,
+                    detail="gate_command must match the project's detected quality gate",
+                )
         task = current.create_task(
             team.id,
             title=body.title,
@@ -602,6 +624,15 @@ def create_app(
     def update_task(
         task_id: str, body: TaskUpdateRequest, current: Repo = repo_dep
     ) -> dict[str, object]:
+        if body.gate_command is not None:
+            existing = current.get_task(task_id)
+            team = current.get_team(existing.team_id)
+            detected_gate = detect_gate(Path(team.project_path).expanduser())
+            if body.gate_command != detected_gate:
+                raise HTTPException(
+                    status_code=400,
+                    detail="gate_command must match the project's detected quality gate",
+                )
         task = current.update_task(
             task_id,
             title=body.title,
@@ -971,7 +1002,14 @@ def create_app(
     @app.post("/api/v1/endpoints/serve", response_model=ServerStatus)
     def endpoints_serve_start(body: EndpointServeRequest) -> ServerStatus:
         """Start the project's server. Never automatic: the UI clicks this."""
-        return supervisor().start(body.project_path, body.command, body.port)
+        root = Path(body.project_path).expanduser()
+        detected = detect_run_command(root)
+        if body.command and (detected is None or body.command != detected.command):
+            raise HTTPException(
+                status_code=400,
+                detail="command must match the project's detected server command",
+            )
+        return supervisor().start(root, detected.command if detected else None, body.port)
 
     @app.delete("/api/v1/endpoints/serve", response_model=ServerStatus)
     def endpoints_serve_stop() -> ServerStatus:
@@ -1837,4 +1875,5 @@ def _redact(text: str, secret: str | None) -> str:
     return text.replace(secret, "•••") if secret else text
 
 
-app = create_app()
+_app_token = os.getenv("CONTEXTGIT_API_TOKEN") or secrets.token_urlsafe(32)
+app = create_app(api_token=_app_token)

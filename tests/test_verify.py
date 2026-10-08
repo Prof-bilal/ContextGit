@@ -193,6 +193,7 @@ class TestReviewVerdict:
     def test_done_task_cannot_be_reviewed_again(self, repo: Repo, team) -> None:  # noqa: ANN001
         task = repo.create_task(team.id, title="api")
         repo.launch_team()
+        repo.complete_task(task.id)
         repo.approve_task(task.id)
         with pytest.raises(TaskNotReviewable):
             repo.approve_task(task.id)

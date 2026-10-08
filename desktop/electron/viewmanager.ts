@@ -71,7 +71,7 @@ export class ViewManager {
     // not a web page goes to the OS instead.
     contents.setWindowOpenHandler(({ url: target }) => {
       if (isNavigable(target)) this.emit({ id, type: "open", url: target });
-      else void shell.openExternal(target);
+      else if (/^(mailto|tel):/i.test(target)) void shell.openExternal(target);
       return { action: "deny" };
     });
     contents.session.setPermissionRequestHandler((_contents, permission, callback) => {

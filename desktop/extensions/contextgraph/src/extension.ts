@@ -127,6 +127,11 @@ function html(): string {
     const vscode = acquireVsCodeApi();
     const rows = document.getElementById("rows");
     const count = document.getElementById("count");
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>\"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+      })[char]);
+    }
     document.getElementById("refresh").addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
 
     function hash(id) { return (id || "").slice(0, 7); }
@@ -179,11 +184,11 @@ function html(): string {
             '<circle cx="' + x + '" cy="10" r="4" fill="' + color + '"></circle>' +
             '<line x1="' + x + '" y1="0" x2="' + x + '" y2="20" stroke="' + color + '" stroke-width="1.5" opacity="0.5"></line>' +
           '</svg>' +
-          '<span class="msg"><span class="kind">' + (commit.kind || "") + '</span> ' +
-            (commit.summary || "(no summary)") +
-            ((branchesByCommit[commit.id] || []).map((n) => '<span class="chip">' + n + "</span>").join("")) +
+          '<span class="msg"><span class="kind">' + escapeHtml(commit.kind || "") + '</span> ' +
+            escapeHtml(commit.summary || "(no summary)") +
+            ((branchesByCommit[commit.id] || []).map((n) => '<span class="chip">' + escapeHtml(n) + "</span>").join("")) +
           '</span>' +
-          '<span class="meta">' + hash(commit.id) + " · " + when(commit.created_at) + '</span>';
+          '<span class="meta">' + escapeHtml(hash(commit.id)) + " · " + escapeHtml(when(commit.created_at)) + '</span>';
         rows.appendChild(row);
       }
     }
@@ -191,7 +196,7 @@ function html(): string {
     window.addEventListener("message", (event) => {
       const message = event.data || {};
       if (message.type === "data") render(message.snapshot, message.commits);
-      else if (message.type === "error") rows.innerHTML = '<p class="error">' + message.message + "</p>";
+      else if (message.type === "error") rows.innerHTML = '<p class="error">' + escapeHtml(message.message) + "</p>";
     });
     vscode.postMessage({ type: "ready" });
   </script>

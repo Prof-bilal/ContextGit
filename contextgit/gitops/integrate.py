@@ -48,12 +48,12 @@ def _integrate(
     Raises IntegrationConflict if the merge is not clean.
     """
     git = Git(project)
-    merged = merge_tree(project, target, branch)
+    old = target_commit or git.rev_parse(target)
+    merged = merge_tree(project, old, branch)
     if not merged.clean or merged.tree is None:
         raise IntegrationConflict(
             f"'{branch}' does not merge cleanly into '{target}'", merged.conflicted_files
         )
-    old = target_commit or git.rev_parse(target)
     commit = git.run(
         *_IDENTITY,
         "commit-tree",

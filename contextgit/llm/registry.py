@@ -76,12 +76,10 @@ class ResolvedProvider:
 
 
 def key_hint(key: str | None) -> str | None:
-    """A short, non-reversible hint for a stored key: `sk-…AB12`."""
+    """A fixed-length hint that confirms configuration without leaking key bytes."""
     if not key:
         return None
-    if len(key) <= 8:
-        return "•" * len(key)
-    return f"{key[:3]}…{key[-4:]}"
+    return "••••"
 
 
 def _record_for(records: list[ProviderRecord], provider_id: str) -> ProviderRecord | None:

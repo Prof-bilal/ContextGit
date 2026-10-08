@@ -249,25 +249,33 @@ class Repo:
     ) -> Commit:
         """Append a commit with `messages` on the current (or named) branch."""
         name = branch or self._storage.get_current_branch()
-        head_id = self._storage.get_branch(name).head_commit_id
-        cid = hashing.commit_id(
-            parent_ids=[head_id],
-            messages=[(m.role, m.content) for m in messages],
-            kind=kind,
-            model=model,
-        )
-        commit = Commit(
-            id=cid,
-            parent_ids=[head_id],
-            messages=messages,
-            kind=cast("CommitKind", kind),
-            model=model,
-            summary=summary,
-            author=author,
-        )
-        self._storage.insert_commit(commit)
-        self._storage.update_branch_head(name, cid)
-        return commit
+        for _attempt in range(16):
+            head_id = self._storage.get_branch(name).head_commit_id
+            cid = hashing.commit_id(
+                parent_ids=[head_id],
+                messages=[(m.role, m.content) for m in messages],
+                kind=kind,
+                model=model,
+            )
+            commit = Commit(
+                id=cid,
+                parent_ids=[head_id],
+                messages=messages,
+                kind=cast("CommitKind", kind),
+                model=model,
+                summary=summary,
+                author=author,
+                token_count=sum(self._estimate_text(message.content) for message in messages),
+            )
+            try:
+                self._storage.append_commit(name, commit, expected_head_id=head_id)
+            except StaleMergePreview:
+                # Another writer advanced this branch between the read and CAS.
+                # Re-parent the immutable commit and try again; readers never
+                # observe a partially updated branch pointer.
+                continue
+            return commit
+        raise StaleMergePreview(f"branch '{name}' stayed busy while it was being updated")
 
     def log(self, branch: str | None = None) -> list[Commit]:
         """Commits reachable from the branch head, newest first."""
@@ -464,7 +472,9 @@ class Repo:
             author=author,
         )
         self._storage.insert_commit(commit)
-        self._storage.update_branch_head(preview.target_branch, cid)
+        self._storage.update_branch_head(
+            preview.target_branch, cid, expected_head_id=preview.target_head_id
+        )
         return commit
 
     def merge(
@@ -584,6 +594,12 @@ class Repo:
         if base_ref == "fresh":
             default = git.run("rev-parse", "--verify", "origin/HEAD", check=False)
             return "origin/HEAD" if default.returncode == 0 else "HEAD"
+        if base_ref.startswith("-"):
+            raise InvalidRefName("base_ref cannot start with '-'")
+        try:
+            git.rev_parse(base_ref)
+        except GitCommandError as exc:
+            raise InvalidRefName(f"unknown base_ref: {base_ref!r}") from exc
         return base_ref
 
     def get_session(self, session_id: str) -> Session:
@@ -1035,6 +1051,8 @@ class Repo:
         if status is not None:
             if status not in STATUS_ORDER:
                 raise InvalidRefName(f"unknown task status: {status!r}")
+            if status == "done":
+                raise TaskNotReviewable("tasks become done only through the approval flow")
             task.status = status
         task.updated_at = utcnow()
         self._storage.update_task(task)
@@ -1291,8 +1309,10 @@ class Repo:
         """Accept reviewed work: mark it done, then unblock and start dependents."""
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
-        if task.status == "done":
-            raise TaskNotReviewable(f"'{task.title}' is already done")
+        if task.status not in {"todo", "review"}:
+            raise TaskNotReviewable(f"'{task.title}' is not waiting for review")
+        if self._gate_command_for(task, team, None) and task.gate_status != "pass":
+            raise TaskNotReviewable(f"'{task.title}' has not passed its quality gate")
         task.status = "done"
         task.updated_at = utcnow()
         self._storage.update_task(task)
@@ -1494,17 +1514,20 @@ class Repo:
             raise InvalidRefName(f"run '{session.name}' has no worktree to integrate")
         project = WorktreeManager.from_worktree(session.worktree_path).project
         resolved_git = git_target or Git(project).current_branch()
-        code = integrate(
-            project,
-            resolved_git,
-            session.git_branch,
-            message=f"Merge {session.name} ({session.agent or 'shell'})",
-        )
         context_target = target or self.current_branch()
         preview = self.preview_merge(session.branch, context_target, provider=provider)
         if preview.conflicts:
             topics = ", ".join(conflict.topic for conflict in preview.conflicts)
             raise MergeConflict(f"context conflicts on: {topics}")
+        git = Git(project)
+        target_commit = git.rev_parse(resolved_git)
+        code = integrate(
+            project,
+            resolved_git,
+            session.git_branch,
+            message=f"Merge {session.name} ({session.agent or 'shell'})",
+            target_commit=target_commit,
+        )
         context_commit = self.apply_merge(
             preview, summary=f"Merge {session.name} ({session.agent or 'shell'})"
         )
@@ -1980,6 +2003,10 @@ class Repo:
             or any(c in forbidden for c in name)
             or name.startswith("-")
             or name.endswith(".")
+            or ".." in name
+            or "@{" in name
+            or "//" in name
+            or name.endswith(".lock")
         )
         if bad:
             raise InvalidRefName(f"invalid ref name: {name!r}")

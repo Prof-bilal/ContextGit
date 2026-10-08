@@ -105,9 +105,10 @@ async function spawnBackend(): Promise<void> {
     CONTEXTGIT_API_TOKEN: apiToken,
     CONTEXTGIT_REPO:
       backendRepo,
-    // Renderer origin: dev server (Vite) or file:// (packaged) — allow both.
+    // Renderer origin: only the dev server needs an explicit web origin;
+    // packaged file:// requests are protected by the launch token.
     CONTEXTGIT_CORS_ORIGINS: process.env.CONTEXTGIT_CORS_ORIGINS
-      ?? "http://localhost:5173,http://127.0.0.1:5173,null",
+      ?? "http://localhost:5173,http://127.0.0.1:5173",
   };
   const binary = isDev
     ? path.join(repoRoot, ".venv", "bin", "uvicorn")
@@ -201,6 +202,32 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+  const rendererOrigin = process.env.VITE_DEV_SERVER_URL;
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    let allowed = false;
+    try {
+      const target = new URL(url);
+      if (rendererOrigin) {
+        allowed = target.origin === new URL(rendererOrigin).origin;
+      } else {
+        allowed = target.protocol === "file:" &&
+          path.resolve(decodeURIComponent(target.pathname)) ===
+            path.resolve(app.getAppPath(), "dist", "index.html");
+      }
+    } catch {
+      allowed = false;
+    }
+    if (!allowed) event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const scheme = new URL(url).protocol;
+      if (scheme === "http:" || scheme === "https:") void shell.openExternal(url);
+    } catch {
+      // Invalid and custom schemes are never handed to the operating system.
+    }
+    return { action: "deny" };
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   if (process.env.CONTEXTGIT_SMOKE) {

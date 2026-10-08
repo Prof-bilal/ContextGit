@@ -71,9 +71,9 @@ class Git:
 
     def changed_files(self, base: str) -> list[str]:
         """Paths changed against `base`, including untracked files."""
-        tracked = self.run("diff", "--name-only", base).stdout
-        untracked = self.run("ls-files", "--others", "--exclude-standard").stdout
-        paths = {line for line in f"{tracked}\n{untracked}".splitlines() if line.strip()}
+        tracked = self.run("diff", "--name-only", "-z", base).stdout
+        untracked = self.run("ls-files", "--others", "--exclude-standard", "-z").stdout
+        paths = {line for line in f"{tracked}\0{untracked}".split("\0") if line}
         return sorted(paths)
 
     def is_dirty(self) -> bool:

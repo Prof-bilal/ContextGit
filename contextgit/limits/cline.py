@@ -74,15 +74,25 @@ def _first_str(data: dict[str, Any], keys: tuple[str, ...]) -> str | None:
     return None
 
 
+def _first_number(data: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    """Return the first present numeric value, preserving a real zero."""
+    for key in keys:
+        if key in data:
+            value = _num(data[key])
+            if value is not None:
+                return value
+    return None
+
+
 def _credits_from(data: dict[str, Any]) -> LimitCredits | None:
     """Best-effort credit balances from a nested `credits`/`balance` object."""
     for key in ("credits", "balance", "creditBalance"):
         node = data.get(key)
         if isinstance(node, dict):
-            monthly = _num(node.get("monthlyRemaining") or node.get("monthly"))
-            purchased = _num(node.get("purchasedRemaining") or node.get("purchased"))
-            free = _num(node.get("freeRemaining") or node.get("free"))
-            total = _num(node.get("totalRemaining") or node.get("remaining") or node.get("balance"))
+            monthly = _first_number(node, ("monthlyRemaining", "monthly"))
+            purchased = _first_number(node, ("purchasedRemaining", "purchased"))
+            free = _first_number(node, ("freeRemaining", "free"))
+            total = _first_number(node, ("totalRemaining", "remaining", "balance"))
             parts = [v for v in (monthly, purchased, free) if v is not None]
             if total is None and parts:
                 total = sum(parts)

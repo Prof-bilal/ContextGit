@@ -41,17 +41,40 @@ _ENGINE_HINT = {
 
 def is_write(statement: str) -> bool:
     """True when a statement would change the database (cheap, conservative)."""
-    stripped = statement.strip().rstrip(";")
-    while stripped.startswith("--"):
-        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+    stripped = _strip_comments(statement).strip()
+    # A read-only connection must never accept a batch: a harmless first
+    # statement can otherwise hide a write after the semicolon.
+    if _has_multiple_statements(stripped):
+        return True
+    stripped = stripped.rstrip(";").strip()
     if stripped.startswith("("):
         stripped = stripped[1:].strip()
+    if re.match(r"^\s*(explain\s+)?analyze\b", stripped, re.IGNORECASE):
+        return bool(
+            re.search(
+                r"\b(insert|update|delete|merge|drop|alter|create|truncate)\b",
+                stripped,
+                re.IGNORECASE,
+            )
+        )
     if re.match(r"^\s*with\b", stripped, re.IGNORECASE):
         # A CTE can end in a write, or contain one: `WITH gone AS (DELETE ...)`.
         # Conservative here only ever blocks a statement, which is the safe
         # direction for a read-only connection.
         return bool(re.search(r"\b(insert|update|delete|merge)\b", stripped, re.IGNORECASE))
     return bool(_WRITE.match(stripped))
+
+
+def _strip_comments(statement: str) -> str:
+    """Remove SQL comments before applying the conservative statement check."""
+    without_block = re.sub(r"/\*.*?\*/", " ", statement, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*(?:\n|$)", " ", without_block)
+
+
+def _has_multiple_statements(statement: str) -> bool:
+    """Detect a second non-empty statement without pretending to parse SQL."""
+    parts = statement.split(";")
+    return any(part.strip() for part in parts[:-1]) and bool(parts[-1].strip())
 
 
 def _cap(limit: int | None) -> int:
@@ -132,7 +155,11 @@ class SqliteAdapter(Adapter):
         if path.exists() and not path.is_file():
             raise DbError(f"{path} is not a file")
         try:
-            self._conn = sqlite3.connect(str(path), check_same_thread=False)
+            if self.spec.readonly:
+                uri = f"file:{path.resolve()}?mode=ro"
+                self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            else:
+                self._conn = sqlite3.connect(str(path), check_same_thread=False)
         except sqlite3.Error as exc:
             raise DbError(f"could not open {path}: {exc}") from exc
         self.server_version = f"SQLite {sqlite3.sqlite_version}"
@@ -145,7 +172,8 @@ class SqliteAdapter(Adapter):
         ).fetchall()
         tables: list[DbTable] = []
         for name, kind in rows:
-            columns = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
+            escaped_name = str(name).replace('"', '""')
+            columns = conn.execute(f'PRAGMA table_info("{escaped_name}")').fetchall()
             tables.append(
                 DbTable(
                     name=str(name),
@@ -168,11 +196,11 @@ class SqliteAdapter(Adapter):
         started = time.perf_counter()
         try:
             cursor = conn.execute(sql)
-            rows = cursor.fetchall() if cursor.description else []
             columns = [item[0] for item in cursor.description or []]
+            cap = _cap(limit)
+            rows = cursor.fetchmany(cap + 1) if cursor.description else []
         except sqlite3.Error as exc:
             raise DbError(str(exc)) from exc
-        cap = _cap(limit)
         return DbQueryResult(
             columns=[str(column) for column in columns],
             rows=[[_text(value) for value in row] for row in rows[:cap]],
@@ -264,11 +292,11 @@ class PostgresAdapter(Adapter):
         started = time.perf_counter()
         try:
             cursor = conn.execute(sql)
-            rows = cursor.fetchall() if cursor.description else []
             columns = [item.name for item in cursor.description or []]
+            cap = _cap(limit)
+            rows = cursor.fetchmany(cap + 1) if cursor.description else []
         except Exception as exc:
             raise DbError(str(exc)) from exc
-        cap = _cap(limit)
         return DbQueryResult(
             columns=[str(column) for column in columns],
             rows=[[_text(value) for value in row] for row in rows[:cap]],
@@ -374,11 +402,11 @@ class SqlServerAdapter(Adapter):
         try:
             cursor = conn.cursor()
             cursor.execute(sql)
-            rows = cursor.fetchall() if cursor.description else []
+            cap = _cap(limit)
+            rows = cursor.fetchmany(cap + 1) if cursor.description else []
             columns = [item[0] for item in cursor.description or []]
         except Exception as exc:
             raise DbError(str(exc)) from exc
-        cap = _cap(limit)
         return DbQueryResult(
             columns=[str(column) for column in columns],
             rows=[[_text(value) for value in row] for row in rows[:cap]],

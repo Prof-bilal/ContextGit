@@ -362,7 +362,7 @@ class TaskUpdateRequest(BaseModel):
     agent: str | None = None
     scope: list[str] | None = None
     contract: str | None = None
-    status: Literal["todo", "blocked", "working", "review", "done", "failed"] | None = None
+    status: Literal["todo", "blocked", "working", "review", "failed"] | None = None
     depends_on: list[str] | None = None
     gate_command: str | None = None
 

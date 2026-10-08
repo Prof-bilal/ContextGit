@@ -22,7 +22,7 @@ class CollectionStore:
         self._dir = Path(root) / "api"
 
     def _path(self, name: str) -> Path:
-        if not _NAME.match(name or ""):
+        if not _NAME.fullmatch(name or ""):
             raise HttpRequestError(
                 "invalid collection name (letters, digits, . _ - and spaces only)"
             )

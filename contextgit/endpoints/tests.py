@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import sys
 from pathlib import Path
 
 from contextgit.core.errors import ProviderConfigError
@@ -209,7 +211,7 @@ def _run_file(
 ) -> tuple[bool, str]:
     """Run one generated file; (passed, output)."""
     result = run_command(
-        f"python -m pytest {relative} -q --tb=short -p no:cacheprovider",
+        f"{sys.executable} -m pytest {relative} -q --tb=short -p no:cacheprovider",
         project,
         env={**os.environ, "API_BASE_URL": base_url},
         timeout=timeout,
@@ -369,7 +371,9 @@ def run_suite(project: Path | str, base_url: str, *, timeout: float = 300.0) -> 
         suite.output = "No generated tests yet."
         return store.save(suite)
 
-    command = f"python -m pytest {' '.join(files)} -v --tb=short -p no:cacheprovider"
+    command = shlex.join(
+        [sys.executable, "-m", "pytest", *files, "-v", "--tb=short", "-p", "no:cacheprovider"]
+    )
     result = run_command(
         command,
         root,
