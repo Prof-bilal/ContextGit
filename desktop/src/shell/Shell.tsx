@@ -1313,7 +1313,7 @@ export default function Shell() {
       case "why":
         return <WhyView state={whyState} />;
       case "db":
-        return <DbView state={dbState} />;
+        return <DbView state={dbState} obscured={overlayOpen} />;
       default:
         return null;
     }

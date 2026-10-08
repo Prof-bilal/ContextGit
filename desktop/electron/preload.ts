@@ -121,6 +121,13 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.invoke("ctx:editor-start") as Promise<import("../shared/editor").EditorStartResult>,
   editorStop: () =>
     ipcRenderer.invoke("ctx:editor-stop") as Promise<import("../shared/editor").EditorStatus>,
+  // ---------- DB tab (embedded DbGate sidecar) ----------
+  dbgateStatus: () =>
+    ipcRenderer.invoke("ctx:dbgate-status") as Promise<import("../shared/dbgate").DbGateStatus>,
+  dbgateStart: () =>
+    ipcRenderer.invoke("ctx:dbgate-start") as Promise<import("../shared/dbgate").DbGateStartResult>,
+  dbgateStop: () =>
+    ipcRenderer.invoke("ctx:dbgate-stop") as Promise<import("../shared/dbgate").DbGateStatus>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

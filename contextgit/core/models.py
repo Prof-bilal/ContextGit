@@ -330,7 +330,7 @@ class TeamBoard(BaseModel):
 # ---------- HTTP / API client (the API tab) ----------
 
 HttpBodyKind = Literal["none", "json", "text", "form"]
-HttpAuthKind = Literal["none", "bearer", "basic", "api-key"]
+HttpAuthKind = Literal["none", "bearer", "basic", "api-key", "cookie"]
 
 
 class HttpKeyValue(BaseModel):

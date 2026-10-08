@@ -4155,53 +4155,326 @@ img.cg-tile-art {
   font-size: 1.1rem;
 }
 
+/* ---------------------------------------------------------------- dbgate -- */
+
+.cg-dbgate {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cg-dbgate-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface);
+}
+.cg-dbgate-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--cg-bg);
+}
+.cg-dbgate-start {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 2rem 1.4rem;
+}
+.cg-dbgate-start h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
 /* ------------------------------------------------------------------- API -- */
 
 .cg-api {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  padding: 0.9rem 1rem 1.1rem;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem 1.2rem;
+}
+
+/* The request builder: a card holding the URL bar, tabs and the active pane. */
+.cg-api-request {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cg-line);
+  border-radius: 12px;
+  background: var(--cg-surface);
+  overflow: hidden;
 }
 
 .cg-api-bar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.5rem;
+  padding: 0.6rem;
 }
 
+/* Method picker — colour-coded so the verb reads at a glance. */
 .cg-api-method {
   flex: 0 0 auto;
-  width: 7.2rem;
-  font-family: "Martian Mono", ui-monospace, monospace;
+  width: 7rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  background: var(--cg-bg);
+  color: var(--cg-ink);
+  font:
+    700 0.78rem/1.4 "Martian Mono",
+    ui-monospace,
+    monospace;
+  cursor: pointer;
+}
+.cg-api-method[data-method="GET"] {
+  color: var(--cg-ok);
+}
+.cg-api-method[data-method="POST"] {
+  color: var(--cg-warn);
+}
+.cg-api-method[data-method="PUT"] {
+  color: #5aa9ff;
+}
+.cg-api-method[data-method="PATCH"] {
+  color: #b39dff;
+}
+.cg-api-method[data-method="DELETE"] {
+  color: var(--cg-bad);
+}
+.cg-api-method option {
+  background: var(--cg-surface-2);
+  color: var(--cg-ink);
 }
 
 .cg-api-url {
   flex: 1 1 auto;
+  min-width: 0;
   font-family: "Martian Mono", ui-monospace, monospace;
 }
 
-.cg-api-editor,
-.cg-api-kv,
+.cg-btn-send {
+  flex: 0 0 auto;
+  min-width: 6rem;
+  padding: 0.45rem 1.1rem;
+  font-weight: 700;
+}
+.cg-btn-send[data-variant="primary"] {
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--cg-signal) 32%, transparent);
+}
+
+/* Underline tabs, shared by the request and the response. */
+.cg-api-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--cg-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cg-api-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cg-api-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--cg-ink-3);
+  font:
+    600 0.78rem/1 "Schibsted Grotesk",
+    sans-serif;
+  padding: 0.6rem 0.65rem;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cg-api-tab:hover {
+  color: var(--cg-ink-2);
+}
+.cg-api-tab[aria-selected="true"] {
+  color: var(--cg-ink);
+  border-bottom-color: var(--cg-signal);
+}
+.cg-api-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+  font:
+    600 0.6rem/1 "Martian Mono",
+    monospace;
+}
+.cg-api-tab[aria-selected="true"] .cg-api-tab-count {
+  background: color-mix(in srgb, var(--cg-signal) 22%, transparent);
+  color: var(--cg-signal-hot);
+}
+
+.cg-api-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem;
+}
+
 .cg-api-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* Auth panel: labelled fields with a "what gets sent" hint. */
+.cg-api-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 34rem;
+}
+.cg-api-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.cg-api-label {
+  color: var(--cg-ink-3);
+  font:
+    600 0.6rem/1 "Martian Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cg-api-hint {
+  margin: 0;
+  color: var(--cg-ink-3);
+  font-size: 0.74rem;
+}
+.cg-api-auth-cookie {
+  min-height: 4.5rem;
+  font-family: "Martian Mono", ui-monospace, monospace;
+}
+.cg-api-cookie-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.cg-api-cookie-state {
+  color: var(--cg-ink-3);
+  font-size: 0.74rem;
+}
+
+/* ---- key/value rows (params, headers, form) ---- */
+
+.cg-api-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.cg-api-kv-head,
+.cg-api-kv-row {
+  display: grid;
+  gap: 0.4rem;
+  align-items: center;
+}
+.cg-api-kv-head[data-enabled="true"],
+.cg-api-kv-row[data-enabled="true"] {
+  grid-template-columns: 1.1rem minmax(0, 1fr) minmax(0, 1.4fr) 1.7rem;
+}
+.cg-api-kv-head[data-enabled="false"],
+.cg-api-kv-row[data-enabled="false"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 1.7rem;
+}
+.cg-api-kv-head {
+  color: var(--cg-ink-3);
+  font:
+    600 0.6rem/1 "Martian Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cg-api-kv-row .cg-input {
+  min-width: 0;
+}
+.cg-api-kv-del {
+  width: 1.7rem;
+  height: 1.6rem;
+  padding: 0;
+  font-size: 0.95rem;
+}
+.cg-api-kv-del:hover {
+  color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-bad) 10%, transparent);
+}
+.cg-api-kv-add {
+  align-self: flex-start;
+}
+
+/* Body-kind pills */
+.cg-pills {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 3px;
+  gap: 2px;
+  background: var(--cg-bg);
+  border: 1px solid var(--cg-line);
+  border-radius: 9px;
+}
+.cg-pill {
+  border: 0;
+  background: transparent;
+  color: var(--cg-ink-3);
+  font:
+    600 0.72rem/1 "Schibsted Grotesk",
+    sans-serif;
+  padding: 0.32rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cg-pill:hover {
+  color: var(--cg-ink-2);
+}
+.cg-pill[aria-selected="true"] {
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+}
+
+/* The JSON / text body editor: a toolbar over a bordered Monaco well. */
+.cg-code-block {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
 }
-
-.cg-api-kv-row {
+.cg-code-bar {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  font-size: 0.78rem;
 }
-
-.cg-api-kv-row .cg-input {
-  flex: 1 1 0;
+.cg-code {
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--cg-bg);
 }
-
-.cg-api-textarea {
-  min-height: 9rem;
-  font-family: "Martian Mono", ui-monospace, monospace;
+.cg-code:focus-within {
+  border-color: var(--cg-focus);
+}
+.cg-code .monaco-editor,
+.cg-code .monaco-editor .overflow-guard {
+  border-radius: 8px;
 }
 
 /* ---- API rail: collections + history, as titled groups ---- */
@@ -4327,23 +4600,34 @@ img.cg-tile-art {
 .cg-api-response {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.3rem;
+  gap: 0.6rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 12px;
+  background: var(--cg-surface);
+  overflow: hidden;
+}
+.cg-api-response > .cg-empty-note {
+  padding: 0.9rem;
+}
+.cg-api-response > .cg-api-tabs {
+  padding: 0 0.5rem;
 }
 
 .cg-api-status {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem 0;
 }
 
 .cg-api-code {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 0.86rem;
 }
 
 .cg-api-pre {
-  margin: 0;
+  margin: 0 0.7rem 0.7rem;
   padding: 0.75rem;
   max-height: 38vh;
   overflow: auto;
@@ -4392,6 +4676,50 @@ img.cg-tile-art {
   background: currentColor;
 }
 
+/* Endpoints rail rows: a headline (dot, method, status) over path + source,
+   so every column lines up instead of running together on one line. */
+.cg-epr {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+.cg-epr-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.cg-epr .cg-ep-dot {
+  margin-right: 0;
+}
+.cg-epr-method {
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+.cg-epr-spacer {
+  flex: 1 1 auto;
+}
+.cg-epr .cg-ep-badge {
+  line-height: 1.7;
+}
+.cg-epr-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink);
+  font:
+    500 0.78rem/1.3 "Martian Mono",
+    ui-monospace,
+    monospace;
+}
+.cg-epr-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink-3);
+  font-size: 0.68rem;
+}
+
 .cg-ep {
   display: flex;
   flex-direction: column;
@@ -4401,17 +4729,62 @@ img.cg-tile-art {
 
 .cg-ep-head {
   display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.cg-ep-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.cg-ep-meta {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .cg-ep-method {
-  font-weight: 600;
+  flex: none;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--cg-line-strong);
+  border-radius: 5px;
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .cg-ep-path {
-  font-size: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cg-ep-handler {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.cg-ep-handler-label {
+  color: var(--cg-ink-3);
+  font-size: 0.72rem;
+}
+
+.cg-ep-handler .cg-mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-ink-2);
+  font-size: 0.76rem;
 }
 
 .cg-ep-operation {
@@ -4421,9 +4794,11 @@ img.cg-tile-art {
 }
 
 .cg-ep-h2 {
-  margin: 0.4rem 0 0;
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
+  margin: 0.2rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--cg-line);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--cg-ink-3);
 }
@@ -4443,8 +4818,11 @@ img.cg-tile-art {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--cg-line);
+  margin: 0.9rem 1rem 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 10px;
+  background: var(--cg-surface);
 }
 
 .cg-ep-server-url {
@@ -4514,21 +4892,57 @@ img.cg-tile-art {
 
 .cg-why-bar {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: flex-end;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  padding: 0.5rem 1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface);
 }
 
-.cg-why-path {
-  flex: 1 1 16rem;
-  font-size: 0.78rem;
+.cg-why-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+/* The shared label carries its own top margin; the bar governs spacing. */
+.cg-why-field .cg-field-label {
+  margin: 0;
+}
+.cg-why-field-path {
+  flex: 1 1 18rem;
+}
+.cg-why-field-line {
+  flex: 0 0 5.5rem;
 }
 
+.cg-why-path,
 .cg-why-line {
-  flex: 0 0 5rem;
+  width: 100%;
   font-size: 0.78rem;
+}
+
+.cg-why-explain {
+  flex: none;
+}
+
+.cg-why-empty {
+  margin: 1rem;
+  padding: 1.3rem 1.2rem;
+  max-width: 46rem;
+  border: 1px dashed var(--cg-line-strong);
+  border-radius: 12px;
+}
+.cg-why-empty-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.cg-why-empty .cg-empty-note {
+  margin-top: 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
 }
 
 .cg-why-list {
@@ -4544,6 +4958,15 @@ img.cg-tile-art {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  margin-top: 0.2rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--cg-line);
+}
+/* The divider belongs to the whole row here, not the short heading. */
+.cg-ep-origin-head .cg-ep-h2 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .cg-ep-dot-none {

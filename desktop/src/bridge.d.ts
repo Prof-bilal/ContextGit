@@ -66,6 +66,10 @@ export interface ContextGitBridge {
   editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
   editorStart: () => Promise<import("../shared/editor").EditorStartResult>;
   editorStop: () => Promise<import("../shared/editor").EditorStatus>;
+  /** DB tab: the embedded DbGate sidecar. */
+  dbgateStatus: () => Promise<import("../shared/dbgate").DbGateStatus>;
+  dbgateStart: () => Promise<import("../shared/dbgate").DbGateStartResult>;
+  dbgateStop: () => Promise<import("../shared/dbgate").DbGateStatus>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

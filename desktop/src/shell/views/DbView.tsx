@@ -1,9 +1,20 @@
+import { useState } from "react";
+
 import { Chip } from "../primitives";
 
+import DbGatePanel from "../db/DbGatePanel";
 import { DEFAULT_SQL, type DbState } from "../db/useDatabase";
 
-/** The DB tab: connect to a database, browse it, and run statements. */
-export default function DbView({ state }: { state: DbState }) {
+/** The DB tab: the native quick-query runner, or the embedded DbGate client. */
+export default function DbView({
+  state,
+  obscured = false,
+}: {
+  state: DbState;
+  /** A dialog is open; hide the embedded native view so it is not covered. */
+  obscured?: boolean;
+}) {
+  const [mode, setMode] = useState<"query" | "dbgate">("query");
   const {
     spec,
     patch,
@@ -31,9 +42,33 @@ export default function DbView({ state }: { state: DbState }) {
       <div className="cg-view-toolbar">
         <h1>Database</h1>
         <span className="cg-view-sub">
-          Passwords are never stored — they live only while the connection is open.
+          {mode === "dbgate"
+            ? "A full database client, embedded in the workspace"
+            : "Passwords are never stored — they live only while the connection is open"}
         </span>
+        <span className="cg-toolbar-spacer" />
+        <div className="cg-mini-seg" role="tablist" aria-label="Database view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "query"}
+            onClick={() => setMode("query")}
+          >
+            Query
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "dbgate"}
+            onClick={() => setMode("dbgate")}
+          >
+            DbGate
+          </button>
+        </div>
       </div>
+      {mode === "dbgate" ? (
+        <DbGatePanel obscured={obscured} />
+      ) : (
       <div className="cg-view-body">
         <div className="cg-db-bar">
           <input
@@ -217,6 +252,7 @@ export default function DbView({ state }: { state: DbState }) {
           </p>
         )}
       </div>
+      )}
     </div>
   );
 }

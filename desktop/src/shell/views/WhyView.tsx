@@ -54,29 +54,35 @@ export default function WhyView({ state }: { state: WhyState }) {
       </div>
       <div className="cg-view-body">
         <div className="cg-why-bar">
-          <input
-            className="cg-input cg-mono cg-why-path"
-            aria-label="File path"
-            placeholder="src/routes/auth.js"
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void explain();
-            }}
-          />
-          <input
-            className="cg-input cg-mono cg-why-line"
-            aria-label="Line"
-            placeholder="line"
-            value={line}
-            onChange={(event) => setLine(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void explain();
-            }}
-          />
+          <label className="cg-why-field cg-why-field-path">
+            <span className="cg-field-label">File</span>
+            <input
+              className="cg-input cg-mono cg-why-path"
+              aria-label="File path"
+              placeholder="src/routes/auth.js"
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void explain();
+              }}
+            />
+          </label>
+          <label className="cg-why-field cg-why-field-line">
+            <span className="cg-field-label">Line</span>
+            <input
+              className="cg-input cg-mono cg-why-line"
+              aria-label="Line"
+              placeholder="line"
+              value={line}
+              onChange={(event) => setLine(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void explain();
+              }}
+            />
+          </label>
           <button
             type="button"
-            className="cg-btn"
+            className="cg-btn cg-why-explain"
             data-variant="primary"
             disabled={loading || !path.trim()}
             onClick={() => void explain()}
@@ -89,11 +95,14 @@ export default function WhyView({ state }: { state: WhyState }) {
         {error && <p className="cg-api-error">{error}</p>}
 
         {!answer ? (
-          <p className="cg-empty-note">
-            Point at a file — or an endpoint in the Endpoints tab — and ContextGit reads
-            the decisions, the rejected alternatives and the open questions from the run
-            that produced it.
-          </p>
+          <div className="cg-why-empty">
+            <h2 className="cg-why-empty-title">Trace why a line exists</h2>
+            <p className="cg-empty-note">
+              Point at a file — or an endpoint in the Endpoints tab — and
+              ContextGit reads the decisions, the rejected alternatives and the
+              open questions from the run that produced it.
+            </p>
+          </div>
         ) : (
           <section className="cg-ep">
             {answer.note && <p className="cg-ep-notice">{answer.note}</p>}

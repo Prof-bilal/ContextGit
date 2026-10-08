@@ -36,6 +36,8 @@ def send_request(
             headers.setdefault("Authorization", f"Basic {token}")
         elif spec.auth_kind == "api-key":
             headers.setdefault("X-API-Key", spec.auth_value)
+        elif spec.auth_kind == "cookie":
+            headers.setdefault("Cookie", spec.auth_value)
     params = {kv.name: kv.value for kv in spec.params if kv.enabled and kv.name}
 
     json_body: object | None = None

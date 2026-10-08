@@ -512,7 +512,7 @@ export interface BlameEntry {
 // ---------- HTTP client (the API tab) ----------
 
 export type HttpBodyKind = "none" | "json" | "text" | "form";
-export type HttpAuthKind = "none" | "bearer" | "basic" | "api-key";
+export type HttpAuthKind = "none" | "bearer" | "basic" | "api-key" | "cookie";
 
 export interface HttpKeyValue {
   name: string;

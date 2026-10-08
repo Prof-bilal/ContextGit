@@ -26,9 +26,19 @@ export default defineConfig({
     strictPort: true,
     fs: { allow: [repoRoot] },
   },
+  // Monaco is only reached through a dynamic import, so without this Vite
+  // discovers it late, re-optimizes, and restarts the server mid-scan.
+  optimizeDeps: {
+    include: ["monaco-editor"],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
     target: "es2022",
+  },
+  // Monaco ships its language services as ES-module web workers; bundling them
+  // as ES (rather than the IIFE default) keeps them code-splittable.
+  worker: {
+    format: "es",
   },
 });

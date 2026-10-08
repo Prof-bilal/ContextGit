@@ -24,6 +24,7 @@ import type { Workspace } from "../shared/workspace";
 import { AssetLibrary } from "./library";
 import { ViewManager } from "./viewmanager";
 import { EditorSidecar } from "./editor";
+import { DbGateSidecar } from "./dbgate";
 import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
 
@@ -558,6 +559,37 @@ ipcMain.handle("ctx:editor-stop", () => {
   return editor().status();
 });
 
+// ---------- DB tab (embedded DbGate sidecar) ----------
+
+/** The dbgate-serve entry: bundled under resources (packaged) or build/dbgate (dev). */
+function resolveDbGateEntry(): string | null {
+  const root = isDev
+    ? path.join(app.getAppPath(), "build", "dbgate")
+    : path.join(process.resourcesPath, "dbgate");
+  const entry = path.join(root, "node_modules", "dbgate-serve", "bin", "dbgate-serve.js");
+  return fs.existsSync(entry) ? entry : null;
+}
+
+let dbgateSidecar: DbGateSidecar | null = null;
+
+function dbgate(): DbGateSidecar {
+  if (!dbgateSidecar) {
+    dbgateSidecar = new DbGateSidecar(
+      resolveDbGateEntry,
+      path.join(app.getPath("userData"), "dbgate"),
+      process.execPath,
+    );
+  }
+  return dbgateSidecar;
+}
+
+ipcMain.handle("ctx:dbgate-status", () => dbgate().status());
+ipcMain.handle("ctx:dbgate-start", () => dbgate().start());
+ipcMain.handle("ctx:dbgate-stop", () => {
+  dbgate().stop();
+  return dbgate().status();
+});
+
 // ---------- PTY sessions (parallel agent terminals) ----------
 
 const ptys = new PtyManager(
@@ -728,6 +760,7 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   views().destroyAll();
   editor().stop();
+  dbgate().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();
@@ -736,6 +769,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   views().destroyAll();
   editor().stop();
+  dbgate().stop();
   ptys.killAll();
   killInstalls();
   stopBackend();

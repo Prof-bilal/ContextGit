@@ -131,16 +131,22 @@ export default function EndpointsView({
         ) : (
           <section className="cg-ep">
             <header className="cg-ep-head">
-              <span className="cg-mono cg-ep-method">{active.method}</span>
-              <span className="cg-mono cg-ep-path">{active.path}</span>
-              {active.auth && <Chip tone="ok">auth</Chip>}
-              {active.response_status && (
-                <Chip>HTTP {active.response_status}</Chip>
-              )}
-              <Chip tone={active.source.confidence === "high" ? "ok" : "warn"}>
-                {active.source.confidence} confidence
-              </Chip>
-              <Chip>{active.source.kind}</Chip>
+              <div className="cg-ep-headline">
+                <span className="cg-mono cg-ep-method">{active.method}</span>
+                <span className="cg-mono cg-ep-path">{active.path}</span>
+              </div>
+              <div className="cg-ep-meta">
+                {active.auth && <Chip tone="ok">auth</Chip>}
+                {active.response_status && (
+                  <Chip>HTTP {active.response_status}</Chip>
+                )}
+                <Chip
+                  tone={active.source.confidence === "high" ? "ok" : "warn"}
+                >
+                  {active.source.confidence} confidence
+                </Chip>
+                <Chip>{active.source.kind}</Chip>
+              </div>
             </header>
             {active.operation && (
               <p className="cg-ep-operation">{active.operation}</p>
@@ -149,8 +155,8 @@ export default function EndpointsView({
               <p className="cg-view-sub">Tags: {active.tags.join(", ")}</p>
             )}
             {active.source.file && (
-              <p className="cg-view-sub">
-                Handler{" "}
+              <p className="cg-ep-handler">
+                <span className="cg-ep-handler-label">Handler</span>
                 <span className="cg-mono">
                   {active.source.file}
                   {active.source.line ? `:${active.source.line}` : ""}

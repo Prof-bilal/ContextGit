@@ -85,16 +85,17 @@ export default function EndpointsRail({ state }: { state: EndpointsState }) {
           <button
             key={endpoint.id}
             type="button"
-            className="cg-row"
+            className="cg-row cg-epr"
             aria-current={active?.id === endpoint.id}
             onClick={() => select(endpoint)}
           >
-            <span className="cg-row-top">
+            <span className="cg-epr-meta">
               <span
                 className={dot(endpoint.source.confidence)}
                 aria-hidden="true"
               />
-              <span className="cg-mono">{endpoint.method}</span>
+              <span className="cg-mono cg-epr-method">{endpoint.method}</span>
+              <span className="cg-epr-spacer" />
               {test && (
                 <span
                   className={badge(test.status, test.state)}
@@ -104,9 +105,9 @@ export default function EndpointsRail({ state }: { state: EndpointsState }) {
                 </span>
               )}
             </span>
-            <span className="cg-row-name">{endpoint.path}</span>
+            <span className="cg-epr-path">{endpoint.path}</span>
             {endpoint.source.file && (
-              <span className="cg-row-preview">
+              <span className="cg-epr-source">
                 {endpoint.source.file}
                 {endpoint.source.line ? `:${endpoint.source.line}` : ""}
               </span>
