@@ -156,15 +156,19 @@ export default function CodeFeature() {
 
   const briefingFor = useCallback((task: Task) => {
     const role = roleFor(task.role);
+    const brief = task.brief.trim().replace(/\s+/g, " ");
+    const doneCriteria = task.done_criteria.trim().replace(/\s+/g, " ");
     const parts = [
-      `Read .contextgit/team.md and start task "${task.title}"${role ? ` as a ${role.label}` : ""}`,
+      `Read .contextgit/team.md and work on team task "${task.title}"${role ? ` as a ${role.label}` : ""}.`,
+      brief ? `Your instructions: ${brief}` : "Follow the task title and inspect the project before making changes.",
+      doneCriteria ? `Done when: ${doneCriteria}` : "",
       task.scope.length > 0 ? `you own ${task.scope.join(", ")}` : "no files claimed yet",
       task.depends_on.length > 0 ? "your dependencies are done" : "nothing blocks you",
     ];
     const skills = role
       ? ` Apply these skills: ${roleSkills(role).map((skill) => skill.label).join(", ")}.`
       : "";
-    return `${parts.join(". ")}.${skills} Post a note when you finish.`;
+    return `${parts.filter(Boolean).join(" ")}.${skills} Post a note when you finish.`;
   }, []);
 
   const verifierBriefingFor = useCallback((task: Task) => {
