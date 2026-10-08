@@ -1449,11 +1449,10 @@ button.cg-chip[aria-pressed="true"] {
 .cg-pane-canvas[data-layout="split"] {
   grid-template-columns: 1fr 1fr;
 }
-.cg-pane-canvas[data-layout="tiled"] {
-  grid-template-columns: 1fr 1fr;
-  /* Keep two rows in view; additional terminals use equally sized rows below. */
-  grid-template-rows: repeat(2, calc((100% - 0.6rem) / 2));
-  grid-auto-rows: calc((100% - 0.6rem) / 2);
+.cg-pane-canvas[data-layout="rows"] {
+  grid-template-columns: 1fr;
+  /* Every terminal gets a row; the canvas scrolls when many are open. */
+  grid-auto-rows: minmax(18rem, 1fr);
   overflow-y: auto;
   overflow-x: hidden;
 }

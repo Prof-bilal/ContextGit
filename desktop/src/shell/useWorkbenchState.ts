@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProviderCapability, type Session } from "@/lib/api";
 import { type ModelSelection } from "./providers";
-import { type PaneLayout } from "./terminal/PaneCanvas";
 import { type WhyRequest } from "./why/useWhy";
 import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, type ClosedPane } from "./storage/recentlyClosed";
 import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource, useProviderResource } from "./WorkbenchResources";
@@ -30,8 +29,6 @@ export function useWorkbenchState() {
     try { return window.localStorage.getItem("cg-code-mode") === "team" ? "team" : "single"; }
     catch { return "single"; }
   });
-
-  const [layout, setLayout] = useState<PaneLayout>("single");
 
   const { sessions, loaded: sessionsLoaded, removedIds, error: sessionsError, refresh, create, remove, setAutoCommit } = useSessionResource();
 
@@ -122,7 +119,6 @@ export function useWorkbenchState() {
   const changeMode = useCallback((next: "single" | "team") => {
     setMode(next);
     try { window.localStorage.setItem("cg-code-mode", next); } catch { /* Keep in-memory mode. */ }
-    setLayout(next === "team" ? "split" : "single");
   }, []);
 
   const closeTerminal = useCallback((session: Session) => {
@@ -156,5 +152,5 @@ export function useWorkbenchState() {
     if (!restoredPanes.current) return;
     saveOpenPanes(openIds);
   }, [openIds]);
-  return { mode, setMode, layout, setLayout, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, whyRequest, setWhyRequest, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, changeMode, closeTerminal, restoredPanes };
+  return { mode, setMode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, whyRequest, setWhyRequest, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, changeMode, closeTerminal, restoredPanes };
 }

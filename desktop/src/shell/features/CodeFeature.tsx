@@ -28,7 +28,7 @@ import { FeaturePorts } from "../FeaturePorts";
 
 export default function CodeFeature() {
   const { error: actionError, run: runAction } = useFeatureAction();
-  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, layout, setLayout, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError, model, whyRequest } = useWorkbench();
+  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError, model, whyRequest } = useWorkbench();
   const { fleet, error: fleetError } = useFleet();
   const whyState = useWhy(activePath ?? null, { providerId: model.providerId, modelId: model.modelId }, whyRequest);
 
@@ -390,8 +390,6 @@ export default function CodeFeature() {
       <TeamView
         tasks={teamTasks}
         sessions={sessions}
-        layout={layout}
-        onLayout={setLayout}
         selectedId={selectedTaskId}
         teamName={teamBoard?.team.name ?? null}
         busy={teamBusy}
@@ -408,8 +406,6 @@ export default function CodeFeature() {
         sessions={sessions}
         fleet={fleet}
         openIds={openIds}
-        layout={layout}
-        onLayout={setLayout}
         workspace={workspace}
         onNewTerminal={() => void newTerminal()}
         backendAvailable={backendAvailable}

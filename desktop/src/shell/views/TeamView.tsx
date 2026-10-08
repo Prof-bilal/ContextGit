@@ -3,8 +3,7 @@ import { LuPlus } from "react-icons/lu";
 
 import type { Session, Task } from "@/lib/api";
 
-import { Chip, MiniSeg } from "../primitives";
-import { LAYOUT_OPTIONS, type PaneLayout } from "../terminal/PaneCanvas";
+import { Chip } from "../primitives";
 import TeamBoard from "../team/TeamBoard";
 
 /**
@@ -15,8 +14,6 @@ import TeamBoard from "../team/TeamBoard";
 export default function TeamView({
   tasks,
   sessions,
-  layout,
-  onLayout,
   selectedId,
   teamName,
   busy,
@@ -30,8 +27,6 @@ export default function TeamView({
 }: {
   tasks: Task[];
   sessions: Session[];
-  layout: PaneLayout;
-  onLayout: (layout: PaneLayout) => void;
   selectedId: string | null;
   teamName: string | null;
   busy: boolean;
@@ -71,7 +66,6 @@ export default function TeamView({
           {done > 0 ? ` · ${done} done` : ""}
         </span>
         <span className="cg-toolbar-spacer" />
-        <MiniSeg value={layout} options={LAYOUT_OPTIONS} onChange={onLayout} label="Pane layout" />
         <button type="button" className="cg-btn" onClick={onNewTask} disabled={!workspaceName}>
           <LuPlus aria-hidden="true" /> New task
         </button>

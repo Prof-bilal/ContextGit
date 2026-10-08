@@ -7,15 +7,14 @@ import type { Session } from "@/lib/api";
 /** xterm is heavy and only needed once a terminal pane exists. */
 const TerminalPane = lazy(() => import("./TerminalPane"));
 
-export type PaneLayout = "single" | "split" | "tiled";
+export type PaneLayout = "single" | "split" | "rows";
 
-export const LAYOUT_OPTIONS = [
-  { value: "single" as const, label: "Single" },
-  { value: "split" as const, label: "Split" },
-  { value: "tiled" as const, label: "Tiled" },
-];
-
-export const LAYOUT_LIMIT: Record<PaneLayout, number> = { single: 1, split: 2, tiled: Infinity };
+/** Layout follows the number of open terminals; there is no manual mode switch. */
+export function layoutForCount(count: number): PaneLayout {
+  if (count <= 1) return "single";
+  if (count === 2) return "split";
+  return "rows";
+}
 
 /** Open runs, in the order they were opened. */
 export function openSessions(sessions: Session[], openIds: string[]): Session[] {
@@ -31,14 +30,8 @@ export function openSessions(sessions: Session[], openIds: string[]): Session[] 
  */
 export function visibleSessions(
   open: Session[],
-  layout: PaneLayout,
-  activeId: string | null,
 ): Session[] {
-  if (layout === "single") return open.filter((session) => session.id === activeId).slice(0, 1);
-  if (layout === "tiled") return open;
-  const active = open.find((session) => session.id === activeId);
-  const rest = open.filter((session) => session.id !== activeId);
-  return [...(active ? [active] : []), ...rest].slice(0, LAYOUT_LIMIT[layout]);
+  return open;
 }
 
 /**
@@ -49,8 +42,6 @@ export function visibleSessions(
 export default function PaneCanvas({
   sessions,
   openIds,
-  activeId,
-  layout,
   theme,
   kickoff,
   taskIds,
@@ -61,8 +52,6 @@ export default function PaneCanvas({
 }: {
   sessions: Session[];
   openIds: string[];
-  activeId: string | null;
-  layout: PaneLayout;
   theme: "dark" | "light";
   /** Session id → one-line briefing typed into that terminal once it is up. */
   kickoff?: Record<string, string>;
@@ -79,7 +68,8 @@ export default function PaneCanvas({
   for (const session of uniqueSessions(sessions)) if (ids.has(session.id)) retained.current.set(session.id, session);
   const open = openSessions([...retained.current.values()], openIds);
   if (open.length === 0) return null;
-  const shownIds = new Set(visibleSessions(open, layout, activeId).map((session) => session.id));
+  const layout = layoutForCount(open.length);
+  const shownIds = new Set(visibleSessions(open).map((session) => session.id));
 
   return (
     <div className="cg-pane-canvas" data-layout={layout}>

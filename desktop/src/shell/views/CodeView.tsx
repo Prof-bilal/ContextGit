@@ -2,8 +2,8 @@ import { LuPlus } from "react-icons/lu";
 
 import type { FleetEntry, Session } from "@/lib/api";
 import type { Workspace } from "../../../shared/workspace";
-import { Chip, MiniSeg } from "../primitives";
-import { LAYOUT_OPTIONS, openSessions, type PaneLayout } from "../terminal/PaneCanvas";
+import { Chip } from "../primitives";
+import { openSessions } from "../terminal/PaneCanvas";
 
 /**
  * Single mode's header: the runs rail drives the shared pane canvas that Shell
@@ -14,8 +14,6 @@ export default function CodeView({
   backendAvailable = true,
   fleet,
   openIds,
-  layout,
-  onLayout,
   workspace,
   onNewTerminal,
   onChooseProject,
@@ -26,8 +24,6 @@ export default function CodeView({
   backendAvailable?: boolean;
   fleet: FleetEntry[];
   openIds: string[];
-  layout: PaneLayout;
-  onLayout: (layout: PaneLayout) => void;
   workspace: Workspace | null;
   onNewTerminal: () => void;
   onChooseProject: () => void;
@@ -64,7 +60,6 @@ export default function CodeView({
         <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenEditor}>
           Editor
         </button>
-        <MiniSeg value={layout} options={LAYOUT_OPTIONS} onChange={onLayout} label="Pane layout" />
         <button
           type="button"
           className="cg-btn"
