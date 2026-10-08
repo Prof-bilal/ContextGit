@@ -347,7 +347,7 @@ export default function CodeFeature() {
   }, [activeSession, refresh, refreshRepo]);
 
   if (surface === "editor") {
-    return <EditorFeature embedded onClose={() => setSurface("runs")} />;
+    return <EditorFeature onClose={() => setSurface("runs")} />;
   }
 
   const rail = () => {

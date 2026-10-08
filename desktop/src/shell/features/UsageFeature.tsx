@@ -10,10 +10,8 @@ const USAGE_PERIODS: Array<{ label: string; days: number | undefined }> = [
 ];
 
 export default function UsageFeature({
-  embedded = false,
   onClose,
 }: {
-  embedded?: boolean;
   onClose?: () => void;
 }) {
   const { providers } = useWorkbench();
@@ -53,7 +51,7 @@ export default function UsageFeature({
       </span>
     </footer>
   ) : null;
-  return <FeaturePorts id={embedded ? "agent" : "usage"}
+  return <FeaturePorts id="agent"
     title={"Usage"}
     rail={rail}
     view={view}

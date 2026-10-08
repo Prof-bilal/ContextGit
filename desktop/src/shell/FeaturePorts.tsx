@@ -14,7 +14,6 @@ export function FeaturePorts({ id, title, rail, view, dock, footer, dialogs, onD
 }) {
   const { tab, slots, dockOpen, setFeatureOverlay } = useWorkbench();
   const active = tab === id;
-  const live = id === "code" || id === "browser" || id === "editor";
   useEffect(() => {
     setFeatureOverlay(id, hasModal);
     return () => setFeatureOverlay(id, false);
@@ -24,7 +23,7 @@ export function FeaturePorts({ id, title, rail, view, dock, footer, dialogs, onD
     : null;
   return <>
     {active && portal("rail", slots.rail, rail)}
-    {(active || live) && slots.views[id] && createPortal(<>
+    {active && slots.views[id] && createPortal(<>
       {notice && <p className="cg-banner" role="alert">{notice}</p>}
       <FeatureRegion feature={`${title} content`} render={view ?? (() => null)} />
     </>, slots.views[id]!, "view")}

@@ -26,24 +26,10 @@ const TABS: TabDef[] = FEATURES.map(({ id, label }) => ({ id, label }));
 const MODE_OPTIONS = [{ value: "single" as const, label: "Single" }, { value: "team" as const, label: "Team" }];
 const NO_DOCK: PrimaryTabId[] = [];
 
-const LEGACY_TAB_REDIRECTS: Record<Exclude<TabId, PrimaryTabId>, PrimaryTabId> = {
-  storage: "git",
-  editor: "code",
-  api: "code",
-  endpoints: "code",
-  why: "code",
-  db: "code",
-  browser: "chat",
-  playground: "agent",
-  usage: "agent",
-};
-
 function initialTab(): PrimaryTabId {
   const value = new URLSearchParams(window.location.search).get("tab");
   const primary = FEATURES.find(feature => feature.id === value)?.id as PrimaryTabId | undefined;
-  const redirected = primary ?? (value && value in LEGACY_TAB_REDIRECTS
-    ? LEGACY_TAB_REDIRECTS[value as Exclude<TabId, PrimaryTabId>]
-    : undefined) ?? "code";
+  const redirected = primary ?? "code";
   if (value && value !== redirected) {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", redirected);
@@ -59,12 +45,10 @@ export default function Shell(props: { backendAvailable?: boolean }) {
 /** Only stable layout and coordination live here. Feature hooks run in sibling controllers. */
 function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolean }) {
   const [tab, setActiveTab] = useState<PrimaryTabId>(initialTab);
-  const setTab = useCallback((next: SetStateAction<TabId>) => {
+  const setTab = useCallback((next: SetStateAction<PrimaryTabId>) => {
     setActiveTab(current => {
       const value = typeof next === "function" ? next(current) : next;
-      return Object.prototype.hasOwnProperty.call(LEGACY_TAB_REDIRECTS, value)
-        ? LEGACY_TAB_REDIRECTS[value as Exclude<TabId, PrimaryTabId>]
-        : value as PrimaryTabId;
+      return value;
     });
   }, []);
   const [theme, setTheme] = useState<"dark" | "light">("dark");

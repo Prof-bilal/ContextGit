@@ -7,22 +7,7 @@ export type PrimaryTabId =
   | "agent"
   | "git";
 
-/**
- * Retained for feature code that is being archived in a later phase. These
- * IDs are not part of the primary navigation and must not be added to TABS.
- */
-export type LegacyTabId =
-  | "browser"
-  | "editor"
-  | "api"
-  | "endpoints"
-  | "why"
-  | "db"
-  | "playground"
-  | "usage"
-  | "storage";
-
-export type TabId = PrimaryTabId | LegacyTabId;
+export type TabId = PrimaryTabId;
 
 export interface TabDef {
   id: TabId;

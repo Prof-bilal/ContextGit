@@ -71,7 +71,7 @@ export default function AgentFeature() {
   );
 
   if (surface === "usage") {
-    return <UsageFeature embedded onClose={() => setSurface("agents")} />;
+    return <UsageFeature onClose={() => setSurface("agents")} />;
   }
 
   const rail = () => {

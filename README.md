@@ -60,13 +60,11 @@ that history a mergeable artefact alongside your code.
 - **Paired code + context merge** — merging a run lands its diff on the git
   branch *and* its reasoning on the context branch.
 - **Desktop workbench** — Electron app with five primary tabs: Chat / Code / Agent /
-  Git / Assets. Storage is being folded into Git, while the legacy Browser, Editor,
-  API, Endpoints, Why, Database, Playground and Usage surfaces remain preserved in
-  the [full workbench archive](https://github.com/Prof-bilal/ContextGit-legacy-features).
-  Live terminals (xterm + node-pty) run per agent,
-  a **general-purpose in-app browser** (Chromium via `WebContentsView`, with tabs,
-  history, bookmarks, find-in-page and zoom), a file-asset library with an AI agent,
-  and an **embedded VS Code** (a bundled `code-server` sidecar) with a ContextGit graph.
+  Git / Assets. Storage is embedded in Git; Editor is embedded in Code; Usage is
+  embedded in Agent; and Why is embedded in Code. Live terminals (xterm + node-pty)
+  run per agent, alongside a file-asset library with an AI agent and an **embedded
+  VS Code** (a bundled `code-server` sidecar) with a ContextGit graph. The retired
+  standalone surfaces remain available only in the [full workbench archive](https://github.com/Prof-bilal/ContextGit-legacy-features).
   Editor setup: `npm run fetch:editor --prefix desktop`.
 - **CLI harnesses** — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama,
   Freebuff, Cline, Pi, Kilo Code and Command Code, each with its real brand icon.
@@ -90,16 +88,6 @@ that history a mergeable artefact alongside your code.
   the project on launch. The board *file* (`.contextgit/team.md` plus the managed
   `AGENTS.md` block) works with every CLI, MCP or not.
 - **Run isolation** — a private local `PORT` per run and a work-in-progress cap.
-- **All-in-one workbench** — instead of hand-building client panels, the workbench
-  **embeds existing self-hostable clients as sidecars**, the same way the Editor tab
-  embeds VS Code. **Databases**: a bundled **DbGate** client (MySQL, Postgres,
-  SQL Server, MongoDB, Redis, SQLite, ClickHouse and more) — `npm run fetch:dbgate --prefix desktop`.
-  **APIs**: a bundled **Restfox** client — `npm run fetch:restfox --prefix desktop`.
-  Each tab keeps a lightweight native runner as the default, with an
-  `Embedded` toggle beside it. Design and status:
-  [`files/embedding-clients.md`](files/embedding-clients.md),
-  [`files/all-in-one-landscape.md`](files/all-in-one-landscape.md),
-  [`files/workspace-architecture.md`](files/workspace-architecture.md).
 
 ## Team mode (Single | Team)
 

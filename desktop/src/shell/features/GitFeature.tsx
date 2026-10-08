@@ -81,7 +81,7 @@ export default function GitFeature() {
   };
 
   if (surface === "storage") {
-    return <StorageFeature embedded onClose={() => setSurface("history")} />;
+    return <StorageFeature onClose={() => setSurface("history")} />;
   }
 
   const rail = () => {

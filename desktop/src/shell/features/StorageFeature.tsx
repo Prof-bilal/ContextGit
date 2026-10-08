@@ -10,10 +10,8 @@ import { FeaturePorts } from "../FeaturePorts";
 
 
 export default function StorageFeature({
-  embedded = false,
   onClose,
 }: {
-  embedded?: boolean;
   onClose?: () => void;
 }) {
   const { setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, closedPanes, trashError } = useWorkbench();
@@ -267,8 +265,8 @@ export default function StorageFeature({
         onClose={() => setEmptyTrashOpen(false)}
       />
     )}</>;
-  return <FeaturePorts id={embedded ? "git" : "storage"}
-    title={embedded ? "Git storage" : "Storage"}
+  return <FeaturePorts id="git"
+    title="Git storage"
     rail={rail}
     view={view}
     dock={dock}

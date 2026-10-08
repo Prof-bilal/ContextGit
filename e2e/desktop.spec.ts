@@ -192,18 +192,18 @@ test("workspace shell renders with the top nav", async () => {
   }
 });
 
-test("legacy tab URLs redirect to the reduced navigation", async () => {
+test("unsupported tab URLs fall back to Code", async () => {
   const page = await openShell();
   const legacyUrl = new URL(await page.url());
   legacyUrl.searchParams.set("tab", "storage");
   await page.goto(legacyUrl.toString());
-  await expect(nav(page, "Git")).toHaveAttribute("aria-selected", "true");
-  expect(new URL(await page.url()).searchParams.get("tab")).toBe("git");
+  await expect(nav(page, "Code")).toHaveAttribute("aria-selected", "true");
+  expect(new URL(await page.url()).searchParams.get("tab")).toBe("code");
 
   legacyUrl.searchParams.set("tab", "playground");
   await page.goto(legacyUrl.toString());
-  await expect(nav(page, "Agent")).toHaveAttribute("aria-selected", "true");
-  expect(new URL(await page.url()).searchParams.get("tab")).toBe("agent");
+  await expect(nav(page, "Code")).toHaveAttribute("aria-selected", "true");
+  expect(new URL(await page.url()).searchParams.get("tab")).toBe("code");
 });
 
 test("Git and Code expose their consolidated workflows", async () => {

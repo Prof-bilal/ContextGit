@@ -37,7 +37,7 @@ function LiveTerminal({ name }: { name: string }) {
   return <button onClick={() => setCount(value => value + 1)}>{name}: {count}</button>;
 }
 
-function Controller({ id, fault }: { id: "api" | "code"; fault: Fault }) {
+function Controller({ id, fault }: { id: "chat" | "code"; fault: Fault }) {
   const [draft, setDraft] = useState("");
   const [modal, setModal] = useState(false);
   const { error, run } = useFeatureAction();
@@ -64,7 +64,7 @@ function Controller({ id, fault }: { id: "api" | "code"; fault: Fault }) {
 }
 
 function Harness() {
-  const [tab, setTab] = useState<TabId>("api");
+  const [tab, setTab] = useState<TabId>("chat");
   const [fault, setFault] = useState<Fault>(null);
   window.isolation.fault = setFault;
   const resource = useResource();
@@ -78,18 +78,18 @@ function Harness() {
     const region = (key: "rail" | "dock" | "footer" | "dialogs") => (node: HTMLDivElement | null) => setSlots(value => ({ ...value, [key]: node }));
     return {
       rail: region("rail"), dock: region("dock"), footer: region("footer"), dialogs: region("dialogs"),
-      api: (node: HTMLDivElement | null) => setSlots(value => ({ ...value, views: { ...value.views, api: node } })),
+      chat: (node: HTMLDivElement | null) => setSlots(value => ({ ...value, views: { ...value.views, chat: node } })),
       code: (node: HTMLDivElement | null) => setSlots(value => ({ ...value, views: { ...value.views, code: node } }))
     };
   });
   const context = { tab, setTab, slots, dockOpen: true, setFeatureOverlay } as unknown as WorkbenchContextValue;
   return <WorkbenchContext.Provider value={context}>
     <div className="cg-shell">
-      <TopNav tabs={[{ id: "api", label: "API" }, { id: "code", label: "Code" }]} active={tab} onChange={setTab} />
+      <TopNav tabs={[{ id: "chat", label: "Chat" }, { id: "code", label: "Code" }]} active={tab} onChange={setTab} />
       <div className="cg-body">
         <div className="cg-slot" ref={refs.rail} />
         <main className="cg-main">
-          <div className="cg-view" data-active={tab === "api"}><div className="cg-feature-content" ref={refs.api} /></div>
+          <div className="cg-view" data-active={tab === "chat"}><div className="cg-feature-content" ref={refs.chat} /></div>
           <div className="cg-view" data-active={tab === "code"}>
             <div className="cg-slot" ref={refs.code} />
             <LiveTerminal name="terminal one" /><LiveTerminal name="terminal two" />
@@ -98,7 +98,7 @@ function Harness() {
         <div ref={refs.dock} />
       </div>
       <div className="cg-slot" ref={refs.footer} /><div className="cg-slot" ref={refs.dialogs} />
-      <FeatureBoundary feature="API" target={slots.views.api ?? null}><Controller id="api" fault={fault} /></FeatureBoundary>
+      <FeatureBoundary feature="Chat" target={slots.views.chat ?? null}><Controller id="chat" fault={fault} /></FeatureBoundary>
       <FeatureBoundary feature="Code" target={slots.views.code ?? null}><Controller id="code" fault={fault} /></FeatureBoundary>
     </div>
     <aside>
