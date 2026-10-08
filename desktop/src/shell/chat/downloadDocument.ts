@@ -10,7 +10,10 @@ export async function saveDocument(document: {
   format: DocumentFormat;
   filename: string;
 }): Promise<string | null> {
-  const response = await fetch(documentUrl(document.id, document.format));
+  const token = window.contextgit?.apiToken;
+  const response = await fetch(documentUrl(document.id, document.format), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!response.ok) throw new Error(`Could not fetch the file (${response.status})`);
   const data = await response.arrayBuffer();
   const bridge = window.contextgit;

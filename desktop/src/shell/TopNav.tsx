@@ -11,6 +11,7 @@ export type TabId =
   | "why"
   | "db"
   | "agent"
+  | "playground"
   | "git"
   | "usage"
   | "storage";

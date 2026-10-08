@@ -11,7 +11,7 @@ export interface BackendIdentity { repoId: string; instanceId: string }
 
 /** Probe the API contract, repository and browser access, not just an open socket. */
 export async function validateBackend(
-  base: string, expectedRepo: string, origin: string, fetcher: typeof fetch = fetch,
+  base: string, expectedRepo: string, origin: string, fetcher: typeof fetch = fetch, token?: string,
 ): Promise<BackendIdentity> {
   const response = await fetcher(`${base}/api/v1/health`, { signal: AbortSignal.timeout(2000) });
   if (!response.ok) throw new Error(`Backend health failed (HTTP ${response.status}).`);
@@ -24,13 +24,13 @@ export async function validateBackend(
   }
   const preflight = await fetcher(`${base}/api/v1/sessions`, {
     method: "OPTIONS", signal: AbortSignal.timeout(2000),
-    headers: { Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+    headers: { Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type,authorization,x-contextgit-repo" },
   });
   if (!preflight.ok || preflight.headers.get("access-control-allow-origin") !== origin) {
     throw new Error(`Backend CORS rejected the renderer origin ${origin}. Check CONTEXTGIT_CORS_ORIGINS.`);
   }
   const sessions = await fetcher(`${base}/api/v1/sessions`, {
-    signal: AbortSignal.timeout(2000), headers: { Origin: origin },
+    signal: AbortSignal.timeout(2000), headers: { Origin: origin, "X-ContextGit-Repo": expectedRepo, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!sessions.ok) throw new Error(`Backend session loading failed (HTTP ${sessions.status}). Check backend logs.`);
   if (sessions.headers.get("access-control-allow-origin") !== origin) {

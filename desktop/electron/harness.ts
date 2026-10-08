@@ -157,6 +157,7 @@ export async function checkHarness(harness: Harness): Promise<{
 export async function installHarness(
   harness: Harness,
   onEvent: (event: HarnessInstallEvent) => void,
+  options?: { prefix: string; verifyPath: string },
 ): Promise<void> {
   const id = harness.id;
   // Claim the id synchronously so a second call (StrictMode double-mount, or a
@@ -181,11 +182,13 @@ export async function installHarness(
     return;
   }
 
-  const args = ["install", "-g", ...(harness.installArgs ?? []), harness.npmPackage];
-  onEvent({ id, phase: "installing", percent: 0.08, line: `npm install -g ${harness.npmPackage}` });
+  const args = options
+    ? ["install", "--prefix", options.prefix, "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", harness.npmPackage]
+    : ["install", "-g", ...(harness.installArgs ?? []), harness.npmPackage];
+  onEvent({ id, phase: "installing", percent: 0.08, line: `npm ${args.join(" ")}` });
 
   const child = spawn(npm, args, {
-    env: { ...process.env, PATH: pathValue },
+    env: { ...process.env, CONTEXTGIT_API_TOKEN: undefined, PATH: pathValue },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const active: ActiveInstall = { child, onEvent, cancelled: false, settled: false };
@@ -233,7 +236,9 @@ export async function installHarness(
   if (failed) return;
 
   onEvent({ id, phase: "verifying", percent: 0.9, line: "Verifying installation…" });
-  const found = harness.command ? await findCommand(harness.command) : null;
+  const found = options
+    ? (existsSync(options.verifyPath) ? options.verifyPath : null)
+    : harness.command ? await findCommand(harness.command) : null;
   if (harness.command && !found) {
     onEvent({
       id,

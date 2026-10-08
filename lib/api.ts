@@ -146,7 +146,7 @@ export interface ProviderModelsResult {
 // Electron preload injects the backend port; the web build falls back to env/default.
 const bridge =
   typeof window !== "undefined"
-    ? (window as { contextgit?: { apiBase?: string } }).contextgit
+    ? (window as { contextgit?: { apiBase?: string; apiToken?: string } }).contextgit
     : undefined;
 const envBase =
   typeof process !== "undefined"
@@ -154,6 +154,10 @@ const envBase =
     : undefined;
 const base = bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
 let expectedRepository: string | undefined;
+
+function launchHeaders(): Record<string, string> {
+  return bridge?.apiToken ? { Authorization: `Bearer ${bridge.apiToken}` } : {};
+}
 
 export type SessionKind = "chat" | "terminal";
 export type SessionStatus = "idle" | "running" | "done" | "error";
@@ -388,17 +392,22 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function repositoryHeaders(): Record<string, string> {
   const status = typeof window !== "undefined" ? window.contextgit?.getStatus().status : undefined;
   if (status?.state === "ready" && status.repoId) {
     expectedRepository ??= status.repoId;
     if (expectedRepository !== status.repoId) throw new ApiError("Backend repository changed. Reopen this workspace.", 409, "RepositoryMismatch");
   }
+  return expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {};
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const repoHeaders = repositoryHeaders();
   let response: Response;
   try {
     response = await fetch(`${base}${path}`, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {}), ...init?.headers },
+      headers: { "Content-Type": "application/json", ...launchHeaders(), ...repoHeaders, ...init?.headers },
     });
   } catch {
     throw new ApiError("Cannot reach the local backend. Check the connection banner and retry.", 0, "network");
@@ -1330,6 +1339,8 @@ export async function readSse(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      ...launchHeaders(),
+      ...repositoryHeaders(),
     },
     body: JSON.stringify(body),
     signal,

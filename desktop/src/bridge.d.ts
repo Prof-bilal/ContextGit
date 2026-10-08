@@ -1,6 +1,14 @@
 /** Bridge exposed by desktop/electron/preload.ts. */
 export interface ContextGitBridge {
   apiBase: string;
+  apiToken: string;
+  playgroundInstalled: () => Promise<import("../shared/playground").PlaygroundInstalled[]>;
+  playgroundPreview: (id: string) => Promise<import("../shared/playground").PlaygroundPreview>;
+  playgroundInstall: (token: string) => Promise<void>;
+  playgroundCancel: (id: string) => Promise<void>;
+  playgroundTry: (id: string, tool: string, input: Record<string, unknown>) => Promise<import("../shared/playground").PlaygroundTryResult>;
+  playgroundDocs: (id: string) => Promise<void>;
+  onPlaygroundProgress: (callback: (event: import("../shared/playground").PlaygroundEvent) => void) => () => void;
   getStatus: () => { status: import("../shared/status").BackendStatus; apiBase: string };
   restartBackend: () => Promise<{ status: import("../shared/status").BackendStatus; apiBase: string }>;
   onStatus: (callback: (status: import("../shared/status").BackendStatus) => void) => () => void;

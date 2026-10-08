@@ -433,7 +433,7 @@ test("the Git tab reads the real repository", async () => {
     for (const n of [1, 2]) {
       await fetch(`${base}/api/v1/commits`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.contextgit!.apiToken}` },
         body: JSON.stringify({
           messages: [{ role: "user", content: `seeded turn ${n}` }],
           model: "e2e-model",
@@ -477,12 +477,12 @@ test("branches with no commits are folded away", async () => {
   // runs never commit.
   await page.evaluate(async () => {
     const base = window.contextgit!.apiBase;
-    const snapshot = await fetch(`${base}/api/v1/repo`).then((r) => r.json());
+    const snapshot = await fetch(`${base}/api/v1/repo`, { headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } }).then((r) => r.json());
     const root = snapshot.commits.find((commit: { parent_ids: string[] }) => commit.parent_ids.length === 0);
     if (root) {
       await fetch(`${base}/api/v1/branches`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.contextgit!.apiToken}` },
         body: JSON.stringify({ name: "e2e/empty", from_commit: root.id }),
       });
     }
@@ -509,12 +509,12 @@ test("a branch can be deleted, and the current one cannot", async () => {
   // A disposable branch pointing at the root commit.
   await page.evaluate(async () => {
     const base = window.contextgit!.apiBase;
-    const snapshot = await fetch(`${base}/api/v1/repo`).then((r) => r.json());
+    const snapshot = await fetch(`${base}/api/v1/repo`, { headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } }).then((r) => r.json());
     const root = snapshot.commits.find((commit: { parent_ids: string[] }) => commit.parent_ids.length === 0);
     if (root) {
       await fetch(`${base}/api/v1/branches`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.contextgit!.apiToken}` },
         body: JSON.stringify({ name: "e2e/to-delete", from_commit: root.id }),
       });
     }
@@ -742,7 +742,7 @@ test("the fleet rail shows a run's changed files", async () => {
   await expect(page.locator(".cg-row", { hasText: name })).toBeVisible();
   const worktree = await page.evaluate(async (runName) => {
     const base = window.contextgit!.apiBase;
-    const sessions = await fetch(`${base}/api/v1/sessions`).then((r) => r.json());
+    const sessions = await fetch(`${base}/api/v1/sessions`, { headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } }).then((r) => r.json());
     const run = sessions.find((session: { name: string }) => session.name === runName);
     return (run?.worktree_path as string | undefined) ?? null;
   }, name);
@@ -817,7 +817,7 @@ test("a run's code and context integrate together", async () => {
 
   const run = await page.evaluate(async (runName) => {
     const base = window.contextgit!.apiBase;
-    const sessions = await fetch(`${base}/api/v1/sessions`).then((r) => r.json());
+    const sessions = await fetch(`${base}/api/v1/sessions`, { headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } }).then((r) => r.json());
     return sessions.find((session: { name: string }) => session.name === runName) as
       | { id: string; worktree_path: string }
       | undefined;
@@ -828,7 +828,7 @@ test("a run's code and context integrate together", async () => {
   // Give the run some context, and commit a code change in its worktree.
   await page.evaluate(async (sessionId) => {
     const base = window.contextgit!.apiBase;
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${window.contextgit!.apiToken}` };
     await fetch(`${base}/api/v1/sessions/${sessionId}/staging`, {
       method: "POST",
       headers,
@@ -1291,7 +1291,7 @@ test("team mode: a dependent task waits, then starts when its dependency is done
     const post = async (path: string, body: unknown) => {
       const response = await fetch(base + path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.contextgit!.apiToken}` },
         body: JSON.stringify(body),
       });
       return { status: response.status, body: await response.text() };
@@ -1338,7 +1338,7 @@ test("team mode: a dependent task waits, then starts when its dependency is done
 
   // Completing runs the gate; passing lands the task in review, not done.
   await page.evaluate(
-    (id) => fetch(`${window.contextgit!.apiBase}/api/v1/team/tasks/${id}/complete`, { method: "POST" }),
+    (id) => fetch(`${window.contextgit!.apiBase}/api/v1/team/tasks/${id}/complete`, { method: "POST", headers: { Authorization: `Bearer ${window.contextgit!.apiToken}` } }),
     ids.api,
   );
   await expect(apiCard).toContainText("gate pass", { timeout: 20_000 });
@@ -1444,4 +1444,73 @@ test("live CLI survives missing and duplicate polls, mode switches, and backend 
     await expect(output).toContainText(`CG_AFTER=${before} CG_KEEP=survived`, { timeout: 15000 });
     expect(keyWarnings).toEqual([]);
   } finally { await page.unroute("**/api/v1/sessions"); }
+});
+
+test("Playground browses the curated catalog and installs a bundled role skill", async () => {
+  const page = await openShell();
+  await nav(page, "Playground").click();
+  await expect(page.getByRole("heading", { name: "CodeAtlas", exact: true })).toBeVisible();
+  await expect(page.locator(".cg-rail")).toContainText("Warden");
+  await expect(page.locator(".cg-rail")).toContainText("ModelCheck");
+  await page.locator(".cg-rail").getByRole("button", { name: /^Skills/ }).click();
+  await page.getByLabel("Search Playground").fill("UI build");
+  await page.locator(".cg-rail .cg-row", { hasText: "UI build" }).click();
+  await page.locator(".cg-pg-actions").getByRole("button", { name: /Install|Review installation/, exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Review installation" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("SKILL.md");
+  await expect(dialog).toContainText("name: ui-build");
+  await dialog.getByRole("button", { name: "Confirm install" }).click();
+  await expect(dialog).not.toBeVisible();
+  await page.getByLabel("Search Playground").fill("");
+  await page.locator(".cg-rail").getByRole("button", { name: /^Installed/ }).click();
+  await expect(page.locator(".cg-rail .cg-row", { hasText: "UI build" })).toBeVisible();
+  await page.screenshot({ path: "/tmp/contextgit-playground.png", fullPage: true });
+});
+
+test("Playground Try calls a real read-only MCP tool and desktop API requires its launch token", async () => {
+  const page = await openShell();
+  await nav(page, "Playground").click();
+  await page.getByLabel("Search Playground").fill("");
+  await page.locator(".cg-rail").getByRole("button", { name: /^MCP servers/ }).click();
+  await page.locator(".cg-rail .cg-row", { hasText: "ContextGit team MCP" }).click();
+  await page.locator(".cg-pg-actions").getByRole("button", { name: /Install|Review installation/, exact: true }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Confirm install" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "Run tool", exact: true }).click();
+  await expect(page.getByTestId("playground-response")).toContainText('"jsonrpc": "2.0"', { timeout: 25_000 });
+  const statuses = await page.evaluate(async () => {
+    const bridge = window.contextgit!;
+    const unauthenticated = await fetch(`${bridge.apiBase}/api/v1/repo`);
+    const authenticated = await fetch(`${bridge.apiBase}/api/v1/repo`, { headers: { Authorization: `Bearer ${bridge.apiToken}` } });
+    return [unauthenticated.status, authenticated.status];
+  });
+  expect(statuses).toEqual([401, 200]);
+});
+
+test("Playground expanded catalog distinguishes local installs from guided connections", async () => {
+  const page = await openShell();
+  await nav(page, "Playground").click();
+  await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
+  await page.getByLabel("Search Playground").fill("");
+  await expect(page.locator(".cg-pg-feature-card")).toHaveCount(3);
+  await expect(page.locator(".cg-pg-hero")).not.toContainText("Installed in this project.");
+  await page.locator(".cg-rail").getByRole("button", { name: /^MCP servers/ }).click();
+  await page.getByLabel("Search Playground").fill("Context7");
+  await page.locator(".cg-rail .cg-row", { hasText: "Context7" }).click();
+  await expect(page.getByLabel("Tool JSON arguments")).toHaveValue(/"libraryName": "react"/);
+  await expect(page.locator(".cg-pg-try")).toContainText("Your query is sent to Context7");
+  await page.getByLabel("Search Playground").fill("GitHub");
+  await page.locator(".cg-rail .cg-row", { hasText: "GitHub" }).click();
+  await expect(page.locator(".cg-pg-guided")).toContainText("OAuth");
+  await expect(page.locator(".cg-pg-actions").getByRole("button", { name: "Setup guide" })).toBeEnabled();
+  await page.getByLabel("Search Playground").fill("");
+  await page.locator(".cg-rail").getByRole("button", { name: /^Plugins/ }).click();
+  await page.getByLabel("Search Playground").fill("Frontend Design");
+  await page.locator(".cg-rail .cg-row", { hasText: "Frontend Design" }).click();
+  await expect(page.locator(".cg-pg-guided")).toContainText("frontend-design@claude-plugins-official --scope project");
+  await page.getByLabel("Search Playground").fill("");
+  await page.locator(".cg-rail").getByRole("button", { name: /^Featured/ }).click();
+  await page.locator(".cg-pg-feature-card", { hasText: "CodeAtlas" }).click();
+  await page.screenshot({ path: "/tmp/contextgit-playground-refined.png", fullPage: true });
 });

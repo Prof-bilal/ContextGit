@@ -8,10 +8,12 @@ import type { Workspace } from "../shared/workspace";
 const initial = ipcRenderer.sendSync("ctx:status-sync") as {
   status: BackendStatus;
   apiBase: string;
+  apiToken: string;
 };
 
 contextBridge.exposeInMainWorld("contextgit", {
   apiBase: initial.apiBase,
+  apiToken: initial.apiToken,
   getStatus: () => ipcRenderer.sendSync("ctx:status-sync") as { status: BackendStatus; apiBase: string },
   restartBackend: () => ipcRenderer.invoke("ctx:restart-backend") as Promise<{ status: BackendStatus; apiBase: string }>,
   onStatus: (callback: (status: BackendStatus) => void) => {
@@ -50,6 +52,17 @@ contextBridge.exposeInMainWorld("contextgit", {
     return () => ipcRenderer.removeListener("ctx:harness-progress", listener);
   },
   // ---------- Project folders (remembered projects + active) ----------
+  playgroundInstalled: () => ipcRenderer.invoke("ctx:playground-installed") as Promise<import("../shared/playground").PlaygroundInstalled[]>,
+  playgroundPreview: (id: string) => ipcRenderer.invoke("ctx:playground-preview", id) as Promise<import("../shared/playground").PlaygroundPreview>,
+  playgroundInstall: (token: string) => ipcRenderer.invoke("ctx:playground-install", token) as Promise<void>,
+  playgroundCancel: (id: string) => ipcRenderer.invoke("ctx:playground-cancel", id) as Promise<void>,
+  playgroundTry: (id: string, tool: string, input: Record<string, unknown>) => ipcRenderer.invoke("ctx:playground-try", id, tool, input) as Promise<import("../shared/playground").PlaygroundTryResult>,
+  playgroundDocs: (id: string) => ipcRenderer.invoke("ctx:playground-docs", id) as Promise<void>,
+  onPlaygroundProgress: (callback: (event: import("../shared/playground").PlaygroundEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, event: import("../shared/playground").PlaygroundEvent) => callback(event);
+    ipcRenderer.on("ctx:playground-progress", listener);
+    return () => ipcRenderer.removeListener("ctx:playground-progress", listener);
+  },
   getWorkspace: () => ipcRenderer.invoke("ctx:workspace-get") as Promise<Workspace | null>,
   listProjects: () => ipcRenderer.invoke("ctx:projects-list") as Promise<Workspace[]>,
   useProject: (target: string) =>

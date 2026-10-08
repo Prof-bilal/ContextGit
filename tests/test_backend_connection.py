@@ -63,3 +63,34 @@ def test_backend_identity_and_cors_errors(tmp_path):
         assert mismatch.json()["type"] == "RepositoryMismatch"
         assert mismatch.headers["access-control-allow-origin"] == ORIGIN
         assert client.get("/api/v1/sessions").json() == []
+
+
+def test_authenticated_backend_preserves_repository_checks_and_error_cors(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONTEXTGIT_API_TOKEN", "launch-token")
+    app = create_app(tmp_path / "repo")
+
+    @app.get("/test-authenticated-crash")
+    def crash():
+        raise RuntimeError("test failure")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        headers = {"Origin": ORIGIN, "Authorization": "Bearer launch-token"}
+        identity = client.get("/api/v1/health").json()["repo_id"]
+        denied = client.get("/api/v1/sessions", headers={"Origin": ORIGIN})
+        assert denied.status_code == 401
+        assert denied.headers["access-control-allow-origin"] == ORIGIN
+        headers["X-ContextGit-Repo"] = "wrong"
+        rejected = client.post("/api/v1/sessions", json={"name": "blocked"}, headers=headers)
+        assert rejected.status_code == 409
+        assert rejected.headers["access-control-allow-origin"] == ORIGIN
+        headers["X-ContextGit-Repo"] = identity
+        assert client.get("/api/v1/sessions", headers=headers).json() == []
+        crashed = client.get("/test-authenticated-crash", headers=headers)
+        assert crashed.status_code == 500
+        assert crashed.headers["access-control-allow-origin"] == ORIGIN
+        preflight = client.options("/api/v1/sessions", headers={
+            "Origin": ORIGIN,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,authorization,x-contextgit-repo",
+        })
+        assert preflight.status_code == 200

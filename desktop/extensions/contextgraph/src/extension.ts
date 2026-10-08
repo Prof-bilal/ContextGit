@@ -39,7 +39,10 @@ async function loadGraph(): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
       try {
-        const response = await fetch(`${base}${route}`);
+        const token = process.env.CONTEXTGIT_API_TOKEN;
+        const response = await fetch(`${base}${route}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (response.ok) return response.json();
         // Never `.json()` an error body — surface the status and text instead.
         lastError = `${route} → ${response.status} ${(await response.text()).slice(0, 160)}`;

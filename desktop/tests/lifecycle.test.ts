@@ -36,6 +36,22 @@ test("backend validation rejects unrelated servers, wrong repos and broken CORS"
   assert.deepEqual(await validateBackend("http://localhost", "expected", "http://127.0.0.1:5173", fake("ok")), { repoId: "expected", instanceId: "instance" });
 });
 
+test("backend readiness authenticates session checks and preflights both headers", async () => {
+  const origin = "http://127.0.0.1:5173";
+  const fake = (async (url: string, init?: RequestInit) => {
+    if (url.endsWith("health")) return Response.json({ service: "contextgit", api_version: "1", status: "ok", repo_id: "expected", instance_id: "instance" });
+    const headers = new Headers(init?.headers);
+    if (init?.method === "OPTIONS") {
+      assert.equal(headers.get("access-control-request-headers"), "content-type,authorization,x-contextgit-repo");
+      return new Response(null, { headers: { "access-control-allow-origin": origin } });
+    }
+    assert.equal(headers.get("authorization"), "Bearer test-launch-token");
+    assert.equal(headers.get("x-contextgit-repo"), "expected");
+    return Response.json([], { headers: { "access-control-allow-origin": origin } });
+  }) as typeof fetch;
+  assert.equal((await validateBackend("http://localhost", "expected", origin, fake, "test-launch-token")).instanceId, "instance");
+});
+
 test("Codex maps returned buckets and actual durations without inventing token caps", () => {
   const limits = codexLimits({ rateLimitsByLimitId: {
     codex: { primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1791500000 }, secondary: { usedPercent: 91, windowDurationMins: 10080 } },

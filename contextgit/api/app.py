@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import os
+import secrets
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -217,6 +218,20 @@ def create_app(
                     "type": "RepositoryMismatch",
                 },
             )
+        return await call_next(request)
+
+    # Electron supplies a fresh token on each launch. Standalone API deployments
+    # may opt in with the same environment variable; tests remain injectable.
+    api_token = os.getenv("CONTEXTGIT_API_TOKEN")
+
+    @app.middleware("http")
+    async def require_launch_token(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        if api_token and request.method != "OPTIONS" and request.url.path != "/api/v1/health":
+            supplied = request.headers.get("Authorization", "")
+            if not secrets.compare_digest(supplied, f"Bearer {api_token}"):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
     state: dict[str, Repo] = {"repo": repo} if repo is not None else {}

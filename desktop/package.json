@@ -6,6 +6,7 @@
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "main": "dist-electron/main.cjs",
   "scripts": {
+    "test:playground": "node scripts/test-playground.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:mock": "vite",
     "typecheck": "tsc --noEmit",

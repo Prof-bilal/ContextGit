@@ -6,6 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain, net as enet, protocol, shell } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
+import { randomBytes } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -30,11 +31,14 @@ import { DbGateSidecar } from "./dbgate";
 import { RestfoxSidecar } from "./restfox";
 import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
+import { Playground } from "./playground";
 
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(app.getAppPath(), "..");
 const backendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
 const apiBase = `http://127.0.0.1:${backendPort}`;
+const apiToken = randomBytes(32).toString("hex");
+const backendRepo = process.env.CONTEXTGIT_REPO ?? path.join(app.getPath("userData"), "contextgit");
 
 /**
  * Asset bytes (thumbnails, previews, video) are served to the renderer through
@@ -75,7 +79,7 @@ function rendererOrigin(): string {
   return process.env.VITE_DEV_SERVER_URL ? new URL(process.env.VITE_DEV_SERVER_URL).origin : "null";
 }
 async function probeBackend(generation = backendGeneration): Promise<void> {
-  const identity = await validateBackend(apiBase, repositoryId(backendRepoPath()), rendererOrigin());
+  const identity = await validateBackend(apiBase, repositoryId(backendRepoPath()), rendererOrigin(), fetch, apiToken);
   if (generation !== backendGeneration) return;
   if (status.state === "ready" && status.repoId === identity.repoId && status.instanceId === identity.instanceId) return;
   setStatus({ state: "ready", apiBase, ...identity });
@@ -99,8 +103,9 @@ async function spawnBackend(): Promise<void> {
     ...process.env,
     CONTEXTGIT_HOST: "127.0.0.1",
     CONTEXTGIT_PORT: String(backendPort),
+    CONTEXTGIT_API_TOKEN: apiToken,
     CONTEXTGIT_REPO:
-      process.env.CONTEXTGIT_REPO ?? path.join(app.getPath("userData"), "contextgit"),
+      backendRepo,
     // Renderer origin: dev server (Vite) or file:// (packaged) — allow both.
     CONTEXTGIT_CORS_ORIGINS: process.env.CONTEXTGIT_CORS_ORIGINS
       ?? "http://localhost:5173,http://127.0.0.1:5173,null",
@@ -112,13 +117,7 @@ async function spawnBackend(): Promise<void> {
     ? ["contextgit.api.main:app", "--host", "127.0.0.1", "--port", String(backendPort)]
     : [];
   if (isDev && !(await getPortFree(backendPort))) {
-    // Never trust a listener merely because the port is occupied.
-    try {
-      await probeBackend();
-      startBackendMonitor();
-    } catch (cause) {
-      setStatus({ state: "error", message: cause instanceof Error ? cause.message : "Backend validation failed." });
-    }
+    setStatus({ state: "error", message: `Port ${backendPort} is occupied. Stop the existing backend or choose CONTEXTGIT_PORT; the desktop requires its own authenticated backend.` });
     return;
   }
   backend = spawn(binary, args, {
@@ -223,7 +222,7 @@ async function createWindow(): Promise<void> {
 }
 
 ipcMain.on("ctx:status-sync", (event) => {
-  event.returnValue = { status, apiBase };
+  event.returnValue = { status, apiBase, apiToken };
 });
 
 // ---------- Projects (the folders the user works in) ----------
@@ -594,7 +593,7 @@ ipcMain.handle("ctx:editor-start", async () => {
   prepareEditorExtensions();
   // Same augmented PATH the terminals get, so VS Code finds git/other tooling.
   const path = await augmentedPath();
-  return editor().start(currentWorkspace()?.path ?? null, { PATH: path });
+  return editor().start(currentWorkspace()?.path ?? null, { PATH: path, CONTEXTGIT_API_TOKEN: apiToken });
 });
 ipcMain.handle("ctx:editor-stop", () => {
   editor().stop();
@@ -777,6 +776,47 @@ ipcMain.handle("ctx:harness-install", (_event, id: string) => {
 
 ipcMain.on("ctx:harness-cancel", (_event, id: string) => cancelInstall(id));
 
+// Playground uses native IPC, never an unauthenticated HTTP install endpoint.
+let playgroundStore: Promise<Playground> | null = null;
+async function playground(): Promise<Playground> {
+  if (playgroundStore) return playgroundStore;
+  playgroundStore = (async () => {
+    const localMcp = path.join(repoRoot, ".venv", "bin", "contextgit-mcp");
+    const command = isDev && fs.existsSync(localMcp) ? localMcp : await import("./harness").then((module) => module.findCommand("contextgit-mcp"));
+    return new Playground(
+      path.join(app.getPath("userData"), "playground"),
+      () => currentWorkspace()?.path ?? null, backendRepo, command,
+      (event) => mainWindow?.webContents.send("ctx:playground-progress", event),
+    );
+  })();
+  return playgroundStore;
+}
+function requirePlaygroundSender(event: Electron.IpcMainInvokeEvent): void {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+    throw new Error("Playground is only available to the desktop workspace.");
+  }
+}
+ipcMain.handle("ctx:playground-installed", async (event) => {
+  requirePlaygroundSender(event); return (await playground()).installed();
+});
+ipcMain.handle("ctx:playground-preview", async (event, id: string) => {
+  requirePlaygroundSender(event); return (await playground()).preview(id);
+});
+ipcMain.handle("ctx:playground-install", async (event, token: string) => {
+  requirePlaygroundSender(event); await (await playground()).install(token);
+});
+ipcMain.handle("ctx:playground-cancel", async (event, id: string) => {
+  requirePlaygroundSender(event); (await playground()).cancel(id);
+});
+ipcMain.handle("ctx:playground-try", async (event, id: string, tool: string, input: Record<string, unknown>) => {
+  requirePlaygroundSender(event); return (await playground()).tryItem(id, tool, input);
+});
+ipcMain.handle("ctx:playground-docs", async (event, id: string) => {
+  requirePlaygroundSender(event);
+  const { playgroundItem } = await import("../shared/playground");
+  await shell.openExternal(playgroundItem(id).docsUrl);
+});
+
 ipcMain.handle("ctx:restart-backend", async () => {
   stopBackend();
   setStatus({ state: "starting" });
@@ -821,7 +861,7 @@ app.whenReady().then(async () => {
             const base = window.contextgit.apiBase;
             const created = await fetch(base + '/api/v1/sessions', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window.contextgit.apiToken },
               body: JSON.stringify({ name: 'smoke run', kind: 'terminal', agent: 'claude' }),
             }).then((r) => r.json());
             await new Promise((r) => setTimeout(r, 5000));

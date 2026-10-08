@@ -57,6 +57,10 @@ import ApiView from "./views/ApiView";
 import { useApiClient } from "./api/useApiClient";
 import EndpointsRail from "./rail/EndpointsRail";
 import EndpointsView from "./views/EndpointsView";
+import PlaygroundRail from "./rail/PlaygroundRail";
+import PlaygroundView from "./views/PlaygroundView";
+import PlaygroundDetails from "./playground/PlaygroundDetails";
+import { usePlayground } from "./playground/usePlayground";
 import EndpointOrigin from "./endpoints/EndpointOrigin";
 import { useEndpoints } from "./endpoints/useEndpoints";
 import WhyRail from "./rail/WhyRail";
@@ -111,6 +115,7 @@ const TAB_IDS: TabId[] = [
   "why",
   "db",
   "agent",
+  "playground",
   "git",
   "usage",
   "storage",
@@ -261,6 +266,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
   const [mergeOpen, setMergeOpen] = useState(false);
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepo();
   const apiClient = useApiClient();
+  const playgroundState = usePlayground(activePath ?? null);
   const {
     providers,
     error: providersError,
@@ -1024,6 +1030,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
     { id: "why", label: "Why" },
     { id: "db", label: "Database" },
     { id: "agent", label: "Agent" },
+    { id: "playground", label: "Playground" },
     { id: "git", label: "Git" },
     { id: "usage", label: "Usage" },
     { id: "storage", label: "Storage" },
@@ -1089,6 +1096,8 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
 
   const rail = () => {
     switch (tab) {
+      case "playground":
+        return <PlaygroundRail state={playgroundState} />;
       case "chat":
         return (
           <ChatRail
@@ -1224,6 +1233,8 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
 
   const view = () => {
     switch (tab) {
+      case "playground":
+        return <PlaygroundView state={playgroundState} />;
       case "chat":
         return (
           <ChatView
@@ -1335,6 +1346,8 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
 
   const dock = () => {
     switch (tab) {
+      case "playground":
+        return <PlaygroundDetails state={playgroundState} />;
       case "chat": {
         const chatProvider = providers.find((provider) => provider.id === model.providerId);
         const chatBrand = brandFor(model.providerId, chatProvider?.label ?? "");
@@ -1742,6 +1755,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
   };
 
   const bottomBar = () => {
+    if (tab === "playground") return null;
     if (tab === "assets") {
       // No commit bar: the gallery is the bottom edge.
       return null;
@@ -1948,7 +1962,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
   };
 
   const dockTitle =
-    tab === "code"
+    tab === "playground" ? "Playground" : tab === "code"
       ? mode === "team"
         ? "Task"
         : "Run"
@@ -1988,6 +2002,7 @@ export default function Shell({ backendAvailable = true }: { backendAvailable?: 
   // A native WebContentsView (Browser/Editor) is layered above the DOM, so it
   // would cover any dialog. Hide those views while a modal is open.
   const overlayOpen =
+    playgroundState.preview !== null ||
     pickerOpen ||
     providerDialog !== null ||
     taskForm !== null ||
