@@ -63,12 +63,23 @@ export class PtyManager {
       const payload = `${options.input.trim()}\r`;
       let sent = false;
       let inputTimer: ReturnType<typeof setTimeout> | null = null;
+      let submitTimer: ReturnType<typeof setTimeout> | null = null;
       const send = () => {
         if (sent) return;
         sent = true;
         if (inputTimer !== null) clearTimeout(inputTimer);
         try {
-          pty.write(payload);
+          // OpenCode can render the prompt while it is still wiring its input
+          // handler. Type the brief first, then submit it as a separate key so
+          // the Enter event cannot be swallowed during startup.
+          pty.write(payload.slice(0, -1));
+          submitTimer = setTimeout(() => {
+            try {
+              pty.write("\r");
+            } catch {
+              // the process already exited
+            }
+          }, 250);
         } catch {
           // the process already exited
         }
@@ -86,6 +97,7 @@ export class PtyManager {
       inputTimer = setTimeout(send, 3000);
       pty.onExit(() => {
         if (inputTimer !== null) clearTimeout(inputTimer);
+        if (submitTimer !== null) clearTimeout(submitTimer);
       });
     }
     pty.onExit(({ exitCode }) => {
