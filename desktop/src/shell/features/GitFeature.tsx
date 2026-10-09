@@ -80,7 +80,7 @@ export default function GitFeature() {
     setSelectedBranch((current) =>
       current && snapshot.branches.some((branch) => branch.name === current)
         ? current
-        : snapshot.current_branch || snapshot.branches[0]?.name || "",
+        : "",
     );
   }, [snapshot]);
 
@@ -124,9 +124,9 @@ export default function GitFeature() {
   };
 
   const deleteSession = async (session: Session) => {
-    if (!window.confirm(`Delete session "${session.name}" and its private commits?`)) return;
+    if (!window.confirm(`Move session "${session.name}" and its history to Storage? You can restore it later.`)) return;
     try {
-      await api.deleteSession(session.id, true);
+      await api.deleteSession(session.id);
       if (selectedBranch === session.branch) {
         setSelectedBranch("");
         setCommitId(null);

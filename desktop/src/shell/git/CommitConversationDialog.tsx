@@ -1,64 +1,60 @@
-import type { Commit } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, type Commit, type Message } from "@/lib/api";
 import Modal from "../Modal";
+import "./transcript.css";
 
-function readableChatText(content: string): string {
-  return content
-    .split("\n")
-    .map((line) => line.replace(/^\s*[|│]\s?/, "").trim())
-    .filter((line) => {
-      if (!line) return false;
-      return ![
-        /^new session\s*-/i,
-        /^context$/i,
-        /^\+?\s*thought:/i,
-        /^\d[\d,]*\s+tokens?$/i,
-        /^\d+(?:\.\d+)?%\s+used$/i,
-        /^\$[\d.]+\s+spent$/i,
-        /^(?:▫|□)?\s*build\s*[·•]/i,
-        /^lsp$/i,
-        /^lsps?(?:\s+are)?\s+disabled$/i,
-        /^\d{4}-\d{2}-\d{2}t\S+$/i,
-        /^\d+z$/i,
-      ].some((pattern) => pattern.test(line));
-    })
-    .join("\n")
-    .trim();
-}
-
-export default function CommitConversationDialog({
-  commit,
-  onClose,
-}: {
-  commit: Commit;
-  onClose: () => void;
-}) {
-  const messages = commit.messages
-    .map((message) => ({ ...message, content: readableChatText(message.content) }))
-    .filter((message) => message.content.length > 0);
-
+export default function CommitConversationDialog({ commit, onClose }: { commit: Commit; onClose: () => void }) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setMessages([]);
+    setNextCursor(null);
+    setLoading(true);
+    setLoadingMore(false);
+    setError(null);
+    api.conversationPage(commit.id, 0, controller.signal).then((page) => {
+      if (alive) { setMessages(page.messages); setNextCursor(page.next_cursor); }
+    }).catch((cause) => {
+      if (alive) setError(cause instanceof Error ? cause.message : "Unable to load conversation");
+    }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; requestRef.current?.abort(); };
+  }, [commit.id, retry]);
+  const loadMore = async () => {
+    if (nextCursor === null || loadingMore) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const page = await api.conversationPage(commit.id, nextCursor, controller.signal);
+      if (controller.signal.aborted) return;
+      setMessages(current => [...current, ...page.messages]);
+      setNextCursor(page.next_cursor);
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to load more messages");
+    } finally { if (!controller.signal.aborted) setLoadingMore(false); }
+  };
   return (
-    <Modal
-      title="AI conversation"
-      subtitle={`${commit.id.slice(0, 7)} · ${commit.summary ?? commit.kind}`}
-      size="lg"
-      onClose={onClose}
-      footer={<button type="button" className="cg-btn" onClick={onClose}>Close</button>}
-    >
-      {messages.length === 0 ? (
-        <p className="cg-empty-note">This commit has no readable conversation messages.</p>
+    <Modal title="Conversation" size="lg" onClose={onClose}>
+      {error && <p role="alert">{error} <button className="cg-btn" onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
+      {loading ? <p>Loading conversation…</p> : messages.length === 0 && !error ? (
+        <p className="cg-empty-note">No saved conversation messages in this checkpoint. Legacy terminal screens are not conversation history; link the native conversation and create a new checkpoint to save it.</p>
       ) : (
-        <div className="cg-conversation-modal-list">
+        <ol className="cg-history-transcript">
           {messages.map((message, index) => (
-            <article className="cg-commit-message" data-role={message.role === "tool" || message.role === "system" ? "assistant" : message.role} key={`${commit.id}-${index}`}>
-              <div className="cg-commit-message-head">
-                <strong>{message.role === "tool" || message.role === "system" ? "message" : message.role}</strong>
-                <span>{message.created_at ? new Date(message.created_at).toLocaleString() : "—"}</span>
-              </div>
-              <p>{message.content}</p>
-            </article>
+            <li key={index} data-role={message.role}><div>{message.content}</div></li>
           ))}
-        </div>
+        </ol>
       )}
+      {nextCursor !== null && <button className="cg-btn" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more messages"}</button>}
     </Modal>
   );
 }

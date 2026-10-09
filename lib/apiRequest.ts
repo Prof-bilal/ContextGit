@@ -10,8 +10,8 @@ export interface RequestOptions extends RequestInit { timeoutMs?: number }
 /** Only bound ordinary workbench operations; inference and long jobs keep their budgets. */
 export function requestTimeout(path: string, method = "GET"): number | undefined {
   const route = path.split("?")[0];
-  if (method === "GET" && /^\/api\/v1\/(sessions(?:\/[^/]+(?:\/(?:workspace|staging))?)?|fleet|team|merge-queue|trash|integration\/(?:jobs|settings)|repo|branches(?:\/[^/]+\/budget)?)$/.test(route)) return 10_000;
-  if (/^\/api\/v1\/(sessions(?:\/[^/]+(?:\/(?:staging|commit|restore))?)?|branches(?:\/restore)?)$/.test(route)) return 30_000;
+  if (method === "GET" && /^\/api\/v1\/(sessions(?:\/[^/]+(?:\/(?:workspace|staging|capture))?)?|commits\/[^/]+\/conversation(?:\/page)?|fleet|team|merge-queue|trash|integration\/(?:jobs|settings)|repo|branches(?:\/[^/]+\/budget)?)$/.test(route)) return 10_000;
+  if (/^\/api\/v1\/(sessions(?:\/[^/]+(?:\/(?:staging|commit|restore|capture))?)?|branches(?:\/restore)?)$/.test(route)) return 30_000;
   return undefined;
 }
 
@@ -26,9 +26,11 @@ export async function apiRequest<T>(url: string, options: RequestOptions = {}, f
     const response = await fetcher(url, { ...init, signal: controller.signal });
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => null);
-      const message = typeof body === "object" && body !== null && "error" in body
-        ? String(body.error) : `API request failed (${response.status})`;
-      const kind = typeof body === "object" && body !== null && "type" in body ? String(body.type) : undefined;
+      const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+      const detail = typeof record.detail === "object" && record.detail !== null
+        ? record.detail as Record<string, unknown> : {};
+      const message = String(record.error ?? detail.message ?? (typeof record.detail === "string" ? record.detail : `API request failed (${response.status})`));
+      const kind = record.type !== undefined ? String(record.type) : detail.status !== undefined ? String(detail.status) : undefined;
       throw new ApiError(message, response.status, kind);
     }
     if (response.status === 204) return undefined as T;

@@ -18,16 +18,16 @@ export function useBackendPolling(task: (current: () => boolean) => Promise<void
     mounted.current = true;
     const bridge = window.contextgit;
     // Plain browser previews have no API to poll.
-    if (!bridge) return;
+    if (!bridge) return () => { mounted.current = false; };
     poll.setAvailable(bridge.getStatus().status.state === "ready");
     void poll.tick().catch(report);
     const off = bridge.onStatus(status => {
       poll.setAvailable(status.state === "ready");
       if (status.state === "ready") void refresh();
     });
-    const timer = setInterval(() => void poll.tick().catch(report), intervalMs);
+    const timer = intervalMs > 0 ? setInterval(() => void poll.tick().catch(report), intervalMs) : undefined;
     return () => {
-      clearInterval(timer);
+      if (timer !== undefined) clearInterval(timer);
       off();
       poll.setAvailable(false);
       mounted.current = false;

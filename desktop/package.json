@@ -18,6 +18,7 @@
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
     "test:lifecycle": "node scripts/test-lifecycle.mjs",
+    "test:opencode:live": "node scripts/verify-opencode-capture.mjs",
     "test:markdown": "node scripts/test-markdown.mjs"
   },
   "dependencies": {

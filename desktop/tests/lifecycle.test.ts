@@ -12,12 +12,35 @@ import { apiRequest, ApiError, requestTimeout } from "../../lib/apiRequest";
 import { PollingTask } from "../src/shell/pollingTask";
 import { BackendRestart, launchBackend, terminateBackend } from "../electron/backendProcess";
 import { once } from "node:events";
+import { prepareOpenCodeCapture } from "../electron/conversationCapture";
+
+test("OpenCode launch capture persists exact identity and rejects a second root conversation", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-capture-"));
+  try {
+    const launch = prepareOpenCodeCapture(directory, "local-session", directory, undefined, JSON.stringify({ plugin: ["existing-plugin"], model: "real-provider" }));
+    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT);
+    assert.equal(config.model, "real-provider");
+    assert.equal(config.plugin[0], "existing-plugin");
+    const module = await import(config.plugin[1]);
+    const hook = await module.ContextGitCapture({ client: { session: { get: async ({ path: request }: { path: { id: string } }) => ({ data: { directory, id: request.id, parentID: request.id === "child" ? "native" : undefined } }) } } });
+    await hook["chat.message"]({ sessionID: "child" });
+    const captures = path.join(directory, "captures", "opencode");
+    assert.equal(fs.readdirSync(captures).filter(name => name.endsWith(".json")).length, 0);
+    await hook["chat.message"]({ sessionID: "native" });
+    await hook["chat.message"]({ sessionID: "native" });
+    const receipt = JSON.parse(fs.readFileSync(path.join(captures, fs.readdirSync(captures).find(name => name.endsWith(".json"))!), "utf8"));
+    assert.equal(receipt.native_id, "native");
+    assert.equal(receipt.session_id, "local-session");
+    await assert.rejects(hook["chat.message"]({ sessionID: "unrelated" }), /another conversation/);
+    assert.deepEqual(prepareOpenCodeCapture(directory, "local-session", directory, "native").args, ["--session", "native"]);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
 
 test("ordinary request budgets leave inference and long jobs unchanged", () => {
-  for (const route of ["sessions", "sessions/id", "sessions/id/staging", "fleet", "team", "merge-queue", "trash", "integration/jobs?project=a"]) {
+  for (const route of ["sessions", "sessions/id", "sessions/id/staging", "sessions/id/capture", "commits/id/conversation/page?cursor=50", "fleet", "team", "merge-queue", "trash", "integration/jobs?project=a"]) {
     assert.equal(requestTimeout(`/api/v1/${route}`), 10_000, route);
   }
-  for (const [route, method] of [["sessions", "POST"], ["sessions/id", "DELETE"], ["sessions/id/commit", "POST"], ["branches?name=a", "DELETE"]]) {
+  for (const [route, method] of [["sessions", "POST"], ["sessions/id", "DELETE"], ["sessions/id/commit", "POST"], ["sessions/id/capture", "POST"], ["branches?name=a", "DELETE"]]) {
     assert.equal(requestTimeout(`/api/v1/${route}`, method), 30_000, route);
   }
   for (const route of ["sessions/id/integrate", "merge-queue/run", "team/tasks/id/gate", "endpoints/tests/run", "chat"]) {
@@ -46,6 +69,7 @@ test("request cancellation, HTTP errors, and successful responses retain their m
   controller.abort();
   await assert.rejects(apiRequest("http://localhost", { signal: controller.signal }, (() => { throw new Error("must not send"); }) as typeof fetch), (cause: unknown) => cause instanceof ApiError && cause.kind === "cancelled");
   await assert.rejects(apiRequest("http://localhost", {}, (async () => Response.json({ error: "conflict", type: "RepositoryMismatch" }, { status: 409 })) as typeof fetch), (cause: unknown) => cause instanceof ApiError && cause.status === 409 && cause.kind === "RepositoryMismatch");
+  await assert.rejects(apiRequest("http://localhost", {}, (async () => Response.json({ detail: { status: "unbound", message: "Select the native conversation" } }, { status: 409 })) as typeof fetch), (cause: unknown) => cause instanceof ApiError && cause.message === "Select the native conversation" && cause.kind === "unbound");
   assert.deepEqual(await apiRequest("http://localhost", { timeoutMs: 100 }, (async () => Response.json([1])) as typeof fetch), [1]);
   assert.equal(await apiRequest("http://localhost", {}, (async () => new Response(null, { status: 204 })) as typeof fetch), undefined);
 });

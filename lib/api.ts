@@ -4,6 +4,14 @@ export { ApiError } from "./apiRequest";
 export type Role = "system" | "user" | "assistant" | "tool";
 export type CommitKind = "root" | "normal" | "merge" | "note";
 
+export interface CaptureState {
+  status: string;
+  detail?: string;
+  binding?: { harness: string; native_id: string; directory: string } | null;
+  messages?: Message[];
+  candidates?: { id: string; title: string }[];
+}
+
 export interface Message {
   role: Role;
   content: string;
@@ -966,6 +974,12 @@ export const api = {
     ),
   branchContext: (name: string) =>
     request<Message[]>(`/api/v1/context?branch=${encodeURIComponent(name)}`),
+  commitConversation: (commitId: string) =>
+    request<Message[]>(`/api/v1/commits/${encodeURIComponent(commitId)}/conversation`),
+  conversationPage: (commitId: string, cursor = 0, signal?: AbortSignal) =>
+    request<{ messages: Message[]; next_cursor: number | null }>(
+      `/api/v1/commits/${encodeURIComponent(commitId)}/conversation/page?cursor=${cursor}`, { signal },
+    ),
   diff: (a: string, b: string) =>
     request<Diff>(
       `/api/v1/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
@@ -1356,6 +1370,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ memory }),
     }),
+  captureState: (id: string) => request<CaptureState>(`/api/v1/sessions/${id}/capture`),
+  bindConversation: (id: string, nativeId: string) => request<CaptureState>(`/api/v1/sessions/${id}/capture`, {
+    method: "PUT", body: JSON.stringify({ native_id: nativeId }),
+  }),
+  captureConversation: (id: string) => request<CaptureState>(`/api/v1/sessions/${id}/capture`, { method: "POST" }),
   staging: (id: string) => request<Message[]>(`/api/v1/sessions/${id}/staging`),
   stage: (id: string, messages: Message[]) =>
     request<Message[]>(`/api/v1/sessions/${id}/staging`, {

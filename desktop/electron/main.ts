@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { BackendRestart, launchBackend, terminateBackend } from "./backendProcess";
 import { PTY_PRESETS, PtyManager } from "./pty";
 import { UsageManager } from "./usage";
+import { prepareOpenCodeCapture } from "./conversationCapture";
 import { repositoryId, validateBackend } from "./backendHealth";
 import {
   augmentedPath,
@@ -109,8 +110,11 @@ async function spawnBackend(): Promise<void> {
     CONTEXTGIT_REPO: backendRepoPath(),
     // Renderer origin: only the dev server needs an explicit web origin;
     // packaged file:// requests are protected by the launch token.
-    CONTEXTGIT_CORS_ORIGINS: process.env.CONTEXTGIT_CORS_ORIGINS
-      ?? "http://localhost:5173,http://127.0.0.1:5173",
+    CONTEXTGIT_CORS_ORIGINS: [...new Set([
+      rendererOrigin(),
+      ...(process.env.CONTEXTGIT_CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173")
+        .split(",").map(origin => origin.trim()).filter(Boolean),
+    ])].join(","),
   };
   const binary = isDev
     ? path.join(repoRoot, ".venv", "bin", "uvicorn")
@@ -710,6 +714,7 @@ ipcMain.on(
     },
   ) => {
     const ticket = Symbol();
+    const captureRoot = backendRepoPath();
     pendingPtyStarts.set(options.id, ticket);
     const cwd = resolvePtyCwd(options.cwd);
     if (!cwd) {
@@ -728,16 +733,32 @@ ipcMain.on(
     try {
       const PATH = await augmentedPath();
       if (pendingPtyStarts.get(options.id) !== ticket) return;
-      pendingPtyStarts.delete(options.id);
       const observer = usage().prepare(options.id, options.sessionId ?? options.id, options.command, cwd);
+      if (options.command === "opencode" && options.sessionId) {
+        const response = await fetch(`${apiBase}/api/v1/sessions/${encodeURIComponent(options.sessionId)}/capture`, {
+          headers: { Authorization: `Bearer ${apiToken}` }, signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error("Could not read the saved conversation binding");
+        const state = await response.json();
+        if (!["bound", "unbound"].includes(state.status)) throw new Error(state.detail ?? "Conversation capture is unavailable");
+        const capture = prepareOpenCodeCapture(captureRoot, options.sessionId, cwd, state.binding?.native_id,
+          observer.env.OPENCODE_CONFIG_CONTENT ?? options.env?.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+        observer.args.push(...capture.args);
+        Object.assign(observer.env, capture.env);
+      }
+      if (pendingPtyStarts.get(options.id) !== ticket || captureRoot !== backendRepoPath()) {
+        usageManager?.finish(options.id);
+        return;
+      }
+      pendingPtyStarts.delete(options.id);
       ptys.start({
         ...options, cwd, extraArgs: observer.args,
-        env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}), ...observer.env },
+        env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}), ...observer.env, PWD: cwd },
       });
-    } catch {
+    } catch (cause) {
       pendingPtyStarts.delete(options.id);
       usageManager?.finish(options.id);
-      mainWindow?.webContents.send("ctx:pty-data", options.id, "\r\nCould not launch the CLI. Check that it is installed and the project folder exists.\r\n");
+      mainWindow?.webContents.send("ctx:pty-data", options.id, `\r\nCould not launch the CLI: ${cause instanceof Error ? cause.message : "check the installation and project folder"}.\r\n`);
       mainWindow?.webContents.send("ctx:pty-exit", options.id, 1);
     }
   },

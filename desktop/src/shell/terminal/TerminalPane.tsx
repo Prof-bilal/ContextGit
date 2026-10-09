@@ -114,6 +114,8 @@ export default function TerminalPane({
   const [stagingOutput, setStagingOutput] = useState(false);
   const [exited, setExited] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captureChoices, setCaptureChoices] = useState<{ id: string; title: string }[]>([]);
+  const [nativeChoice, setNativeChoice] = useState("");
   /**
    * A harness CLI that ships via npm is installed on demand before its PTY
    * starts; `installReady` gates the terminal effect until the binary exists.
@@ -224,7 +226,7 @@ export default function TerminalPane({
         cols: term.cols,
         rows: term.rows,
         // The run's own worktree when it has one, else the workspace folder.
-        cwd: session.worktree_path ?? undefined,
+        cwd: session.worktree_path ?? session.project_path ?? undefined,
         // Team mode hands the agent its task as the first line it sees.
         input: initialInput,
         // Isolation + identity: its own port, and the task the MCP tools default to.
@@ -254,6 +256,14 @@ export default function TerminalPane({
         }
         if (!current.auto_commit) return;
         try {
+          if (current.agent === "opencode") {
+            const result = await api.captureConversation(current.id);
+            if (result.status !== "ready") {
+              setError(result.detail ?? "Conversation capture failed.");
+              setCaptureChoices(result.candidates ?? []);
+              return;
+            }
+          }
           const staged = await api.staging(current.id);
           if (staged.length === 0) return;
           await api.commitStaged(current.id, `checkpoint: ${current.name}`);
@@ -359,6 +369,19 @@ export default function TerminalPane({
     setStagingOutput(true);
     let checkpoint: IMarker | undefined;
     try {
+      if (session.agent === "opencode") {
+        const result = await api.captureConversation(session.id);
+        if (result.status !== "ready") {
+          setError(result.detail ?? "Conversation capture failed.");
+          setCaptureChoices(result.candidates ?? []);
+          return;
+        }
+        setStagedCount(result.messages?.length ?? 0);
+        setCaptureChoices([]);
+        setError(null);
+        onStaged();
+        return;
+      }
       const buffer = term.buffer.active;
       const marker = stagedMarkerRef.current;
       const start = marker && !marker.isDisposed ? Math.max(0, marker.line) : 0;
@@ -404,7 +427,7 @@ export default function TerminalPane({
         <span className="cg-toolbar-spacer" />
         <span className="cg-pane-staged">{stagedCount} staged</span>
         <button type="button" className="cg-btn cg-btn-sm" onClick={() => void stageOutput()} disabled={stagingOutput}>
-          {stagingOutput ? "Staging…" : "Stage output"}
+          {stagingOutput ? "Staging…" : session.agent === "opencode" ? "Stage conversation" : "Stage output"}
         </button>
         <StatusIcon status={exited ? "done" : session.status} />
         <button
@@ -429,6 +452,22 @@ export default function TerminalPane({
         <p className="cg-pane-error" role="alert">
           {error}
         </p>
+      )}
+      {captureChoices.length > 0 && (
+        <div className="cg-pane-exited">
+          <label>
+            Link the conversation you used:
+            <select aria-label="OpenCode conversation" value={nativeChoice} onChange={(event) => setNativeChoice(event.target.value)}>
+              <option value="">Select a conversation…</option>
+              {captureChoices.map((choice) => <option key={choice.id} value={choice.id}>{choice.title} · {choice.id}</option>)}
+            </select>
+          </label>
+          <button className="cg-btn cg-btn-sm" disabled={!nativeChoice || stagingOutput} onClick={() => {
+            void api.bindConversation(session.id, nativeChoice).then(() => stageOutput()).catch((cause) => {
+              setError(cause instanceof Error ? cause.message : "Could not link conversation");
+            });
+          }}>Link and stage</button>
+        </div>
       )}
       {needsInstall && !installReady ? (
         <HarnessInstall command={command} onReady={() => setInstallReady(true)} />

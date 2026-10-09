@@ -3194,6 +3194,7 @@ button.cg-chip[aria-pressed="true"] {
   padding-right: 0.2rem;
 }
 
+
 /* Chat-style transcript: humans and the agent have distinct sides/bubbles. */
 .cg-conversation-modal-list .cg-commit-message {
   width: fit-content;
@@ -3222,17 +3223,6 @@ button.cg-chip[aria-pressed="true"] {
   border-style: dashed;
   border-radius: 9px;
   background: color-mix(in srgb, var(--cg-warn) 5%, var(--cg-surface));
-}
-
-.cg-conversation-modal-list .cg-commit-message-head {
-  align-items: center;
-  gap: 1rem;
-  font-size: 0.68rem;
-}
-
-.cg-conversation-modal-list .cg-commit-message-head strong {
-  color: var(--cg-ink);
-  text-transform: capitalize;
 }
 
 .cg-conversation-modal-list .cg-commit-message p {

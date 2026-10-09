@@ -278,7 +278,7 @@ export default function CodeFeature() {
   );
 
   const commitStaged = useCallback(async () => {
-    if (!activeSession || staged.length === 0) return;
+    if (!activeSession || (staged.length === 0 && activeSession.agent !== "opencode")) return;
     try {
       await api.commitStaged(activeSession.id, summary.trim() || undefined);
       setSummary("");
@@ -564,7 +564,7 @@ export default function CodeFeature() {
             className="cg-btn"
             data-variant="primary"
             onClick={() => void commitStaged()}
-            disabled={staged.length === 0}
+            disabled={staged.length === 0 && activeSession?.agent !== "opencode"}
           >
             Checkpoint now
           </button>
@@ -653,9 +653,9 @@ export default function CodeFeature() {
           type="text"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}
-          placeholder={staged.length ? "Commit summary (optional)" : "Stage output from a terminal first…"}
+          placeholder={staged.length || activeSession?.agent === "opencode" ? "Commit summary (optional)" : "Stage output from a terminal first…"}
           aria-label="Commit summary"
-          disabled={staged.length === 0}
+          disabled={staged.length === 0 && activeSession?.agent !== "opencode"}
         />
         <span className="cg-bb-actions">
           <button type="button" className="cg-btn" onClick={() => void undoLast()} disabled={staged.length === 0}>
@@ -669,7 +669,7 @@ export default function CodeFeature() {
             className="cg-btn"
             data-variant="primary"
             onClick={() => void commitStaged()}
-            disabled={staged.length === 0}
+            disabled={staged.length === 0 && activeSession?.agent !== "opencode"}
           >
             Commit {staged.length || ""}
           </button>

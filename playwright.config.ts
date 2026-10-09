@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // pytest-playwright owns test-results/; avoid concurrent suite cleanup races.
+  outputDir: "./.playwright-results",
   fullyParallel: true,
   reporter: "list",
   use: {
