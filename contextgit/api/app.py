@@ -64,11 +64,11 @@ from contextgit.api.schemas import (
     MergeApplyRequest,
     MergePreviewRequest,
     PreflightRequest,
+    ProjectMemoryApprovalRequest,
+    ProjectMemorySynthesisRequest,
     ProviderModelsResult,
     ProviderTestResult,
     ProviderUpsertRequest,
-    ProjectMemoryApprovalRequest,
-    ProjectMemorySynthesisRequest,
     RepoSnapshot,
     ResearchRequest,
     RunMergeQueueRequest,
@@ -160,7 +160,7 @@ from contextgit.endpoints.tests import (
     run_suite,
 )
 from contextgit.endpoints.why import why_for, why_history
-from contextgit.issues import install_osv_scanner, run_scan, start_scheduler
+from contextgit.issues import install_osv_scanner, run_scan
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -269,16 +269,16 @@ def create_app(
     from contextgit.integration.api import router as integration_router
 
     app.include_router(integration_router(get_repo))
+    from contextgit.api.transcripts import router as transcript_router
+
+    app.include_router(transcript_router(get_repo))
 
     @asynccontextmanager
     async def integration_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         get_repo().integration.start()
-        scheduler = asyncio.create_task(start_scheduler(get_repo(), llm))
         try:
             yield
         finally:
-            scheduler.cancel()
-            await asyncio.gather(scheduler, return_exceptions=True)
             get_repo().integration.stop()
 
     app.router.lifespan_context = integration_lifespan
@@ -576,7 +576,9 @@ def create_app(
         session = current.get_session(session_id)
         commits = current.log(session.branch)
         head = commits[0].id if commits else None
-        run = next((item for item in current.agent_runs(500) if item.session_id == session.id), None)
+        run = next(
+            (item for item in current.agent_runs(500) if item.session_id == session.id), None
+        )
         workspace = None
         try:
             workspace = current.session_workspace(session.id).model_dump(mode="json")
@@ -586,15 +588,24 @@ def create_app(
         memory = current.project_memory(session.project_path) if session.project_path else None
         return {
             "session": session.model_dump(mode="json"),
-            "messages": [item.model_dump(mode="json") for item in (current.build_context(head) if head else [])],
-            "staged_messages": [item.model_dump(mode="json") for item in current.staged(session.id)],
+            "messages": [
+                item.model_dump(mode="json")
+                for item in (current.build_context(head) if head else [])
+            ],
+            "staged_messages": [
+                item.model_dump(mode="json") for item in current.staged(session.id)
+            ],
             "agent_run": (
                 {
                     **run.model_dump(mode="json"),
                     "steps": [step.model_dump(mode="json") for step in current.agent_steps(run.id)],
-                    "artifacts": [artifact.model_dump(mode="json") for artifact in current.agent_artifacts(run.id)],
+                    "artifacts": [
+                        artifact.model_dump(mode="json")
+                        for artifact in current.agent_artifacts(run.id)
+                    ],
                 }
-                if run else None
+                if run
+                else None
             ),
             "workspace_status": workspace,
             "commits": [commit.model_dump(mode="json") for commit in commits[:100]],
@@ -602,7 +613,9 @@ def create_app(
                 "revision": memory.revision,
                 "summary": memory.summary,
                 "text": current.project_memory_text(memory),
-            } if memory else None,
+            }
+            if memory
+            else None,
         }
 
     @app.get("/api/v1/project-memory")
@@ -628,7 +641,9 @@ def create_app(
                 raise ProviderConfigError("project-memory synthesis requires a real provider")
             model = body.model or resolved.model
         elif provider is None and isinstance(active, FakeProvider):
-            raise ProviderConfigError("project-memory synthesis requires a configured real provider")
+            raise ProviderConfigError(
+                "project-memory synthesis requires a configured real provider"
+            )
         try:
             memory = synthesize_project_memory(
                 current,
@@ -653,7 +668,9 @@ def create_app(
         canonical = current.canonical_project_path(body.memory.project_path)
         if canonical != body.memory.project_path:
             raise InvalidRefName("project path must be canonical")
-        allowed = {session.id for session in current.list_sessions() if session.project_path == canonical}
+        allowed = {
+            session.id for session in current.list_sessions() if session.project_path == canonical
+        }
         if any(session_id not in allowed for session_id in body.memory.source_session_ids):
             raise InvalidRefName("memory sources must belong to the selected project")
         draft = body.memory.model_copy(
@@ -671,15 +688,14 @@ def create_app(
 
     def agent_payload(current: Repo, run_id: str) -> dict[str, object]:
         run = current.agent_run(run_id)
+        issue = current.local_issue(run.local_issue_id) if run.local_issue_id else None
         return {
             **run.model_dump(mode="json"),
             "steps": [step.model_dump(mode="json") for step in current.agent_steps(run_id)],
             "artifacts": [
                 artifact.model_dump(mode="json") for artifact in current.agent_artifacts(run_id)
             ],
-            "issue": current.local_issue(run.local_issue_id).model_dump(mode="json")
-            if run.local_issue_id and current.local_issue(run.local_issue_id)
-            else None,
+            "issue": issue.model_dump(mode="json") if issue else None,
         }
 
     @app.get("/api/v1/agent/runs")
@@ -1036,8 +1052,25 @@ def create_app(
         body: StageRequest,
         current: Repo = repo_dep,
     ) -> list[dict[str, object]]:
-        staged = current.stage(session_id, body.messages)
+        session = current.get_session(session_id)
+        if session.agent == "opencode" and any(message.role == "tool" for message in body.messages):
+            from contextgit.integration.transcript import CaptureUnavailable
+
+            try:
+                staged = current.transcripts.capture(session_id)
+            except CaptureUnavailable as error:
+                raise HTTPException(409, {"status": error.status, "message": str(error)}) from error
+        else:
+            staged = current.stage(session_id, body.messages)
         return [message.model_dump(mode="json") for message in staged]
+
+    @app.get("/api/v1/commits/{commit_id}/conversation")
+    def commit_conversation(commit_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        commit = current.get_commit(commit_id)
+        messages = [message for message in commit.messages if message.role in {"user", "assistant"}]
+        # An ancestor may appear on many session branches. Never graft a native
+        # conversation onto an immutable legacy commit without source receipts.
+        return [message.model_dump(mode="json") for message in messages]
 
     @app.delete("/api/v1/sessions/{session_id}/staging")
     def clear_staging(
@@ -1054,6 +1087,13 @@ def create_app(
         body: CommitStagedRequest,
         current: Repo = repo_dep,
     ) -> CommitResponse:
+        if current.get_session(session_id).agent == "opencode":
+            from contextgit.integration.transcript import CaptureUnavailable
+
+            try:
+                current.transcripts.capture(session_id)
+            except CaptureUnavailable as error:
+                raise HTTPException(409, {"status": error.status, "message": str(error)}) from error
         commit = current.commit_staged(
             session_id,
             summary=body.summary,

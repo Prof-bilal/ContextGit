@@ -1,6 +1,7 @@
 """Storage layer tests: schema, CRUD round-trips, migrations."""
 
 from datetime import UTC, datetime
+import sqlite3
 from pathlib import Path
 from typing import cast
 
@@ -58,7 +59,7 @@ class TestSchema:
 
     def test_migration_recorded_once(self, storage: SqliteStorage) -> None:
         versions = [r[0] for r in storage._conn.execute("SELECT version FROM schema_version")]
-        assert versions == [*range(1, 23)]
+        assert versions == [*range(1, 24)]
 
     def test_reopen_does_not_reapply(self, tmp_path: Path) -> None:
         db = tmp_path / "again.db"
@@ -66,7 +67,32 @@ class TestSchema:
         s2 = SqliteStorage(db)
         versions = [r[0] for r in s2._conn.execute("SELECT version FROM schema_version")]
         s2.close()
-        assert versions == [*range(1, 23)]
+        assert versions == [*range(1, 24)]
+
+
+def test_failed_migration_rolls_back_ddl_and_version(
+    storage: SqliteStorage,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextgit.storage import sqlite
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    script = migrations / "0099_test.sql"
+    script.write_text("CREATE TABLE interrupted (id INTEGER); INSERT INTO missing VALUES (1);")
+    monkeypatch.setattr(sqlite.resources, "files", lambda _: tmp_path)
+    monkeypatch.setattr(storage, "_migration_files", lambda: [(99, script.name)])
+    with pytest.raises(sqlite3.OperationalError):
+        storage._migrate()
+    assert (
+        storage._conn.execute("SELECT name FROM sqlite_master WHERE name='interrupted'").fetchone()
+        is None
+    )
+    assert 99 not in storage._applied_versions()
+    script.write_text("CREATE TABLE interrupted (id INTEGER);")
+    storage._migrate()
+    assert 99 in storage._applied_versions()
 
 
 class TestCommits:

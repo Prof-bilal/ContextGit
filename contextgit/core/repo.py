@@ -49,9 +49,9 @@ from contextgit.core.models import (
     IssueScanConfig,
     IssueScanRun,
     LocalIssue,
-    ProjectMemoryRevision,
     MergeQueueEntry,
     Message,
+    ProjectMemoryRevision,
     ProviderRecord,
     Session,
     Tag,
@@ -92,6 +92,7 @@ from contextgit.gitops.integrate import IntegrationConflict, integrate
 from contextgit.gitops.repo import Git
 from contextgit.gitops.status import FleetEntry, WorkspaceStatus, workspace_status
 from contextgit.gitops.team import team_document, write_team_board
+from contextgit.integration.capture import TranscriptService
 from contextgit.integration.service import IntegrationService
 from contextgit.llm.base import LLMProvider
 from contextgit.mcp.config import ensure_mcp_config
@@ -173,6 +174,7 @@ class Repo:
         # One-time: fill in project_path for runs recorded before the column.
         self._projects_backfilled = False
         self._integration = IntegrationService(self)
+        self.transcripts = TranscriptService(self, self._storage, self._root)
 
     @property
     def integration(self) -> IntegrationService:
@@ -291,6 +293,14 @@ class Repo:
         """Commits reachable from the branch head, newest first."""
         head = self._storage.get_branch(branch or self._storage.get_current_branch())
         return list(self._walk(head.head_commit_id))
+
+    def conversation_page(
+        self,
+        commit_id: str,
+        cursor: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[Message], int | None]:
+        return self._storage.conversation_page(commit_id, cursor, limit)
 
     def get_commit(self, commit_id: str) -> Commit:
         """Return one immutable commit by id."""
@@ -1729,6 +1739,18 @@ class Repo:
         model: str | None = None,
         author: str | None = None,
     ) -> Commit:
+        """Atomically checkpoint staged messages and their native ingestion receipts."""
+        with self._storage.transaction():
+            return self._commit_staged(session_id, summary=summary, model=model, author=author)
+
+    def _commit_staged(
+        self,
+        session_id: str,
+        *,
+        summary: str | None = None,
+        model: str | None = None,
+        author: str | None = None,
+    ) -> Commit:
         """Commit the staged messages on the session's branch, then clear staging.
 
         Raises StagingEmpty when there is nothing to commit. The commit lands
@@ -1746,6 +1768,7 @@ class Repo:
             author=author,
             branch=session.branch,
         )
+        self._storage.transcripts.committed(session_id, commit.id, messages)
         self._storage.clear_staged(session_id)
         session.updated_at = utcnow()
         self._storage.update_session(session)

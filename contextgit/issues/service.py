@@ -14,7 +14,7 @@ import re
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -244,7 +244,9 @@ def _scan_osv(root: Path, run_id: str) -> list[IssueFinding]:
             for vuln in package.get("vulnerabilities", []):
                 advisory = str(vuln.get("id") or (vuln.get("aliases") or ["unknown"])[0])
                 score = _cvss(vuln)
-                severity = "critical" if score >= 9 else "high" if score >= 7 else "medium"
+                severity: IssueSeverity = (
+                    "critical" if score >= 9 else "high" if score >= 7 else "medium"
+                )
                 findings.append(
                     _finding(
                         run_id,
@@ -339,7 +341,7 @@ def _scan_ai_review(root: Path, run_id: str, provider: LLMProvider | None) -> li
                 run_id,
                 "review",
                 str(entry.get("rule_id", "ai-review"))[:100],
-                severity,
+                cast(IssueSeverity, severity),
                 confidence,
                 title[:240],
                 f"{relative}:{line_no}",

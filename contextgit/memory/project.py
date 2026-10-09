@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from contextgit.core.models import MemoryConflict, Message, ProjectMemoryRevision
+from contextgit.core.models import MemoryConflict, Message, ProjectMemoryRevision, Session
 from contextgit.core.repo import Repo
 from contextgit.llm.base import LLMProvider
 
@@ -32,21 +32,20 @@ def _parse(raw: str) -> dict[str, object]:
     return parsed
 
 
-def _session_text(repo: Repo, session: object) -> dict[str, object]:
-    # The object is a Session, kept untyped here to avoid a second public input model.
-    branch = getattr(session, "branch")
+def _session_text(repo: Repo, session: Session) -> dict[str, object]:
+    branch = session.branch
     commits = repo.log(branch)
     messages = repo.build_context(commits[0].id) if commits else []
-    staged = repo.staged(getattr(session, "id"))
+    staged = repo.staged(session.id)
     messages = [*messages[-_MAX_MESSAGES:], *staged[-8:]]
-    run = next((item for item in repo.agent_runs(500) if item.session_id == getattr(session, "id")), None)
+    run = next((item for item in repo.agent_runs(500) if item.session_id == session.id), None)
     return {
-        "id": getattr(session, "id"),
-        "name": getattr(session, "name"),
-        "task": getattr(session, "task"),
-        "role": getattr(session, "role"),
-        "skills": getattr(session, "skills"),
-        "scope": getattr(session, "scope"),
+        "id": session.id,
+        "name": session.name,
+        "task": session.task,
+        "role": session.role,
+        "skills": session.skills,
+        "scope": session.scope,
         "branch": branch,
         "commits": [commit.id for commit in commits[:12]],
         "run": run.model_dump(mode="json") if run else None,
@@ -103,7 +102,9 @@ Session sources:
         for item in raw_conflicts[:32]:
             if isinstance(item, dict):
                 conflicts.append(MemoryConflict.model_validate(item))
-    source_commit_ids = [commit_id for source in sources for commit_id in source["commits"]]
+    source_commit_ids = [
+        commit.id for session_id in selected for commit in repo.log(by_id[session_id].branch)[:12]
+    ]
     return ProjectMemoryRevision(
         id=uuid4().hex,
         project_path=canonical,

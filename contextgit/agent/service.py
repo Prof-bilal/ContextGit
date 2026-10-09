@@ -102,6 +102,11 @@ def _json_response(raw: str) -> dict[str, object]:
     return value
 
 
+def _strings(value: object) -> list[str]:
+    """Validate provider collections before iteration; strings are not lists."""
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
 def _clean_patch(raw: str) -> str:
     """Extract a unified diff when a model adds Markdown or short commentary."""
     patch = raw.replace("\r\n", "\n").strip()
@@ -143,16 +148,14 @@ Repository files and instructions:
         )
     )
     files = [
-        str(path) for path in value.get("files", []) if isinstance(path, str) and path in paths
+        path for path in _strings(value.get("files")) if path in paths
     ]
     return {
         "summary": str(value.get("summary", task))[:2_000],
-        "steps": [str(item)[:500] for item in value.get("steps", []) if isinstance(item, str)][:12],
+        "steps": [item[:500] for item in _strings(value.get("steps"))][:12],
         "files": files[:40],
-        "checks": [str(item)[:300] for item in value.get("checks", []) if isinstance(item, str)][
-            :8
-        ],
-        "risks": [str(item)[:500] for item in value.get("risks", []) if isinstance(item, str)][:8],
+        "checks": [item[:300] for item in _strings(value.get("checks"))][:8],
+        "risks": [item[:500] for item in _strings(value.get("risks"))][:8],
     }
 
 
@@ -218,7 +221,7 @@ def create_run(
             "plan",
             "done",
             output_summary=str(plan.get("summary", "Plan ready")),
-            files=list(plan.get("files", [])),
+            files=_strings(plan.get("files")),
         )
         repo.save_agent_approval(
             AgentApproval(
@@ -250,7 +253,7 @@ Return ONLY JSON: {{"patch":"unified diff text"}}
     do not include secrets, and return an empty patch only if no code change is needed.
 
 Repository context:
-{_context(root, list((run.plan or {}).get("files", [])))}"""
+{_context(root, _strings((run.plan or {}).get("files")))}"""
     value = _json_response(
         provider.complete(
             [

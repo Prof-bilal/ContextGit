@@ -1,4 +1,4 @@
-"""SQLite-backed storage. The only code that talks SQL.
+"""SQLite-backed repository storage facade, sharing domain-store transactions.
 
 Schema changes require a numbered migration in storage/migrations/ applied
 in filename order; the applied set is recorded in schema_version (one row
@@ -7,11 +7,14 @@ per applied migration number).
 
 import json
 import sqlite3
-import threading
-from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
+
+from contextgit.storage.connection import _GuardedConnection
+
+if TYPE_CHECKING:
+    from contextgit.storage.transcripts import TranscriptStorage
 
 from contextgit.core.errors import (
     BranchNotFound,
@@ -36,14 +39,14 @@ from contextgit.core.models import (
     IssueScanConfig,
     IssueScanRun,
     LocalIssue,
+    MemoryConflict,
     MergeQueueEntry,
     MergeStatus,
     Message,
+    ProjectMemoryRevision,
     ProviderCapability,
     ProviderKind,
     ProviderRecord,
-    MemoryConflict,
-    ProjectMemoryRevision,
     Role,
     Session,
     SessionKind,
@@ -64,95 +67,6 @@ from contextgit.core.models import (
 _MIGRATIONS_DIR = "migrations"
 
 
-class _Result:
-    """One statement's outcome, captured while the connection lock is held.
-
-    Rows are materialized (and `rowcount`/`lastrowid` snapshotted) at execute
-    time, so no cursor is ever stepped after another thread has run its own
-    statement on the shared connection — that interleaving surfaced as
-    `sqlite3.InterfaceError: bad parameter or other API misuse`.
-    """
-
-    __slots__ = ("_rows", "rowcount", "lastrowid")
-
-    def __init__(self, cursor: sqlite3.Cursor) -> None:
-        rows: list[Any] = []
-        try:
-            if cursor.description is not None:  # SELECT: hold the rows, not the cursor
-                rows = list(cursor.fetchall())
-            self.rowcount = cursor.rowcount
-            self.lastrowid = cursor.lastrowid
-        finally:
-            cursor.close()
-        self._rows = rows
-
-    def fetchone(self) -> Any:
-        return self._rows[0] if self._rows else None
-
-    def fetchall(self) -> list[Any]:
-        return list(self._rows)
-
-    def __iter__(self) -> Iterator[Any]:
-        return iter(self._rows)
-
-    def __len__(self) -> int:
-        return len(self._rows)
-
-
-class _GuardedConnection:
-    """One SQLite connection, serialized across threads.
-
-    FastAPI runs the sync routes on a thread pool, so several threads reach this
-    connection at once — the Chat screen alone fires `/repo`,
-    `/branches/{name}/budget`, `/sessions` and `/staging` together. Every
-    statement runs under one re-entrant lock, `with conn:` holds it for the whole
-    transaction, and rows are materialized before it drops. Two callers can no
-    longer interleave statements or commit each other's work (bugs.md B4,
-    codebase-audit A3).
-    """
-
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
-        self._lock = threading.RLock()
-
-    def execute(self, sql: str, parameters: Any = ()) -> _Result:
-        with self._lock:
-            return _Result(self._conn.execute(sql, parameters))
-
-    def executemany(self, sql: str, parameters: Any) -> _Result:
-        with self._lock:
-            return _Result(self._conn.executemany(sql, parameters))
-
-    def executescript(self, sql: str) -> None:
-        with self._lock:
-            self._conn.executescript(sql)
-
-    def close(self) -> None:
-        with self._lock:
-            self._conn.close()
-
-    @property
-    def row_factory(self) -> Any:
-        return self._conn.row_factory
-
-    @row_factory.setter
-    def row_factory(self, value: Any) -> None:
-        self._conn.row_factory = value
-
-    def __enter__(self) -> "_GuardedConnection":
-        self._lock.acquire()
-        try:
-            self._conn.__enter__()
-        except BaseException:
-            self._lock.release()
-            raise
-        return self
-
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
-        try:
-            return bool(self._conn.__exit__(exc_type, exc_value, traceback))
-        finally:
-            self._lock.release()
 
 
 class SqliteStorage:
@@ -281,6 +195,30 @@ class SqliteStorage:
                     raise StaleMergePreview(f"branch '{name}' moved while it was being updated")
                 raise BranchNotFound(f"branch '{name}' not found")
 
+    def conversation_page(
+        self,
+        commit_id: str,
+        cursor: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[Message], int | None]:
+        if cursor < 0 or not 1 <= limit <= 200:
+            raise ValueError("conversation cursor must be nonnegative and limit between 1 and 200")
+        if (
+            self._conn.execute("SELECT 1 FROM commits WHERE id = ?", (commit_id,)).fetchone()
+            is None
+        ):
+            raise CommitNotFound(f"commit {commit_id[:12]} not found")
+        rows = self._conn.execute(
+            "SELECT seq, role, content, created_at FROM messages WHERE commit_id = ? "
+            "AND seq >= ? AND role IN ('user', 'assistant') ORDER BY seq LIMIT ?",
+            (commit_id, cursor, limit + 1),
+        ).fetchall()
+        messages = [
+            Message(role=row["role"], content=row["content"], created_at=row["created_at"])
+            for row in rows[:limit]
+        ]
+        return messages, rows[limit - 1]["seq"] + 1 if len(rows) > limit else None
+
     def get_commit(self, commit_id: str) -> Commit:
         row = self._conn.execute("SELECT * FROM commits WHERE id = ?", (commit_id,)).fetchone()
         if row is None:
@@ -320,9 +258,7 @@ class SqliteStorage:
             self._conn.execute(
                 f"DELETE FROM messages WHERE commit_id IN ({placeholders})", commit_ids
             )
-            self._conn.execute(
-                f"DELETE FROM commits WHERE id IN ({placeholders})", commit_ids
-            )
+            self._conn.execute(f"DELETE FROM commits WHERE id IN ({placeholders})", commit_ids)
 
     # ---------- branches / HEAD ----------
 
@@ -348,9 +284,11 @@ class SqliteStorage:
                 "UPDATE branches SET project_path = ? WHERE name = ? AND project_path IS NULL",
                 (project_path, name),
             )
-            if cur.rowcount == 0 and self._conn.execute(
-                "SELECT 1 FROM branches WHERE name = ?", (name,)
-            ).fetchone() is None:
+            if (
+                cur.rowcount == 0
+                and self._conn.execute("SELECT 1 FROM branches WHERE name = ?", (name,)).fetchone()
+                is None
+            ):
                 raise BranchNotFound(f"branch '{name}' not found")
 
     def get_branch(self, name: str) -> Branch:
@@ -582,7 +520,9 @@ class SqliteStorage:
             skills=json.loads(row["skills"] or "[]"),
             validation=json.loads(row["validation"] or "[]"),
             open_questions=json.loads(row["open_questions"] or "[]"),
-            conflicts=[MemoryConflict.model_validate(item) for item in json.loads(row["conflicts"] or "[]")],
+            conflicts=[
+                MemoryConflict.model_validate(item) for item in json.loads(row["conflicts"] or "[]")
+            ],
             source_session_ids=json.loads(row["source_session_ids"] or "[]"),
             source_commit_ids=json.loads(row["source_commit_ids"] or "[]"),
             provider=row["provider"],
@@ -595,37 +535,57 @@ class SqliteStorage:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO project_memory_revisions "
-                "(id, project_path, revision, status, summary, architecture, workflow, conventions, "
-                "decisions, rejected, skills, validation, open_questions, conflicts, source_session_ids, "
+                "(id, project_path, revision, status, summary, architecture, workflow, "
+                "conventions, decisions, rejected, skills, validation, open_questions, "
+                "conflicts, source_session_ids, "
                 "source_commit_ids, provider, model, created_at, approved_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    memory.id, memory.project_path, memory.revision, memory.status, memory.summary,
-                    json.dumps(memory.architecture), json.dumps(memory.workflow), json.dumps(memory.conventions),
-                    json.dumps(memory.decisions), json.dumps(memory.rejected), json.dumps(memory.skills),
-                    json.dumps(memory.validation), json.dumps(memory.open_questions),
+                    memory.id,
+                    memory.project_path,
+                    memory.revision,
+                    memory.status,
+                    memory.summary,
+                    json.dumps(memory.architecture),
+                    json.dumps(memory.workflow),
+                    json.dumps(memory.conventions),
+                    json.dumps(memory.decisions),
+                    json.dumps(memory.rejected),
+                    json.dumps(memory.skills),
+                    json.dumps(memory.validation),
+                    json.dumps(memory.open_questions),
                     json.dumps([item.model_dump(mode="json") for item in memory.conflicts]),
-                    json.dumps(memory.source_session_ids), json.dumps(memory.source_commit_ids),
-                    memory.provider, memory.model, memory.created_at.isoformat(),
+                    json.dumps(memory.source_session_ids),
+                    json.dumps(memory.source_commit_ids),
+                    memory.provider,
+                    memory.model,
+                    memory.created_at.isoformat(),
                     memory.approved_at.isoformat() if memory.approved_at else None,
                 ),
             )
 
-    def project_memory(self, project_path: str, *, approved_only: bool = True) -> ProjectMemoryRevision | None:
+    def project_memory(
+        self, project_path: str, *, approved_only: bool = True
+    ) -> ProjectMemoryRevision | None:
         status = " AND status = 'approved'" if approved_only else ""
         row = self._conn.execute(
-            "SELECT * FROM project_memory_revisions WHERE project_path = ?" + status
-            + " ORDER BY revision DESC LIMIT 1", (project_path,)
+            "SELECT * FROM project_memory_revisions WHERE project_path = ?"
+            + status
+            + " ORDER BY revision DESC LIMIT 1",
+            (project_path,),
         ).fetchone()
         return self._project_memory(row) if row else None
 
     def project_memory_revision(self, revision_id: str) -> ProjectMemoryRevision | None:
-        row = self._conn.execute("SELECT * FROM project_memory_revisions WHERE id = ?", (revision_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM project_memory_revisions WHERE id = ?", (revision_id,)
+        ).fetchone()
         return self._project_memory(row) if row else None
 
     def next_project_memory_revision(self, project_path: str) -> int:
         row = self._conn.execute(
-            "SELECT COALESCE(MAX(revision), 0) + 1 FROM project_memory_revisions WHERE project_path = ?",
+            "SELECT COALESCE(MAX(revision), 0) + 1 FROM project_memory_revisions "
+            "WHERE project_path = ?",
             (project_path,),
         ).fetchone()
         return int(row[0])
@@ -633,7 +593,8 @@ class SqliteStorage:
     def approve_project_memory(self, revision_id: str, approved_at: str) -> ProjectMemoryRevision:
         with self._conn:
             self._conn.execute(
-                "UPDATE project_memory_revisions SET status = 'approved', approved_at = ? WHERE id = ?",
+                "UPDATE project_memory_revisions SET status = 'approved', approved_at = ? "
+                "WHERE id = ?",
                 (approved_at, revision_id),
             )
         memory = self.project_memory_revision(revision_id)
@@ -642,6 +603,16 @@ class SqliteStorage:
         return memory
 
     # ---------- staging ----------
+
+    def transaction(self) -> _GuardedConnection:
+        """Hold the lock across a complete repository operation, with nested savepoints."""
+        return self._conn
+
+    @property
+    def transcripts(self) -> "TranscriptStorage":
+        from contextgit.storage.transcripts import TranscriptStorage
+
+        return TranscriptStorage(self._conn)
 
     def append_staged(self, session_id: str, messages: list[Message]) -> None:
         """Append messages to a session's staging buffer (not commits yet)."""
