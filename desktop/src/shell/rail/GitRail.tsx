@@ -1,139 +1,175 @@
 import { useMemo, useState } from "react";
-import { LuArrowRightLeft, LuX } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuFolder, LuGitBranch, LuX } from "react-icons/lu";
 
-import type { Branch, Commit } from "@/lib/api";
+import type { Branch, Commit, Session } from "@/lib/api";
+import type { Workspace } from "../../../shared/workspace";
 import { commitsOnBranch } from "../git/branchCommits";
-import { Chip } from "../primitives";
+import { StatusIcon } from "../primitives";
 
-/**
- * Real branches. Every run creates one, and runs that never committed all sit on
- * the same root commit — so branches with no work of their own are counted and
- * folded away instead of flooding the list.
- */
+interface ProjectNode {
+  path: string;
+  name: string;
+  sessions: Session[];
+}
+
+function projectName(path: string, projects: Workspace[]): string {
+  if (!path) return "Unassigned";
+  return projects.find((project) => project.path === path)?.name
+    ?? path.split(/[\\/]/).filter(Boolean).at(-1)
+    ?? path;
+}
+
+/** GitHub-style project tree: project first, then the sessions and branches inside it. */
 export default function GitRail({
+  projects,
+  sessions,
   branches,
   commits,
   currentBranch,
+  selectedProject,
   selectedBranch,
-  onSelectBranch,
+  onSelectProject,
+  onSelectSession,
+  onDeleteSession,
   onCheckout,
   onDelete,
 }: {
+  projects: Workspace[];
+  sessions: Session[];
   branches: Branch[];
   commits: Commit[];
   currentBranch: string;
+  selectedProject: string;
   selectedBranch: string;
-  onSelectBranch: (branch: string) => void;
-  onCheckout: (branch: string) => void;
-  onDelete: (branch: string) => void;
+  onSelectProject: (path: string) => void;
+  onSelectSession: (session: Session) => void;
+  onDeleteSession: (session: Session) => void;
+  onCheckout: (name: string) => void;
+  onDelete: (name: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [showEmpty, setShowEmpty] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
-  const { active, empty, matchCount } = useMemo(() => {
+  const nodes = useMemo<ProjectNode[]>(() => {
+    const paths = new Set(projects.map((project) => project.path));
+    for (const session of sessions) if (session.project_path) paths.add(session.project_path);
+    if (sessions.some((session) => !session.project_path)) paths.add("");
     const needle = query.trim().toLowerCase();
-    const matching = branches.filter((branch) => branch.name.toLowerCase().includes(needle));
-    const activeBranches: Branch[] = [];
-    const emptyBranches: Branch[] = [];
+    return [...paths]
+      .map((path) => ({
+        path,
+        name: projectName(path, projects),
+        sessions: sessions
+          .filter((session) => path ? session.project_path === path : !session.project_path)
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+      }))
+      .filter((node) => !needle || `${node.name} ${node.path}`.toLowerCase().includes(needle) || node.sessions.some((session) => session.name.toLowerCase().includes(needle)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projects, sessions, query]);
 
-    for (const branch of matching) {
-      // "No work" = only the root commit is reachable from the head.
-      const count = commitsOnBranch(commits, branch.head_commit_id).length;
-      if (count > 1 || branch.name === currentBranch || branch.name === selectedBranch) {
-        activeBranches.push(branch);
-      } else {
-        emptyBranches.push(branch);
-      }
-    }
+  const branchCommitCount = (name: string) => {
+    const head = branches.find((branch) => branch.name === name)?.head_commit_id;
+    return head ? commitsOnBranch(commits, head).length : 0;
+  };
 
-    const byCurrentThenName = (a: Branch, b: Branch) => {
-      if (a.name === currentBranch) return -1;
-      if (b.name === currentBranch) return 1;
-      return a.name.localeCompare(b.name);
-    };
-    activeBranches.sort(byCurrentThenName);
-    emptyBranches.sort(byCurrentThenName);
-
-    return { active: activeBranches, empty: emptyBranches, matchCount: matching.length };
-  }, [branches, commits, currentBranch, selectedBranch, query]);
-
-  const row = (branch: Branch) => {
-    const count = commitsOnBranch(commits, branch.head_commit_id).length;
+  const sessionRow = (session: Session) => {
+    const count = branchCommitCount(session.branch);
+    const selected = selectedBranch === session.branch;
     return (
-      <div key={branch.name} className="cg-row-wrap">
+      <div className="cg-git-session-row" key={session.id}>
         <button
           type="button"
-          className="cg-row"
-          title={`${branch.name} · ${branch.head_commit_id.slice(0, 7)}`}
-          aria-current={branch.name === selectedBranch}
-          onClick={() => onSelectBranch(branch.name)}
+          className="cg-row cg-git-session"
+          aria-current={selected ? "true" : undefined}
+          title={`${session.name} · ${session.branch}`}
+          onClick={() => onSelectSession(session)}
         >
-          <span className="cg-row-title cg-branch-name">{branch.name}</span>
+          <StatusIcon status={session.status} />
+          <span className="cg-row-title">{session.name}</span>
           <span className="cg-toolbar-spacer" />
-          <span className="cg-commit-hash">{count > 1 ? `${count} commits` : "no commits"}</span>
-          {branch.name === currentBranch && <Chip>current</Chip>}
+          <span className="cg-commit-hash">{count} commit{count === 1 ? "" : "s"}</span>
         </button>
-        {branch.name !== currentBranch && (
-          <>
-            <button
-              type="button"
-              className="cg-icon-btn cg-row-switch"
-              aria-label={`Switch to branch ${branch.name}`}
-              title="Switch to this branch (checkout)"
-              onClick={() => onCheckout(branch.name)}
-            >
-              <LuArrowRightLeft aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="cg-icon-btn cg-row-delete"
-              aria-label={`Move branch ${branch.name} to Storage`}
-              title="Move to Storage (restorable)"
-              onClick={() => onDelete(branch.name)}
-            >
-              <LuX aria-hidden="true" />
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="cg-icon-btn cg-git-session-delete"
+          aria-label={`Move session ${session.name} to Storage`}
+          title="Move session to Storage (restorable)"
+          onClick={(event) => { event.stopPropagation(); onDeleteSession(session); }}
+        >
+          <LuX aria-hidden="true" />
+        </button>
+        <span className="cg-git-session-branch" title={session.branch}><LuGitBranch aria-hidden="true" />{session.branch}</span>
       </div>
     );
   };
 
   return (
-    <nav className="cg-rail" aria-label="Branches">
+    <nav className="cg-rail cg-git-rail" aria-label="Projects and sessions">
       <div className="cg-rail-head">
-        <h2>Branches</h2>
-        <span className="cg-count">{branches.length}</span>
+        <h2>Projects</h2>
+        <span className="cg-count">{projects.length}</span>
       </div>
       <div className="cg-rail-search">
         <input
           type="search"
-          placeholder="Filter branches"
-          aria-label="Filter branches"
+          placeholder="Filter projects or sessions"
+          aria-label="Filter projects or sessions"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
-
-      {active.map(row)}
-
-      {empty.length > 0 && (
-        <button
-          type="button"
-          className="cg-new-btn"
-          aria-expanded={showEmpty}
-          onClick={() => setShowEmpty((shown) => !shown)}
-        >
-          {showEmpty ? "Hide" : "Show"} {empty.length} branch
-          {empty.length === 1 ? "" : "es"} with no commits
-        </button>
-      )}
-      {showEmpty && empty.map(row)}
-
-      {active.length === 0 && empty.length === 0 && (
-        <p className="cg-empty-note cg-rail-search">
-          {matchCount === 0 && query ? "No branches match." : "No branches yet."}
-        </p>
+      <button
+        type="button"
+        className={`cg-git-all-row ${selectedProject === "" ? "is-selected" : ""}`}
+        onClick={() => onSelectProject("")}
+      >
+        <LuGitBranch aria-hidden="true" />
+        <span>All projects</span>
+        <span className="cg-toolbar-spacer" />
+        <span className="cg-commit-hash">{sessions.length} sessions</span>
+      </button>
+      {nodes.map((node) => {
+        const expanded = open[node.path] ?? node.path === selectedProject;
+        const selected = selectedProject === node.path;
+        return (
+          <section className="cg-git-project" key={node.path}>
+            <button
+              type="button"
+              className={`cg-git-project-row ${selected ? "is-selected" : ""}`}
+              aria-expanded={expanded}
+              onClick={() => {
+                onSelectProject(node.path);
+                setOpen((current) => ({ ...current, [node.path]: !expanded }));
+              }}
+            >
+              {expanded ? <LuChevronDown aria-hidden="true" /> : <LuChevronRight aria-hidden="true" />}
+              <LuFolder aria-hidden="true" />
+              <strong>{node.name}</strong>
+              <span className="cg-toolbar-spacer" />
+              <span className="cg-commit-hash">{node.sessions.length} session{node.sessions.length === 1 ? "" : "s"}</span>
+            </button>
+            {expanded && (
+              <div className="cg-git-project-sessions">
+                <button
+                  type="button"
+                  className={`cg-git-scope-row ${selected && selectedBranch === "" ? "is-selected" : ""}`}
+                  onClick={() => onSelectProject(node.path)}
+                >
+                  All history
+                </button>
+                {node.sessions.length === 0 ? <p className="cg-empty-note">No sessions yet.</p> : node.sessions.map(sessionRow)}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {nodes.length === 0 && <p className="cg-empty-note cg-rail-search">No projects or sessions match.</p>}
+      <div className="cg-git-rail-meta"><span>{branches.length} branches</span><span>{commits.length} commits</span></div>
+      {selectedBranch && selectedBranch !== currentBranch && (
+        <div className="cg-git-rail-actions">
+          <button type="button" className="cg-btn cg-btn-sm" onClick={() => onCheckout(selectedBranch)}>Checkout branch</button>
+          <button type="button" className="cg-btn cg-btn-sm" onClick={() => onDelete(selectedBranch)}>Move to Storage</button>
+        </div>
       )}
     </nav>
   );

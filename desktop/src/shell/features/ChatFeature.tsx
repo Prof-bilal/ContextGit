@@ -157,7 +157,7 @@ export default function ChatFeature() {
   const promptedForProvider = useRef(false);
 
   useEffect(() => {
-    if (promptedForProvider.current || tab !== "chat") return;
+    if (promptedForProvider.current || tab !== "code") return;
     if (providers.length === 0) return;
     promptedForProvider.current = true;
     if (readyChatCount === 0) openProviderDialog("chat");
@@ -366,7 +366,7 @@ export default function ChatFeature() {
         onClose={() => setConversationToDelete(null)}
       />
     )}</>;
-  return <FeaturePorts id="chat"
+  return <FeaturePorts id="work"
     title={"Conversation"}
     rail={rail}
     view={view}

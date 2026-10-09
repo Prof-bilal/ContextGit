@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type SetStateAction } from "react";
+import { useCallback, useMemo, useState, type ComponentType, type SetStateAction } from "react";
 import { LuCommand, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
 import TopNav, { type PrimaryTabId, type TabDef, type TabId } from "./TopNav";
 import { IconButton } from "./primitives";
@@ -9,19 +9,13 @@ import { WorkbenchResources } from "./WorkbenchResources";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { WorkspaceDialogs } from "./WorkspaceDialogs";
 import TerminalHost from "./terminal/TerminalHost";
-import ChatFeature from "./features/ChatFeature";
 import CodeFeature from "./features/CodeFeature";
-import AssetsFeature from "./features/AssetsFeature";
-import IssuesFeature from "./features/IssuesFeature";
 import GitFeature from "./features/GitFeature";
 
-const FEATURES = [
-  { id: "chat", label: "Chat", title: "Conversation", Controller: ChatFeature },
+const FEATURES: Array<TabDef & { title: string; Controller: ComponentType }> = [
   { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
-  { id: "issues", label: "Issues", title: "Issues", Controller: IssuesFeature },
   { id: "git", label: "Git", title: "Commit", Controller: GitFeature },
-  { id: "assets", label: "Assets", title: "Asset", Controller: AssetsFeature },
-] as const satisfies readonly (TabDef & { title: string; Controller: typeof ChatFeature })[];
+];
 const TABS: TabDef[] = FEATURES.map(({ id, label }) => ({ id, label }));
 const NO_DOCK: PrimaryTabId[] = [];
 
@@ -75,7 +69,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
   const dockTitle = selected.title;
 
   return <WorkbenchContext.Provider value={{ ...shared, tab, setTab, theme, dockOpen, backendAvailable, overlayOpen, setFeatureOverlay, slots }}>
-    <div className="cg-shell" data-cg-theme={theme}>
+    <div className="cg-shell" data-cg-theme={theme} data-active-tab={tab}>
       <header className="cg-titlebar">
         <span className="cg-brand">Context<b>Git</b><small>WORKSPACE</small></span>
         <TopNav tabs={TABS} active={tab} onChange={setTab} />
@@ -88,7 +82,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
           <LuPanelRight aria-hidden="true" />
         </IconButton>
       </header>
-      <div className="cg-body" data-dock={dockOpen && !NO_DOCK.includes(tab) ? "open" : "closed"}>
+      <div className="cg-body" data-tab={tab} data-dock={dockOpen && !NO_DOCK.includes(tab) ? "open" : "closed"}>
         <div className="cg-slot" ref={hosts.rail} />
         <main className="cg-main" id={`cg-panel-${tab}`} role="tabpanel" aria-labelledby={`cg-tab-${tab}`}>
           {FEATURES.map(({ id }) => <div key={id} className="cg-view" data-active={tab === id} data-code-mode={id === "code" ? shared.mode : undefined}>

@@ -1,10 +1,7 @@
 import { useRef } from "react";
 
 export type PrimaryTabId =
-  | "chat"
   | "code"
-  | "assets"
-  | "issues"
   | "git";
 
 export type TabId = PrimaryTabId;

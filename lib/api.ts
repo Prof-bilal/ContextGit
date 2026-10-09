@@ -31,6 +31,7 @@ export interface CommitResponse {
 export interface Branch {
   name: string;
   head_commit_id: string;
+  project_path?: string | null;
   /** Set when the branch is in Storage (trash); null/absent means live. */
   deleted_at?: string | null;
 }
@@ -276,6 +277,52 @@ export interface Session {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MemoryConflict {
+  topic: string;
+  existing: string;
+  proposed: string;
+  source_session_ids: string[];
+}
+
+export interface ProjectMemoryRevision {
+  id: string;
+  project_path: string;
+  revision: number;
+  status: "draft" | "approved";
+  summary: string;
+  architecture: string[];
+  workflow: string[];
+  conventions: string[];
+  decisions: string[];
+  rejected: string[];
+  skills: string[];
+  validation: string[];
+  open_questions: string[];
+  conflicts: MemoryConflict[];
+  source_session_ids: string[];
+  source_commit_ids: string[];
+  provider: string | null;
+  model: string | null;
+  created_at: string;
+  approved_at: string | null;
+}
+
+export interface ProjectMemoryPreview {
+  revision: number;
+  summary: string;
+  text: string;
+}
+
+export interface SessionDetail {
+  session: Session;
+  messages: Message[];
+  staged_messages: Message[];
+  agent_run: AgentRun | null;
+  workspace_status: WorkspaceStatus | null;
+  commits: Commit[];
+  project_memory_preview: ProjectMemoryPreview | null;
 }
 
 /** The Storage view payload: trashed runs/conversations and trashed branches. */
@@ -1196,6 +1243,7 @@ export const api = {
   commitAgentRun: (id: string, message?: string) => request<AgentRun>(`/api/v1/agent/runs/${id}/commit`, { method: "POST", body: JSON.stringify({ message }) }),
   createAgentIssue: (id: string, title: string, body: string) => request<LocalIssue>(`/api/v1/agent/runs/${id}/issue`, { method: "POST", body: JSON.stringify({ title, body }) }),
   session: (id: string) => request<Session>(`/api/v1/sessions/${id}`),
+  sessionDetail: (id: string) => request<SessionDetail>(`/api/v1/sessions/${id}/detail`),
   workspace: (id: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
   fleet: () => request<FleetEntry[]>("/api/v1/fleet"),
@@ -1284,6 +1332,30 @@ export const api = {
     ),
   restoreSession: (id: string) =>
     request<Session>(`/api/v1/sessions/${id}/restore`, { method: "POST" }),
+  projectMemory: (projectPath: string) =>
+    request<{ project_path: string; current: ProjectMemoryRevision | null; text: string }>(
+      `/api/v1/project-memory?project_path=${encodeURIComponent(projectPath)}`,
+    ),
+  synthesizeProjectMemory: (input: {
+    projectPath: string;
+    sessionIds?: string[];
+    provider?: string;
+    model?: string;
+  }) =>
+    request<ProjectMemoryRevision>("/api/v1/project-memory/synthesize", {
+      method: "POST",
+      body: JSON.stringify({
+        project_path: input.projectPath,
+        session_ids: input.sessionIds,
+        provider: input.provider,
+        model: input.model,
+      }),
+    }),
+  approveProjectMemory: (revisionId: string, memory: ProjectMemoryRevision) =>
+    request<ProjectMemoryRevision>(`/api/v1/project-memory/${encodeURIComponent(revisionId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ memory }),
+    }),
   staging: (id: string) => request<Message[]>(`/api/v1/sessions/${id}/staging`),
   stage: (id: string, messages: Message[]) =>
     request<Message[]>(`/api/v1/sessions/${id}/staging`, {

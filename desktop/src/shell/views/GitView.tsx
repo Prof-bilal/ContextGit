@@ -72,6 +72,9 @@ export default function GitView({
   loading,
   onRefresh,
   onOpenStorage,
+  projectName,
+  sessionCount,
+  onSynthesize,
 }: {
   branches: Branch[];
   commits: Commit[];
@@ -86,6 +89,9 @@ export default function GitView({
   loading: boolean;
   onRefresh: () => void;
   onOpenStorage: () => void;
+  projectName: string;
+  sessionCount: number;
+  onSynthesize?: () => void;
 }) {
   const [view, setView] = useState<"list" | "graph" | "git" | "activity">("list");
 
@@ -107,9 +113,10 @@ export default function GitView({
     <>
       <div className="cg-view-toolbar">
         <h1>History</h1>
+        <Chip>{projectName}</Chip>
         {branch && <Chip>{branch}</Chip>}
         <span className="cg-view-sub">
-          {visible.length} commit{visible.length === 1 ? "" : "s"}
+          {sessionCount} session{sessionCount === 1 ? "" : "s"} · {visible.length} commit{visible.length === 1 ? "" : "s"}
         </span>
         {tags.length > 0 && <Chip>{tags.length} tag{tags.length === 1 ? "" : "s"}</Chip>}
         <span className="cg-toolbar-spacer" />
@@ -130,6 +137,7 @@ export default function GitView({
         <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>
           Refresh
         </button>
+        {onSynthesize && <button type="button" className="cg-btn cg-btn-sm" data-variant="primary" onClick={onSynthesize}>Synthesize knowledge</button>}
         <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenStorage}>
           Storage
         </button>
@@ -159,6 +167,8 @@ export default function GitView({
                       type="button"
                       className="cg-commit"
                       aria-current={commit.id === selectedId}
+                      aria-label={`Open AI conversation for ${commit.summary ?? commit.id.slice(0, 7)}`}
+                      title="Open AI conversation"
                       onClick={() => onSelect(commit)}
                     >
                       <span className="cg-kind" data-kind={commit.kind} aria-hidden="true">
