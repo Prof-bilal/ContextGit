@@ -20,7 +20,7 @@ boundary. Code UI failures and retries must not unmount or restart live terminal
 A failure inside a terminal pane itself may dispose that pane's PTY; other panes
 remain mounted.
 
-Shared session, repository, project, provider, team and trash hooks run in guarded
+Shared session, repository, project, provider, issue and trash hooks run in guarded
 resource controllers. They publish snapshots independently of the UI. A resource
 controller crash retains cached reads and replaces its actions with unavailable
 handlers until it is retried. The controller and host are memoized so publishing a
