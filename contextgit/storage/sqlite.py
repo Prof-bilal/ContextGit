@@ -22,11 +22,20 @@ from contextgit.core.errors import (
     TeamNotFound,
 )
 from contextgit.core.models import (
+    AgentApproval,
+    AgentArtifact,
+    AgentRun,
+    AgentStep,
     AuthStyle,
     Branch,
     Commit,
     CommitKind,
     EnvEntry,
+    IssueFinding,
+    IssueLink,
+    IssueScanConfig,
+    IssueScanRun,
+    LocalIssue,
     MergeQueueEntry,
     MergeStatus,
     Message,
@@ -259,14 +268,14 @@ class SqliteStorage:
                     (commit.id, seq, msg.role, msg.content, msg.created_at.isoformat()),
                 )
             updated = self._conn.execute(
-                "UPDATE branches SET head_commit_id = ? "
-                "WHERE name = ? AND head_commit_id = ?",
+                "UPDATE branches SET head_commit_id = ? WHERE name = ? AND head_commit_id = ?",
                 (commit.id, name, expected_head_id),
             )
             if updated.rowcount == 0:
-                if self._conn.execute(
-                    "SELECT 1 FROM branches WHERE name = ?", (name,)
-                ).fetchone() is not None:
+                if (
+                    self._conn.execute("SELECT 1 FROM branches WHERE name = ?", (name,)).fetchone()
+                    is not None
+                ):
                     raise StaleMergePreview(f"branch '{name}' moved while it was being updated")
                 raise BranchNotFound(f"branch '{name}' not found")
 
@@ -369,14 +378,17 @@ class SqliteStorage:
                 )
             else:
                 cur = self._conn.execute(
-                    "UPDATE branches SET head_commit_id = ? "
-                    "WHERE name = ? AND head_commit_id = ?",
+                    "UPDATE branches SET head_commit_id = ? WHERE name = ? AND head_commit_id = ?",
                     (head_commit_id, name, expected_head_id),
                 )
             if cur.rowcount == 0:
-                if expected_head_id is not None and self._conn.execute(
-                    "SELECT 1 FROM branches WHERE name = ?", (name,)
-                ).fetchone() is not None:
+                if (
+                    expected_head_id is not None
+                    and self._conn.execute(
+                        "SELECT 1 FROM branches WHERE name = ?", (name,)
+                    ).fetchone()
+                    is not None
+                ):
                     from contextgit.core.errors import StaleMergePreview
 
                     raise StaleMergePreview(f"branch '{name}' moved while it was being updated")
@@ -674,6 +686,374 @@ class SqliteStorage:
             cur = self._conn.execute("DELETE FROM merge_queue WHERE id = ?", (entry_id,))
             if cur.rowcount == 0:
                 raise MergeQueueEntryNotFound(f"merge queue entry {entry_id} not found")
+
+    # ---------- scheduled repository issues ----------
+
+    def get_issue_config(self) -> IssueScanConfig:
+        row = self._conn.execute("SELECT payload FROM issue_config WHERE id = 1").fetchone()
+        if row is None:
+            return IssueScanConfig()
+        return IssueScanConfig.model_validate(json.loads(row[0]))
+
+    def save_issue_config(self, config: IssueScanConfig) -> None:
+        payload = json.dumps(config.model_dump(mode="json"))
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO issue_config (id, payload, updated_at) VALUES (1, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, "
+                "updated_at = excluded.updated_at",
+                (payload, config.updated_at.isoformat()),
+            )
+
+    @staticmethod
+    def _issue_run(row: sqlite3.Row) -> IssueScanRun:
+        return IssueScanRun(
+            id=row["id"],
+            commit_sha=row["commit_sha"],
+            trigger=row["trigger"],
+            status=row["status"],
+            started_at=row["started_at"],
+            finished_at=row["finished_at"],
+            counts=json.loads(row["counts"] or "{}"),
+            steps=json.loads(row["steps"] or "[]"),
+            error=row["error"],
+        )
+
+    def insert_issue_run(self, run: IssueScanRun) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO issue_scan_runs "
+                "(id, commit_sha, trigger, status, started_at, finished_at, counts, steps, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run.id,
+                    run.commit_sha,
+                    run.trigger,
+                    run.status,
+                    run.started_at.isoformat(),
+                    run.finished_at.isoformat() if run.finished_at else None,
+                    json.dumps(run.counts),
+                    json.dumps(run.steps),
+                    run.error,
+                ),
+            )
+
+    def update_issue_run(self, run: IssueScanRun) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE issue_scan_runs SET commit_sha=?, trigger=?, status=?, started_at=?, "
+                "finished_at=?, counts=?, steps=?, error=? WHERE id=?",
+                (
+                    run.commit_sha,
+                    run.trigger,
+                    run.status,
+                    run.started_at.isoformat(),
+                    run.finished_at.isoformat() if run.finished_at else None,
+                    json.dumps(run.counts),
+                    json.dumps(run.steps),
+                    run.error,
+                    run.id,
+                ),
+            )
+
+    def list_issue_runs(self, limit: int = 50) -> list[IssueScanRun]:
+        rows = self._conn.execute(
+            "SELECT * FROM issue_scan_runs ORDER BY started_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._issue_run(row) for row in rows]
+
+    def insert_issue_finding(self, finding: IssueFinding) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO issue_findings "
+                "(id, run_id, fingerprint, scanner, rule_id, severity, confidence, title, "
+                "location, evidence, why, fix, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    finding.id,
+                    finding.run_id,
+                    finding.fingerprint,
+                    finding.scanner,
+                    finding.rule_id,
+                    finding.severity,
+                    finding.confidence,
+                    finding.title,
+                    finding.location,
+                    finding.evidence,
+                    finding.why,
+                    finding.fix,
+                    finding.status,
+                    finding.created_at.isoformat(),
+                ),
+            )
+
+    def list_issue_findings(self, limit: int = 500) -> list[IssueFinding]:
+        rows = self._conn.execute(
+            "SELECT * FROM issue_findings ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [
+            IssueFinding(
+                id=row["id"],
+                run_id=row["run_id"],
+                fingerprint=row["fingerprint"],
+                scanner=row["scanner"],
+                rule_id=row["rule_id"],
+                severity=row["severity"],
+                confidence=row["confidence"],
+                title=row["title"],
+                location=row["location"],
+                evidence=row["evidence"],
+                why=row["why"],
+                fix=row["fix"],
+                status=row["status"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def save_issue_link(self, link: IssueLink) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO issue_links "
+                "(fingerprint, provider, issue_number, issue_url, state, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(fingerprint) DO UPDATE SET "
+                "issue_number=excluded.issue_number, issue_url=excluded.issue_url, "
+                "state=excluded.state, updated_at=excluded.updated_at",
+                (
+                    link.fingerprint,
+                    link.provider,
+                    link.issue_number,
+                    link.issue_url,
+                    link.state,
+                    link.created_at.isoformat(),
+                    link.updated_at.isoformat(),
+                ),
+            )
+
+    def get_issue_link(self, fingerprint: str) -> IssueLink | None:
+        row = self._conn.execute(
+            "SELECT * FROM issue_links WHERE fingerprint = ?", (fingerprint,)
+        ).fetchone()
+        if row is None:
+            return None
+        return IssueLink(
+            fingerprint=row["fingerprint"],
+            provider=row["provider"],
+            issue_number=row["issue_number"],
+            issue_url=row["issue_url"],
+            state=row["state"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    # ---------- versioned repository agent ----------
+
+    @staticmethod
+    def _agent_run(row: sqlite3.Row) -> AgentRun:
+        return AgentRun(
+            id=row["id"],
+            session_id=row["session_id"],
+            task=row["task"],
+            provider=row["provider"],
+            model=row["model"],
+            base_commit=row["base_commit"],
+            worktree_path=row["worktree_path"],
+            status=row["status"],
+            plan=json.loads(row["plan"]) if row["plan"] else None,
+            resulting_commit=row["resulting_commit"],
+            local_issue_id=row["local_issue_id"],
+            error=row["error"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_agent_run(self, run: AgentRun) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_runs (id, session_id, task, provider, model, base_commit, "
+                "worktree_path, status, plan, resulting_commit, local_issue_id, error, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run.id,
+                    run.session_id,
+                    run.task,
+                    run.provider,
+                    run.model,
+                    run.base_commit,
+                    run.worktree_path,
+                    run.status,
+                    json.dumps(run.plan) if run.plan else None,
+                    run.resulting_commit,
+                    run.local_issue_id,
+                    run.error,
+                    run.created_at.isoformat(),
+                    run.updated_at.isoformat(),
+                ),
+            )
+
+    def update_agent_run(self, run: AgentRun) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE agent_runs SET status=?, plan=?, resulting_commit=?, local_issue_id=?, "
+                "error=?, updated_at=? WHERE id=?",
+                (
+                    run.status,
+                    json.dumps(run.plan) if run.plan else None,
+                    run.resulting_commit,
+                    run.local_issue_id,
+                    run.error,
+                    run.updated_at.isoformat(),
+                    run.id,
+                ),
+            )
+
+    def get_agent_run(self, run_id: str) -> AgentRun | None:
+        row = self._conn.execute("SELECT * FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._agent_run(row) if row else None
+
+    def list_agent_runs(self, limit: int = 50) -> list[AgentRun]:
+        rows = self._conn.execute(
+            "SELECT * FROM agent_runs ORDER BY updated_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._agent_run(row) for row in rows]
+
+    def insert_agent_step(self, step: AgentStep) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_steps (id, run_id, sequence, kind, status, input_summary, "
+                "output_summary, files, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    step.id,
+                    step.run_id,
+                    step.sequence,
+                    step.kind,
+                    step.status,
+                    step.input_summary,
+                    step.output_summary,
+                    json.dumps(step.files),
+                    step.created_at.isoformat(),
+                ),
+            )
+
+    def list_agent_steps(self, run_id: str) -> list[AgentStep]:
+        rows = self._conn.execute(
+            "SELECT * FROM agent_steps WHERE run_id = ? ORDER BY sequence", (run_id,)
+        ).fetchall()
+        return [
+            AgentStep(
+                id=row["id"],
+                run_id=row["run_id"],
+                sequence=row["sequence"],
+                kind=row["kind"],
+                status=row["status"],
+                input_summary=row["input_summary"],
+                output_summary=row["output_summary"],
+                files=json.loads(row["files"] or "[]"),
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def update_agent_step(self, step: AgentStep) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE agent_steps SET status=?, output_summary=?, files=? WHERE id=?",
+                (step.status, step.output_summary[:100_000], json.dumps(step.files), step.id),
+            )
+
+    def insert_agent_approval(self, approval: AgentApproval) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_approvals (id, run_id, step_id, approval_type, action, "
+                "decision, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    approval.id,
+                    approval.run_id,
+                    approval.step_id,
+                    approval.approval_type,
+                    approval.action,
+                    approval.decision,
+                    approval.created_at.isoformat(),
+                ),
+            )
+
+    def insert_agent_artifact(self, artifact: AgentArtifact) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_artifacts (id, run_id, kind, content, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    artifact.id,
+                    artifact.run_id,
+                    artifact.kind,
+                    artifact.content[:100_000],
+                    artifact.created_at.isoformat(),
+                ),
+            )
+
+    def list_agent_artifacts(self, run_id: str) -> list[AgentArtifact]:
+        rows = self._conn.execute(
+            "SELECT * FROM agent_artifacts WHERE run_id = ? ORDER BY created_at", (run_id,)
+        ).fetchall()
+        return [
+            AgentArtifact(
+                id=row["id"],
+                run_id=row["run_id"],
+                kind=row["kind"],
+                content=row["content"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    @staticmethod
+    def _local_issue(row: sqlite3.Row) -> LocalIssue:
+        return LocalIssue(
+            id=row["id"],
+            title=row["title"],
+            body=row["body"],
+            status=row["status"],
+            labels=json.loads(row["labels"] or "[]"),
+            source=row["source"],
+            agent_run_id=row["agent_run_id"],
+            commit_id=row["commit_id"],
+            branch=row["branch"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def insert_local_issue(self, issue: LocalIssue) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO local_issues (id, title, body, status, labels, source, agent_run_id, "
+                "commit_id, branch, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    issue.id,
+                    issue.title,
+                    issue.body,
+                    issue.status,
+                    json.dumps(issue.labels),
+                    issue.source,
+                    issue.agent_run_id,
+                    issue.commit_id,
+                    issue.branch,
+                    issue.created_at.isoformat(),
+                    issue.updated_at.isoformat(),
+                ),
+            )
+
+    def get_local_issue(self, issue_id: str) -> LocalIssue | None:
+        row = self._conn.execute("SELECT * FROM local_issues WHERE id = ?", (issue_id,)).fetchone()
+        return self._local_issue(row) if row else None
+
+    def list_local_issues(self, limit: int = 100) -> list[LocalIssue]:
+        rows = self._conn.execute(
+            "SELECT * FROM local_issues ORDER BY updated_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._local_issue(row) for row in rows]
 
     # ---------- team mode (missions, tasks, deps, board feed) ----------
 
@@ -999,9 +1379,7 @@ class SqliteStorage:
         return self._get_provider_row(table, record.id)  # type: ignore[return-value]
 
     def _get_provider_row(self, table: str, provider_id: str) -> ProviderRecord | None:
-        row = self._conn.execute(
-            f"SELECT * FROM {table} WHERE id = ?", (provider_id,)
-        ).fetchone()
+        row = self._conn.execute(f"SELECT * FROM {table} WHERE id = ?", (provider_id,)).fetchone()
         return self._row_to_provider(row) if row is not None else None
 
     def _list_provider_rows(self, table: str) -> list[ProviderRecord]:

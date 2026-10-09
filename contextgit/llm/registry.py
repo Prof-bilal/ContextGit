@@ -101,6 +101,12 @@ def effective_spec(record: ProviderRecord) -> ProviderSpec:
             default_model=record.default_model,
             models=record.models,
         )
+    # Built-in providers own their authentication contract.  In particular,
+    # Agnes accepts only Authorization: Bearer; an old/customized row using
+    # x-api-key produces the misleading remote response "Token not provided".
+    # Keep custom auth overrides for other presets, but normalize Agnes so a
+    # stale saved row cannot break an otherwise valid connection.
+    auth = base.auth if record.id == "agnes" else record.auth_style
     return base.model_copy(
         update={
             "label": record.label or base.label,
@@ -108,7 +114,7 @@ def effective_spec(record: ProviderRecord) -> ProviderSpec:
             "kind": record.kind if record.kind != "cloud" else base.kind,
             "capability": record.capability,
             "base_url": record.base_url or base.base_url,
-            "auth": record.auth_style,
+            "auth": auth,
             "default_model": record.default_model or base.default_model,
             "models": record.models or base.models,
         }

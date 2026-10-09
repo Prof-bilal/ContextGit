@@ -63,6 +63,25 @@ class ChatRequest(BaseModel):
     auto_commit: bool | None = None
 
 
+class AgentRunRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=20_000)
+    provider: str | None = None
+    model: str | None = None
+
+
+class AgentApprovalRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+
+
+class AgentCommitRequest(BaseModel):
+    message: str | None = Field(default=None, max_length=240)
+
+
+class LocalIssueRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    body: str = Field(min_length=1, max_length=20_000)
+
+
 class CouncilMember(BaseModel):
     """One model in a council: a provider id plus the model to ask."""
 
@@ -187,6 +206,18 @@ class AssetAgentResponse(BaseModel):
     """The validated plan of actions (rename/move/folder/tag/note/delete)."""
 
     actions: list[dict[str, object]] = Field(default_factory=list)
+
+
+class IssueConfigRequest(BaseModel):
+    enabled: bool | None = None
+    timezone: str | None = None
+    interval_hours: int | None = Field(default=None, ge=1, le=24)
+    schedule_minute: int | None = Field(default=None, ge=1, le=59)
+    scanners: list[Literal["secrets", "dependencies", "quality", "review"]] | None = None
+    minimum_severity: Literal["critical", "high", "medium", "low"] | None = None
+    minimum_confidence: float | None = Field(default=None, ge=0, le=1)
+    auto_create: bool | None = None
+    github_repository: str | None = None
 
 
 class CompareRequest(BaseModel):

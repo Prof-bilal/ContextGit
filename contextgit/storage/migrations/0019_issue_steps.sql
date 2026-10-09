@@ -1,0 +1,1 @@
+ALTER TABLE issue_scan_runs ADD COLUMN steps TEXT NOT NULL DEFAULT '[]';

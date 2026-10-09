@@ -33,6 +33,10 @@ from contextgit.core.errors import (
     WorkInProgressLimit,
 )
 from contextgit.core.models import (
+    AgentApproval,
+    AgentArtifact,
+    AgentRun,
+    AgentStep,
     BlameEntry,
     Branch,
     Commit,
@@ -40,6 +44,11 @@ from contextgit.core.models import (
     EnvDrift,
     EnvEntry,
     HttpHistoryEntry,
+    IssueFinding,
+    IssueLink,
+    IssueScanConfig,
+    IssueScanRun,
+    LocalIssue,
     MergeQueueEntry,
     Message,
     ProviderRecord,
@@ -1971,6 +1980,80 @@ class Repo:
     def delete_agent_provider(self, provider_id: str) -> bool:
         """Remove an asset-agent provider row."""
         return self._storage.delete_agent_provider_row(provider_id)
+
+    # ---------- scheduled repository issues ----------
+
+    def issue_config(self) -> IssueScanConfig:
+        return self._storage.get_issue_config()
+
+    def save_issue_config(self, config: IssueScanConfig) -> IssueScanConfig:
+        self._storage.save_issue_config(config)
+        return config
+
+    def issue_runs(self, limit: int = 50) -> list[IssueScanRun]:
+        return self._storage.list_issue_runs(limit)
+
+    def issue_findings(self, limit: int = 500) -> list[IssueFinding]:
+        return self._storage.list_issue_findings(limit)
+
+    def save_issue_run(self, run: IssueScanRun) -> None:
+        self._storage.update_issue_run(run)
+
+    def create_issue_run(self, run: IssueScanRun) -> None:
+        self._storage.insert_issue_run(run)
+
+    def save_issue_finding(self, finding: IssueFinding) -> None:
+        self._storage.insert_issue_finding(finding)
+
+    def issue_link(self, fingerprint: str) -> IssueLink | None:
+        return self._storage.get_issue_link(fingerprint)
+
+    def save_issue_link(self, link: IssueLink) -> None:
+        self._storage.save_issue_link(link)
+
+    # ---------- versioned repository agent ----------
+
+    def create_agent_run(self, run: AgentRun) -> None:
+        self._storage.insert_agent_run(run)
+
+    def save_agent_run(self, run: AgentRun) -> None:
+        self._storage.update_agent_run(run)
+
+    def agent_run(self, run_id: str) -> AgentRun:
+        run = self._storage.get_agent_run(run_id)
+        if run is None:
+            raise SessionNotFound(f"agent run '{run_id}' not found")
+        return run
+
+    def agent_runs(self, limit: int = 50) -> list[AgentRun]:
+        return self._storage.list_agent_runs(limit)
+
+    def save_agent_step(self, step: AgentStep) -> None:
+        self._storage.insert_agent_step(step)
+
+    def update_agent_step(self, step: AgentStep) -> None:
+        self._storage.update_agent_step(step)
+
+    def agent_steps(self, run_id: str) -> list[AgentStep]:
+        return self._storage.list_agent_steps(run_id)
+
+    def save_agent_approval(self, approval: AgentApproval) -> None:
+        self._storage.insert_agent_approval(approval)
+
+    def save_agent_artifact(self, artifact: AgentArtifact) -> None:
+        self._storage.insert_agent_artifact(artifact)
+
+    def agent_artifacts(self, run_id: str) -> list[AgentArtifact]:
+        return self._storage.list_agent_artifacts(run_id)
+
+    def create_local_issue(self, issue: LocalIssue) -> None:
+        self._storage.insert_local_issue(issue)
+
+    def local_issue(self, issue_id: str) -> LocalIssue | None:
+        return self._storage.get_local_issue(issue_id)
+
+    def local_issues(self, limit: int = 100) -> list[LocalIssue]:
+        return self._storage.list_local_issues(limit)
 
     # ---------- HTTP / API client ----------
 

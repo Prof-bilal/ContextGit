@@ -187,6 +187,149 @@ class UsageSummary(BaseModel):
     streak: UsageStreak = Field(default_factory=UsageStreak)
 
 
+# ---------- scheduled repository issues ----------
+
+IssueSeverity = Literal["critical", "high", "medium", "low"]
+IssueScanner = Literal["secrets", "dependencies", "quality", "review"]
+IssueRunStatus = Literal["queued", "running", "done", "failed"]
+IssueTrigger = Literal["manual", "schedule", "github_actions"]
+
+
+def _default_issue_scanners() -> list[IssueScanner]:
+    return ["secrets", "dependencies", "quality", "review"]
+
+
+class IssueScanConfig(BaseModel):
+    enabled: bool = False
+    timezone: str = "UTC"
+    interval_hours: int = 5
+    schedule_minute: int = 17
+    scanners: list[IssueScanner] = Field(default_factory=_default_issue_scanners)
+    minimum_severity: IssueSeverity = "high"
+    minimum_confidence: float = 0.9
+    auto_create: bool = False
+    github_repository: str | None = None
+    next_run_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class IssueScanRun(BaseModel):
+    id: str
+    commit_sha: str | None = None
+    trigger: IssueTrigger = "manual"
+    status: IssueRunStatus = "queued"
+    started_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
+    counts: dict[str, int] = Field(default_factory=dict)
+    steps: list[dict[str, object]] = Field(default_factory=list)
+    error: str | None = None
+
+
+class IssueFinding(BaseModel):
+    id: str
+    run_id: str
+    fingerprint: str
+    scanner: IssueScanner
+    rule_id: str
+    severity: IssueSeverity
+    confidence: float = 1.0
+    title: str
+    location: str | None = None
+    evidence: str = ""
+    why: str = ""
+    fix: str = ""
+    status: Literal["open", "resolved"] = "open"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class IssueLink(BaseModel):
+    fingerprint: str
+    provider: Literal["github"] = "github"
+    issue_number: int
+    issue_url: str
+    state: str = "open"
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+AgentRunStatus = Literal[
+    "queued",
+    "inspecting",
+    "planning",
+    "awaiting_approval",
+    "executing",
+    "validating",
+    "ready",
+    "completed",
+    "failed",
+    "cancelled",
+]
+AgentStepStatus = Literal["queued", "running", "done", "failed", "rejected"]
+LocalIssueStatus = Literal["open", "in-progress", "resolved", "dismissed"]
+LocalIssueSource = Literal["user", "scan", "agent", "validation"]
+
+
+class AgentRun(BaseModel):
+    id: str
+    session_id: str
+    task: str
+    provider: str | None = None
+    model: str | None = None
+    base_commit: str | None = None
+    worktree_path: str | None = None
+    status: AgentRunStatus = "queued"
+    plan: dict[str, object] | None = None
+    resulting_commit: str | None = None
+    local_issue_id: str | None = None
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class AgentStep(BaseModel):
+    id: str
+    run_id: str
+    sequence: int
+    kind: str
+    status: AgentStepStatus = "queued"
+    input_summary: str = ""
+    output_summary: str = ""
+    files: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AgentApproval(BaseModel):
+    id: str
+    run_id: str
+    step_id: str
+    approval_type: Literal["plan", "edit", "command", "commit", "issue"]
+    action: str
+    decision: Literal["pending", "approved", "rejected"] = "pending"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AgentArtifact(BaseModel):
+    id: str
+    run_id: str
+    kind: Literal["plan", "diff", "check", "summary", "issue"]
+    content: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class LocalIssue(BaseModel):
+    id: str
+    title: str
+    body: str
+    status: LocalIssueStatus = "open"
+    labels: list[str] = Field(default_factory=list)
+    source: LocalIssueSource = "agent"
+    agent_run_id: str | None = None
+    commit_id: str | None = None
+    branch: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class Session(BaseModel):
     """One AI run bound to a branch, with its own staging buffer.
 

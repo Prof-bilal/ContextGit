@@ -16,10 +16,13 @@ import typer
 from contextgit.core import models as m
 from contextgit.core.errors import ContextGitError
 from contextgit.core.repo import Repo
+from contextgit.issues import run_scan
 from contextgit.llm import OpenAICompatibleProvider
 from contextgit.merge.models import MergePreview
 
 app = typer.Typer(name="ctx", help="Version control for LLM conversations.", no_args_is_help=True)
+issues_app = typer.Typer(name="issues", help="Scan the repository and manage findings.")
+app.add_typer(issues_app)
 
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")]
 
@@ -288,6 +291,26 @@ def note(
         typer.echo(json.dumps(_commit_json(created)))
     else:
         typer.echo(f"[{created.id[:7]}] note: {created.summary}")
+
+
+@issues_app.command("scan")
+def issues_scan(
+    github_issues: Annotated[
+        bool, typer.Option("--github-issues", help="Create eligible GitHub issues.")
+    ] = False,
+    as_json: JsonOpt = False,
+) -> None:
+    """Run a safe repository scan."""
+    repo = _repo()
+    config = repo.issue_config()
+    if github_issues:
+        config.auto_create = True
+        repo.save_issue_config(config)
+    result = run_scan(repo, "github_actions" if github_issues else "manual")
+    if as_json:
+        typer.echo(result.model_dump_json())
+    else:
+        typer.echo(f"scan {result.status}: {sum(result.counts.values())} finding(s)")
 
 
 # ---------- helpers ----------

@@ -19,6 +19,7 @@ import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from contextgit.agent import approve_plan, commit_run, create_run, create_run_issue, reject_plan
 from contextgit.agents.asset_agent import (
     SYSTEM_PROMPT as ASSET_AGENT_SYSTEM,
 )
@@ -30,6 +31,9 @@ from contextgit.agents.asset_agent import (
 )
 from contextgit.api.cors import LocalAPI
 from contextgit.api.schemas import (
+    AgentApprovalRequest,
+    AgentCommitRequest,
+    AgentRunRequest,
     AssetAgentRequest,
     AssetAgentResponse,
     BranchRequest,
@@ -55,6 +59,8 @@ from contextgit.api.schemas import (
     ImageRequest,
     InitRequest,
     IntegrateRequest,
+    IssueConfigRequest,
+    LocalIssueRequest,
     MergeApplyRequest,
     MergePreviewRequest,
     PreflightRequest,
@@ -152,6 +158,7 @@ from contextgit.endpoints.tests import (
     run_suite,
 )
 from contextgit.endpoints.why import why_for, why_history
+from contextgit.issues import install_osv_scanner, run_scan, start_scheduler
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -263,9 +270,12 @@ def create_app(
     @asynccontextmanager
     async def integration_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         get_repo().integration.start()
+        scheduler = asyncio.create_task(start_scheduler(get_repo(), llm))
         try:
             yield
         finally:
+            scheduler.cancel()
+            await asyncio.gather(scheduler, return_exceptions=True)
             get_repo().integration.stop()
 
     app.router.lifespan_context = integration_lifespan
@@ -338,6 +348,92 @@ def create_app(
             "instance_id": instance_id,
             "repo_id": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
         }
+
+    # ---------- scheduled repository issues ----------
+
+    @app.get("/api/v1/issues/config")
+    def issue_config(current: Repo = repo_dep) -> dict[str, object]:
+        return current.issue_config().model_dump(mode="json")
+
+    @app.put("/api/v1/issues/config")
+    def update_issue_config(
+        body: IssueConfigRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        config = current.issue_config()
+        updates = body.model_dump(exclude_none=True)
+        for key, value in updates.items():
+            setattr(config, key, value)
+        config.updated_at = utcnow()
+        current.save_issue_config(config)
+        return config.model_dump(mode="json")
+
+    @app.get("/api/v1/issues/scans")
+    def issue_scans(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [run.model_dump(mode="json") for run in current.issue_runs()]
+
+    @app.get("/api/v1/issues/findings")
+    def issue_findings(current: Repo = repo_dep) -> list[dict[str, object]]:
+        findings = current.issue_findings()
+        result: list[dict[str, object]] = []
+        for finding in findings:
+            link = current.issue_link(finding.fingerprint)
+            result.append(
+                {
+                    **finding.model_dump(mode="json"),
+                    "issue": link.model_dump(mode="json") if link else None,
+                }
+            )
+        return result
+
+    @app.post("/api/v1/issues/scan")
+    def issue_scan(current: Repo = repo_dep) -> dict[str, object]:
+        return run_scan(current, "manual", llm).model_dump(mode="json")
+
+    @app.post("/api/v1/issues/dependencies/install")
+    def install_issue_dependencies(current: Repo = repo_dep) -> dict[str, object]:
+        return install_osv_scanner(current)
+
+    @app.post("/api/v1/issues/schedule/pause")
+    def pause_issue_schedule(current: Repo = repo_dep) -> dict[str, object]:
+        config = current.issue_config()
+        config.enabled = False
+        config.updated_at = utcnow()
+        current.save_issue_config(config)
+        return config.model_dump(mode="json")
+
+    @app.post("/api/v1/issues/schedule/resume")
+    def resume_issue_schedule(current: Repo = repo_dep) -> dict[str, object]:
+        config = current.issue_config()
+        config.enabled = True
+        config.updated_at = utcnow()
+        current.save_issue_config(config)
+        return config.model_dump(mode="json")
+
+    @app.post("/api/v1/issues/github/test")
+    def test_github(current: Repo = repo_dep) -> dict[str, object]:
+        token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        return {"configured": bool(token), "repository": current.issue_config().github_repository}
+
+    @app.post("/api/v1/issues/github/install-workflow")
+    def install_github_workflow(current: Repo = repo_dep) -> dict[str, object]:
+        workflow = current.root / ".github" / "workflows" / "contextgit-issues.yml"
+        workflow.parent.mkdir(parents=True, exist_ok=True)
+        workflow.write_text(
+            "name: ContextGit Issues\n\n"
+            "on:\n  schedule:\n    - cron: '17 1,6,11,16,21 * * *'\n  workflow_dispatch:\n\n"
+            "permissions:\n  contents: read\n  issues: write\n\n"
+            "concurrency:\n  group: contextgit-issues\n  cancel-in-progress: false\n\n"
+            "jobs:\n  scan:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+            "      - uses: actions/setup-python@v5\n"
+            "        with:\n          python-version: '3.11'\n"
+            "      - run: pip install 'contextgit @ "
+            "git+https://github.com/Prof-bilal/ContextGit.git@main'\n"
+            "      - run: ctx issues scan --github-issues\n"
+            "        env:\n          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+            encoding="utf-8",
+        )
+        return {"path": str(workflow), "installed": True}
 
     @app.post("/api/v1/repo/init", response_model=RepoSnapshot)
     def init_repo(body: InitRequest) -> RepoSnapshot:
@@ -470,6 +566,78 @@ def create_app(
     @app.get("/api/v1/sessions")
     def sessions(current: Repo = repo_dep) -> list[dict[str, object]]:
         return [session.model_dump(mode="json") for session in current.list_sessions()]
+
+    # ---------- versioned repository agent ----------
+
+    def agent_payload(current: Repo, run_id: str) -> dict[str, object]:
+        run = current.agent_run(run_id)
+        return {
+            **run.model_dump(mode="json"),
+            "steps": [step.model_dump(mode="json") for step in current.agent_steps(run_id)],
+            "artifacts": [
+                artifact.model_dump(mode="json") for artifact in current.agent_artifacts(run_id)
+            ],
+            "issue": current.local_issue(run.local_issue_id).model_dump(mode="json")
+            if run.local_issue_id and current.local_issue(run.local_issue_id)
+            else None,
+        }
+
+    @app.get("/api/v1/agent/runs")
+    def agent_runs(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [agent_payload(current, run.id) for run in current.agent_runs()]
+
+    @app.post("/api/v1/agent/runs", status_code=201)
+    def create_agent_run(body: AgentRunRequest, current: Repo = repo_dep) -> dict[str, object]:
+        active = llm
+        provider_id = body.provider
+        model = body.model
+        if body.provider:
+            active, resolved = build_for(body.provider, current.list_providers())
+            model = body.model or resolved.model
+        run = create_run(current, body.task, active, provider_id, model)
+        return agent_payload(current, run.id)
+
+    @app.get("/api/v1/agent/runs/{run_id}")
+    def get_agent_run(run_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return agent_payload(current, run_id)
+
+    @app.post("/api/v1/agent/runs/{run_id}/approval")
+    def approve_agent_run(
+        run_id: str, body: AgentApprovalRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        run = current.agent_run(run_id)
+        if body.decision == "rejected":
+            run = reject_plan(current, run_id)
+        else:
+            active = llm
+            if run.provider:
+                active, _ = build_for(run.provider, current.list_providers())
+            run = approve_plan(current, run_id, active)
+        return agent_payload(current, run.id)
+
+    @app.post("/api/v1/agent/runs/{run_id}/cancel")
+    def cancel_agent_run(run_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        run = current.agent_run(run_id)
+        run.status = "cancelled"
+        run.updated_at = utcnow()
+        current.save_agent_run(run)
+        return agent_payload(current, run.id)
+
+    @app.post("/api/v1/agent/runs/{run_id}/commit")
+    def commit_agent_run(
+        run_id: str, body: AgentCommitRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return agent_payload(current, commit_run(current, run_id, body.message).id)
+
+    @app.get("/api/v1/local-issues")
+    def local_issues(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [issue.model_dump(mode="json") for issue in current.local_issues()]
+
+    @app.post("/api/v1/agent/runs/{run_id}/issue", status_code=201)
+    def create_agent_issue(
+        run_id: str, body: LocalIssueRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return create_run_issue(current, run_id, body.title, body.body).model_dump(mode="json")
 
     @app.post("/api/v1/sessions", status_code=201)
     def create_session(body: SessionRequest, current: Repo = repo_dep) -> dict[str, object]:
@@ -1832,6 +2000,11 @@ def _provider_record(
     if not base_url:
         raise ProviderConfigError("a custom provider needs a base URL")
     now = utcnow()
+    auth_style = (
+        base.auth
+        if provider_id == "agnes" and base
+        else body.auth_style or (base.auth if base else "bearer")
+    )
     capability = (
         body.capability
         or (base.capability if base else None)
@@ -1844,7 +2017,9 @@ def _provider_record(
         kind=body.kind or (base.kind if base else "cloud"),
         capability=capability,
         base_url=base_url,
-        auth_style=body.auth_style or (base.auth if base else "bearer"),
+        # Agnes has a fixed Bearer contract. Do not persist a UI/custom auth
+        # selection that the Agnes API will ignore.
+        auth_style=auth_style,
         api_key=(
             body.api_key if body.api_key is not None else (existing.api_key if existing else None)
         ),
