@@ -103,6 +103,18 @@ def test_per_provider_env_key_is_used() -> None:
     assert resolved.api_key == "sk-groq"
 
 
+def test_agnes_always_uses_bearer_auth_even_for_a_stale_saved_row() -> None:
+    record = ProviderRecord(
+        id="agnes",
+        label="Agnes AI",
+        base_url="https://apihub.agnes-ai.com/v1",
+        auth_style="x-api-key",
+        api_key="agnes-secret",
+    )
+    resolved = resolve_provider("agnes", [record])
+    assert resolved.spec.auth == "bearer"
+
+
 def test_mock_provider_needs_no_key_or_network() -> None:
     adapter, resolved = build_for("mock", [])
     assert resolved.model == "mock-1"
