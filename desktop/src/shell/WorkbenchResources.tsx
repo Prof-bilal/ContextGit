@@ -13,7 +13,11 @@ const useSessionsSource = createIsolatedResource<ReturnType<typeof useSessions>>
   sessions: [], loaded: false, removedIds: [], error: null, refresh: refreshUnavailable,
   create: unavailable, remove: unavailable, setAutoCommit: unavailable, stop: unavailable,
 });
-const useTeamSource = createIsolatedResource<ReturnType<typeof useTeam>>("Team data", useTeam, {
+// Team mode is retired. Keep a typed compatibility value for old Code panels,
+// but do not poll or expose the old board as an active resource.
+const useTeamSource = createIsolatedResource<ReturnType<typeof useTeam>>("Team data", () => ({
+  board: null, error: null, refresh: refreshUnavailable, act: unavailable,
+}), {
   board: null, error: null, refresh: refreshUnavailable, act: unavailable,
 });
 const useProjectsSource = createIsolatedResource<ReturnType<typeof useProjects>>("Projects", useProjects, {

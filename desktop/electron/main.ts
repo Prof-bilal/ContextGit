@@ -36,7 +36,6 @@ const repoRoot = path.resolve(app.getAppPath(), "..");
 const backendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
 const apiBase = `http://127.0.0.1:${backendPort}`;
 const apiToken = randomBytes(32).toString("hex");
-const backendRepo = process.env.CONTEXTGIT_REPO ?? path.join(app.getPath("userData"), "contextgit");
 
 /**
  * Asset bytes (thumbnails, previews, video) are served to the renderer through
@@ -71,7 +70,11 @@ let backendMonitor: ReturnType<typeof setInterval> | null = null;
 let probingBackend = false;
 let backendGeneration = 0;
 function backendRepoPath(): string {
-  return process.env.CONTEXTGIT_REPO ?? path.join(app.getPath("userData"), "contextgit");
+  const active = currentWorkspace();
+  if (active) return path.join(active.path, ".contextgit");
+  return process.env.CONTEXTGIT_REPO
+    ? path.resolve(process.env.CONTEXTGIT_REPO)
+    : path.join(app.getPath("userData"), "contextgit");
 }
 function rendererOrigin(): string {
   return process.env.VITE_DEV_SERVER_URL ? new URL(process.env.VITE_DEV_SERVER_URL).origin : "null";
@@ -103,8 +106,7 @@ async function spawnBackend(): Promise<void> {
     CONTEXTGIT_HOST: "127.0.0.1",
     CONTEXTGIT_PORT: String(backendPort),
     CONTEXTGIT_API_TOKEN: apiToken,
-    CONTEXTGIT_REPO:
-      backendRepo,
+    CONTEXTGIT_REPO: backendRepoPath(),
     // Renderer origin: only the dev server needs an explicit web origin;
     // packaged file:// requests are protected by the launch token.
     CONTEXTGIT_CORS_ORIGINS: process.env.CONTEXTGIT_CORS_ORIGINS
@@ -186,6 +188,21 @@ function stopBackend(): Promise<void> {
     if (backend === child) backend = null;
   }).finally(() => { backendStop = null; });
   return backendStop;
+}
+
+async function restartBackendForActiveProject(): Promise<void> {
+  await backendRestart.run(async () => {
+    setStatus({ state: "starting" });
+    try {
+      await stopBackend();
+      await spawnBackend();
+    } catch (cause) {
+      setStatus({
+        state: "error",
+        message: cause instanceof Error ? cause.message : "Backend restart failed.",
+      });
+    }
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -392,16 +409,20 @@ function showFolderDialog(title: string): Promise<Electron.OpenDialogReturnValue
 ipcMain.handle("ctx:workspace-get", () => currentWorkspace());
 ipcMain.handle("ctx:projects-list", () => listProjects());
 
-ipcMain.handle("ctx:projects-use", (_event, target: string) =>
-  isDirectory(target) ? useProject(target) : currentWorkspace(),
-);
+ipcMain.handle("ctx:projects-use", async (_event, target: string) => {
+  const next = isDirectory(target) ? useProject(target) : currentWorkspace();
+  if (next) await restartBackendForActiveProject();
+  return next;
+});
 
 ipcMain.handle("ctx:projects-forget", (_event, target: string) => forgetProject(target));
 
 ipcMain.handle("ctx:workspace-choose", async () => {
   const result = await showFolderDialog("Choose a project folder");
   if (result.canceled || result.filePaths.length === 0) return null;
-  return useProject(result.filePaths[0]);
+  const next = useProject(result.filePaths[0]);
+  await restartBackendForActiveProject();
+  return next;
 });
 
 /** Pick a location without applying it — used as the parent for a new folder. */
@@ -411,7 +432,7 @@ ipcMain.handle("ctx:workspace-pick", async () => {
   return result.filePaths[0];
 });
 
-ipcMain.handle("ctx:workspace-create", (_event, options: { parent: string; name: string }) => {
+ipcMain.handle("ctx:workspace-create", async (_event, options: { parent: string; name: string }) => {
   const name = options.name.trim();
   if (!name) throw new Error("Folder name is required");
   if (name.includes("/") || name.includes("\\")) throw new Error("Folder name cannot contain slashes");
@@ -419,7 +440,9 @@ ipcMain.handle("ctx:workspace-create", (_event, options: { parent: string; name:
   if (!isDirectory(parent)) throw new Error("Choose an existing folder for the location");
   const target = path.join(parent, name);
   fs.mkdirSync(target, { recursive: true });
-  return useProject(target);
+  const next = useProject(target);
+  await restartBackendForActiveProject();
+  return next;
 });
 
 /** Save a generated file (document export) via the native Save dialog. */
@@ -762,15 +785,7 @@ ipcMain.handle("ctx:harness-install", (_event, id: string) => {
 ipcMain.on("ctx:harness-cancel", (_event, id: string) => cancelInstall(id));
 
 ipcMain.handle("ctx:restart-backend", async () => {
-  await backendRestart.run(async () => {
-    setStatus({ state: "starting" });
-    try {
-      await stopBackend();
-      await spawnBackend();
-    } catch (cause) {
-      setStatus({ state: "error", message: cause instanceof Error ? cause.message : "Backend restart failed." });
-    }
-  });
+  await restartBackendForActiveProject();
   return { status, apiBase };
 });
 

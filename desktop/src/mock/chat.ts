@@ -4,10 +4,11 @@
  * layout and interactions can be seen and iterated first.
  */
 
-export type ChatMode = "chat" | "council" | "research" | "image";
+export type ChatMode = "chat" | "work" | "council" | "research" | "image";
 
 export const CHAT_MODES: Array<{ value: ChatMode; label: string; hint: string }> = [
   { value: "chat", label: "Chat", hint: "Ask one model" },
+  { value: "work", label: "Work", hint: "Plan → edit → validate → commit" },
   { value: "council", label: "Council", hint: "Same prompt, several models" },
   { value: "research", label: "Research", hint: "Plan → search → cited report" },
   { value: "image", label: "Image", hint: "Versioned prompt → render" },
@@ -102,4 +103,3 @@ export const PROMPT_VERSIONS: PromptVersion[] = [
     note: "sharpened quality terms after v2 looked soft",
   },
 ];
-

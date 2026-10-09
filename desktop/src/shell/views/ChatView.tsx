@@ -3,6 +3,7 @@ import { LuCornerUpLeft } from "react-icons/lu";
 
 import {
   api,
+  type AgentRun,
   streamCouncil,
   streamChat,
   streamImages,
@@ -38,6 +39,7 @@ import ResearchRun, {
   type ResearchSource,
   type StepState,
 } from "../chat/ResearchRun";
+import WorkRunCard from "../chat/WorkRunCard";
 
 type Entry =
   | { kind: "message"; role: Role; content: string }
@@ -65,7 +67,9 @@ type Entry =
       tiles: ImageTile[];
       model: string;
       aspect: string;
-    };
+    }
+  | { kind: "work"; run: AgentRun }
+  | { kind: "work-pending"; id: string; task: string; error?: string };
 
 const IMAGE_PLACEHOLDER = PROMPT_VERSIONS[1].text;
 
@@ -348,6 +352,39 @@ export default function ChatView({
       setThinking(false);
       setRunning(false);
       abortRef.current = null;
+    }
+  };
+
+  const runWork = async (text: string) => {
+    pushUser(text);
+    const pendingId = `${Date.now()}-${entries.length}`;
+    setEntries((current) => [...current, { kind: "work-pending", id: pendingId, task: text }]);
+    setRunning(true);
+    try {
+      const run = await api.createAgentRun(text, selection.providerId, selection.modelId);
+      setEntries((current) => current.map((entry) =>
+        entry.kind === "work-pending" && entry.id === pendingId ? { kind: "work", run } : entry,
+      ));
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Work run failed";
+      setEntries((current) => current.map((entry) =>
+        entry.kind === "work-pending" && entry.id === pendingId ? { ...entry, error: detail } : entry,
+      ));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const updateWork = async (index: number, action: () => Promise<AgentRun>) => {
+    setRunning(true);
+    try {
+      const run = await action();
+      setEntries((current) => current.map((entry, position) => position === index && entry.kind === "work" ? { ...entry, run } : entry));
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "Could not update work run";
+      setEntries((current) => [...current, { kind: "message", role: "assistant", content: `⚠ ${detail}` }]);
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -665,7 +702,7 @@ export default function ChatView({
 
   // The prompt shown when a mode has no usable provider (mock/bare rows excluded).
   const gate: { capability: ProviderCapability; title: string; message: string } | null = (() => {
-    if (mode === "chat" && readyChatCount === 0) {
+    if ((mode === "chat" || mode === "work") && readyChatCount === 0) {
       return {
         capability: "chat",
         title: "Connect a model to chat",
@@ -713,13 +750,14 @@ export default function ChatView({
     !running &&
     !blocked &&
     (mode !== "council" || councilMembers(controls.council).length >= 2) &&
-    (mode !== "chat" || (Boolean(provider) && selection.modelId !== ""));
+    ((mode !== "chat" && mode !== "work") || (Boolean(provider) && selection.modelId !== ""));
 
   const send = () => {
     const text = draft.trim();
     if (!text || !canSend) return;
     setDraft("");
     if (mode === "chat") void runChat(text);
+    else if (mode === "work") void runWork(text);
     else if (mode === "council") void runCouncil(text);
     else if (mode === "research") void runResearch(text);
     else void runImage(text);
@@ -730,6 +768,8 @@ export default function ChatView({
       ? IMAGE_PLACEHOLDER
       : mode === "council"
         ? `Ask the same question of ${councilMembers(controls.council).length} models…`
+        : mode === "work"
+          ? "Describe the repository task to implement…"
         : mode === "research"
           ? "What should it research?"
           : `Ask ${modelLabel || "the model"}…`;
@@ -737,6 +777,8 @@ export default function ChatView({
   const label =
     mode === "chat"
       ? `New message on ${branch || "this branch"}`
+      : mode === "work"
+        ? "Repository task"
       : mode === "council"
         ? "Council run"
         : mode === "research"
@@ -746,6 +788,8 @@ export default function ChatView({
   const footNote =
     mode === "chat"
       ? `Replying with ${provider?.label ?? "—"} · ${modelLabel || "choose a model"}`
+      : mode === "work"
+        ? `Approval-gated worktree · ${provider?.label ?? "choose a model"}`
       : mode === "council"
         ? `${councilMembers(controls.council).length} models · one decision recorded`
         : mode === "research"
@@ -876,6 +920,30 @@ export default function ChatView({
                 error={entry.error}
                 done={entry.done}
               />
+            );
+          }
+          if (entry.kind === "work") {
+            return (
+              <WorkRunCard
+                key={index}
+                run={entry.run}
+                onApprove={() => void updateWork(index, () => api.approveAgentRun(entry.run.id, "approved"))}
+                onReject={() => void updateWork(index, () => api.approveAgentRun(entry.run.id, "rejected"))}
+                onCommit={() => void updateWork(index, () => api.commitAgentRun(entry.run.id, entry.run.task))}
+                onIssue={() => void updateWork(index, () => api.createAgentIssue(entry.run.id, `Follow-up: ${entry.run.task.slice(0, 180)}`, entry.run.plan?.summary ?? entry.run.task).then(() => api.agentRun(entry.run.id)))}
+              />
+            );
+          }
+          if (entry.kind === "work-pending") {
+            return (
+              <article key={entry.id} className="cg-work-card cg-work-starting" aria-label="Starting repository agent">
+                <header className="cg-work-card-head"><span className="cg-kicker">Work run</span><strong>{entry.error ? "failed" : "starting"}</strong></header>
+                <p className="cg-work-starting-task">{entry.task}</p>
+                {entry.error ? <p className="cg-work-error">{entry.error}</p> : <>
+                  <div className="cg-work-progress" role="progressbar" aria-label="Starting repository agent"><span /></div>
+                  <p className="cg-work-starting-copy">Creating an isolated worktree and inspecting the repository…</p>
+                </>}
+              </article>
             );
           }
           return (

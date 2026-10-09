@@ -155,7 +155,7 @@ export default function AgentFeature() {
       onClose={() => setAgentDialog(null)}
     />
   )}</>;
-  return <FeaturePorts id="agent"
+  return <FeaturePorts id="issues"
     title={"Agent"}
     rail={rail}
     view={view}

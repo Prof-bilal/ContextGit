@@ -42,6 +42,65 @@ export interface RepoSnapshot {
   tags: Array<{ name: string; commit_id: string; label: string | null }>;
 }
 
+export type IssueSeverity = "critical" | "high" | "medium" | "low";
+export type IssueScanner = "secrets" | "dependencies" | "quality" | "review";
+export interface IssueConfig {
+  enabled: boolean;
+  timezone: string;
+  interval_hours: number;
+  schedule_minute: number;
+  scanners: IssueScanner[];
+  minimum_severity: IssueSeverity;
+  minimum_confidence: number;
+  auto_create: boolean;
+  github_repository: string | null;
+  next_run_at: string | null;
+  updated_at: string;
+}
+export interface IssueScanRun {
+  id: string;
+  commit_sha: string | null;
+  trigger: "manual" | "schedule" | "github_actions";
+  status: "queued" | "running" | "done" | "failed";
+  started_at: string;
+  finished_at: string | null;
+  counts: Record<string, number>;
+  steps?: Array<{ scanner: string; status: string; detail: string; findings: number }>;
+  error: string | null;
+}
+export interface IssueLink {
+  fingerprint: string;
+  provider: "github";
+  issue_number: number;
+  issue_url: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface IssueFinding {
+  id: string;
+  run_id: string;
+  fingerprint: string;
+  scanner: IssueScanner;
+  rule_id: string;
+  severity: IssueSeverity;
+  confidence: number;
+  title: string;
+  location: string | null;
+  evidence: string;
+  why: string;
+  fix: string;
+  status: "open" | "resolved";
+  created_at: string;
+  issue: IssueLink | null;
+}
+
+export type AgentRunStatus = "queued" | "inspecting" | "planning" | "awaiting_approval" | "executing" | "validating" | "ready" | "completed" | "failed" | "cancelled";
+export interface AgentStep { id: string; run_id: string; sequence: number; kind: string; status: string; input_summary: string; output_summary: string; files: string[]; created_at: string; }
+export interface AgentArtifact { id: string; run_id: string; kind: string; content: string; created_at: string; }
+export interface LocalIssue { id: string; title: string; body: string; status: string; labels: string[]; source: string; agent_run_id: string | null; commit_id: string | null; branch: string | null; created_at: string; updated_at: string; }
+export interface AgentRun { id: string; session_id: string; task: string; provider: string | null; model: string | null; base_commit: string | null; worktree_path: string | null; status: AgentRunStatus; plan: { summary?: string; steps?: string[]; files?: string[]; checks?: string[]; risks?: string[] } | null; resulting_commit: string | null; local_issue_id: string | null; error: string | null; created_at: string; updated_at: string; steps: AgentStep[]; artifacts: AgentArtifact[]; issue: LocalIssue | null; }
+
 export interface MergeConflict {
   id: string;
   category: "decision" | "fact";
@@ -1129,6 +1188,13 @@ export const api = {
     ),
   // ---------- sessions (parallel AI runs) ----------
   sessions: () => request<Session[]>("/api/v1/sessions"),
+  agentRuns: () => request<AgentRun[]>("/api/v1/agent/runs"),
+  agentRun: (id: string) => request<AgentRun>(`/api/v1/agent/runs/${id}`),
+  createAgentRun: (task: string, provider?: string, model?: string) => request<AgentRun>("/api/v1/agent/runs", { method: "POST", body: JSON.stringify({ task, provider, model }) }),
+  approveAgentRun: (id: string, decision: "approved" | "rejected") => request<AgentRun>(`/api/v1/agent/runs/${id}/approval`, { method: "POST", body: JSON.stringify({ decision }) }),
+  cancelAgentRun: (id: string) => request<AgentRun>(`/api/v1/agent/runs/${id}/cancel`, { method: "POST" }),
+  commitAgentRun: (id: string, message?: string) => request<AgentRun>(`/api/v1/agent/runs/${id}/commit`, { method: "POST", body: JSON.stringify({ message }) }),
+  createAgentIssue: (id: string, title: string, body: string) => request<LocalIssue>(`/api/v1/agent/runs/${id}/issue`, { method: "POST", body: JSON.stringify({ title, body }) }),
   session: (id: string) => request<Session>(`/api/v1/sessions/${id}`),
   workspace: (id: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
@@ -1234,6 +1300,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ summary, model }),
     }),
+  // ---------- repository issues ----------
+  issueConfig: () => request<IssueConfig>("/api/v1/issues/config"),
+  updateIssueConfig: (input: Partial<IssueConfig>) => request<IssueConfig>("/api/v1/issues/config", {
+    method: "PUT", body: JSON.stringify(input),
+  }),
+  issueScans: () => request<IssueScanRun[]>("/api/v1/issues/scans"),
+  issueFindings: () => request<IssueFinding[]>("/api/v1/issues/findings"),
+  runIssueScan: () => request<IssueScanRun>("/api/v1/issues/scan", { method: "POST" }),
+  installOsvScanner: () => request<{ installed: boolean; detail: string }>("/api/v1/issues/dependencies/install", { method: "POST" }),
+  pauseIssueSchedule: () => request<IssueConfig>("/api/v1/issues/schedule/pause", { method: "POST" }),
+  resumeIssueSchedule: () => request<IssueConfig>("/api/v1/issues/schedule/resume", { method: "POST" }),
+  testGithubIssues: () => request<{ configured: boolean; repository: string | null }>("/api/v1/issues/github/test", { method: "POST" }),
+  installIssuesWorkflow: () => request<{ path: string; installed: boolean }>("/api/v1/issues/github/install-workflow", { method: "POST" }),
   // ---------- team mode (a task graph over parallel runs) ----------
   team: () => request<TeamBoard | null>("/api/v1/team"),
   createTeam: (input: {

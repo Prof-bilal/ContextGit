@@ -51,7 +51,7 @@ export default function UsageFeature({
       </span>
     </footer>
   ) : null;
-  return <FeaturePorts id="agent"
+  return <FeaturePorts id="issues"
     title={"Usage"}
     rail={rail}
     view={view}

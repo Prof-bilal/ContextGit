@@ -12,13 +12,13 @@ import TerminalHost from "./terminal/TerminalHost";
 import ChatFeature from "./features/ChatFeature";
 import CodeFeature from "./features/CodeFeature";
 import AssetsFeature from "./features/AssetsFeature";
-import AgentFeature from "./features/AgentFeature";
+import IssuesFeature from "./features/IssuesFeature";
 import GitFeature from "./features/GitFeature";
 
 const FEATURES = [
   { id: "chat", label: "Chat", title: "Conversation", Controller: ChatFeature },
   { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
-  { id: "agent", label: "Agent", title: "Agent", Controller: AgentFeature },
+  { id: "issues", label: "Issues", title: "Issues", Controller: IssuesFeature },
   { id: "git", label: "Git", title: "Commit", Controller: GitFeature },
   { id: "assets", label: "Assets", title: "Asset", Controller: AssetsFeature },
 ] as const satisfies readonly (TabDef & { title: string; Controller: typeof ChatFeature })[];

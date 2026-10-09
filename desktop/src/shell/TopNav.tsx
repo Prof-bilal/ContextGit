@@ -4,7 +4,7 @@ export type PrimaryTabId =
   | "chat"
   | "code"
   | "assets"
-  | "agent"
+  | "issues"
   | "git";
 
 export type TabId = PrimaryTabId;
