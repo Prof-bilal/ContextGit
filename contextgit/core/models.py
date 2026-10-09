@@ -51,6 +51,7 @@ class Branch(BaseModel):
 
     name: str
     head_commit_id: str
+    project_path: str | None = None
     # When set, the branch is in Storage (trash): hidden from the normal lists
     # but recoverable. None means live.
     deleted_at: datetime | None = None
@@ -366,6 +367,40 @@ class Session(BaseModel):
     deleted_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryConflict(BaseModel):
+    """A project-memory statement that conflicts with an existing statement."""
+
+    topic: str
+    existing: str
+    proposed: str
+    source_session_ids: list[str] = Field(default_factory=list)
+
+
+class ProjectMemoryRevision(BaseModel):
+    """An approved or previewed, project-scoped knowledge revision."""
+
+    id: str
+    project_path: str
+    revision: int
+    status: Literal["draft", "approved"] = "draft"
+    summary: str = ""
+    architecture: list[str] = Field(default_factory=list)
+    workflow: list[str] = Field(default_factory=list)
+    conventions: list[str] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    rejected: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    validation: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    conflicts: list[MemoryConflict] = Field(default_factory=list)
+    source_session_ids: list[str] = Field(default_factory=list)
+    source_commit_ids: list[str] = Field(default_factory=list)
+    provider: str | None = None
+    model: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    approved_at: datetime | None = None
 
 
 class MergeQueueEntry(BaseModel):

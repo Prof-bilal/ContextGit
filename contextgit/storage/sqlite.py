@@ -42,6 +42,8 @@ from contextgit.core.models import (
     ProviderCapability,
     ProviderKind,
     ProviderRecord,
+    MemoryConflict,
+    ProjectMemoryRevision,
     Role,
     Session,
     SessionKind,
@@ -309,13 +311,26 @@ class SqliteStorage:
     def all_commit_ids(self) -> list[str]:
         return [row[0] for row in self._conn.execute("SELECT id FROM commits")]
 
+    def delete_commits(self, commit_ids: list[str]) -> None:
+        """Delete commits and messages after callers prove they are unreferenced."""
+        if not commit_ids:
+            return
+        placeholders = ", ".join("?" for _ in commit_ids)
+        with self._conn:
+            self._conn.execute(
+                f"DELETE FROM messages WHERE commit_id IN ({placeholders})", commit_ids
+            )
+            self._conn.execute(
+                f"DELETE FROM commits WHERE id IN ({placeholders})", commit_ids
+            )
+
     # ---------- branches / HEAD ----------
 
     def insert_branch(self, branch: Branch) -> None:
         with self._conn:
             self._conn.execute(
-                "INSERT INTO branches (name, head_commit_id) VALUES (?, ?)",
-                (branch.name, branch.head_commit_id),
+                "INSERT INTO branches (name, head_commit_id, project_path) VALUES (?, ?, ?)",
+                (branch.name, branch.head_commit_id, branch.project_path),
             )
 
     @staticmethod
@@ -323,8 +338,20 @@ class SqliteStorage:
         return Branch(
             name=row["name"],
             head_commit_id=row["head_commit_id"],
+            project_path=row["project_path"],
             deleted_at=row["deleted_at"],
         )
+
+    def set_branch_project(self, name: str, project_path: str) -> None:
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE branches SET project_path = ? WHERE name = ? AND project_path IS NULL",
+                (project_path, name),
+            )
+            if cur.rowcount == 0 and self._conn.execute(
+                "SELECT 1 FROM branches WHERE name = ?", (name,)
+            ).fetchone() is None:
+                raise BranchNotFound(f"branch '{name}' not found")
 
     def get_branch(self, name: str) -> Branch:
         row = self._conn.execute("SELECT * FROM branches WHERE name = ?", (name,)).fetchone()
@@ -536,6 +563,83 @@ class SqliteStorage:
             cur = self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             if cur.rowcount == 0:
                 raise SessionNotFound(f"session '{session_id[:12]}' not found")
+
+    # ---------- project memory ----------
+
+    @staticmethod
+    def _project_memory(row: sqlite3.Row) -> ProjectMemoryRevision:
+        return ProjectMemoryRevision(
+            id=row["id"],
+            project_path=row["project_path"],
+            revision=int(row["revision"]),
+            status=row["status"],
+            summary=row["summary"],
+            architecture=json.loads(row["architecture"] or "[]"),
+            workflow=json.loads(row["workflow"] or "[]"),
+            conventions=json.loads(row["conventions"] or "[]"),
+            decisions=json.loads(row["decisions"] or "[]"),
+            rejected=json.loads(row["rejected"] or "[]"),
+            skills=json.loads(row["skills"] or "[]"),
+            validation=json.loads(row["validation"] or "[]"),
+            open_questions=json.loads(row["open_questions"] or "[]"),
+            conflicts=[MemoryConflict.model_validate(item) for item in json.loads(row["conflicts"] or "[]")],
+            source_session_ids=json.loads(row["source_session_ids"] or "[]"),
+            source_commit_ids=json.loads(row["source_commit_ids"] or "[]"),
+            provider=row["provider"],
+            model=row["model"],
+            created_at=row["created_at"],
+            approved_at=row["approved_at"],
+        )
+
+    def insert_project_memory(self, memory: ProjectMemoryRevision) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO project_memory_revisions "
+                "(id, project_path, revision, status, summary, architecture, workflow, conventions, "
+                "decisions, rejected, skills, validation, open_questions, conflicts, source_session_ids, "
+                "source_commit_ids, provider, model, created_at, approved_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    memory.id, memory.project_path, memory.revision, memory.status, memory.summary,
+                    json.dumps(memory.architecture), json.dumps(memory.workflow), json.dumps(memory.conventions),
+                    json.dumps(memory.decisions), json.dumps(memory.rejected), json.dumps(memory.skills),
+                    json.dumps(memory.validation), json.dumps(memory.open_questions),
+                    json.dumps([item.model_dump(mode="json") for item in memory.conflicts]),
+                    json.dumps(memory.source_session_ids), json.dumps(memory.source_commit_ids),
+                    memory.provider, memory.model, memory.created_at.isoformat(),
+                    memory.approved_at.isoformat() if memory.approved_at else None,
+                ),
+            )
+
+    def project_memory(self, project_path: str, *, approved_only: bool = True) -> ProjectMemoryRevision | None:
+        status = " AND status = 'approved'" if approved_only else ""
+        row = self._conn.execute(
+            "SELECT * FROM project_memory_revisions WHERE project_path = ?" + status
+            + " ORDER BY revision DESC LIMIT 1", (project_path,)
+        ).fetchone()
+        return self._project_memory(row) if row else None
+
+    def project_memory_revision(self, revision_id: str) -> ProjectMemoryRevision | None:
+        row = self._conn.execute("SELECT * FROM project_memory_revisions WHERE id = ?", (revision_id,)).fetchone()
+        return self._project_memory(row) if row else None
+
+    def next_project_memory_revision(self, project_path: str) -> int:
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(revision), 0) + 1 FROM project_memory_revisions WHERE project_path = ?",
+            (project_path,),
+        ).fetchone()
+        return int(row[0])
+
+    def approve_project_memory(self, revision_id: str, approved_at: str) -> ProjectMemoryRevision:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE project_memory_revisions SET status = 'approved', approved_at = ? WHERE id = ?",
+                (approved_at, revision_id),
+            )
+        memory = self.project_memory_revision(revision_id)
+        if memory is None:
+            raise ValueError(f"project memory revision '{revision_id}' not found")
+        return memory
 
     # ---------- staging ----------
 

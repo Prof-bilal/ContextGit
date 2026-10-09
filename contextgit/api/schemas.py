@@ -12,6 +12,7 @@ from contextgit.core.models import (
     EndpointTestFile,
     EndpointTestSuite,
     Message,
+    ProjectMemoryRevision,
     ProviderCapability,
     ProviderKind,
     Tag,
@@ -299,6 +300,17 @@ class SessionUpdateRequest(BaseModel):
     name: str | None = None
     status: Literal["idle", "running", "done", "error"] | None = None
     auto_commit: bool | None = None
+
+
+class ProjectMemorySynthesisRequest(BaseModel):
+    project_path: str
+    session_ids: list[str] | None = None
+    provider: str | None = None
+    model: str | None = None
+
+
+class ProjectMemoryApprovalRequest(BaseModel):
+    memory: ProjectMemoryRevision
 
 
 class StageRequest(BaseModel):

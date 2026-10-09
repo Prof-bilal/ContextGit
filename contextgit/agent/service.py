@@ -105,6 +105,13 @@ def _json_response(raw: str) -> dict[str, object]:
 def _clean_patch(raw: str) -> str:
     """Extract a unified diff when a model adds Markdown or short commentary."""
     patch = raw.replace("\r\n", "\n").strip()
+    # Some agents return the repository's apply_patch envelope instead of a
+    # unified diff. The envelope is not part of git-apply's grammar and causes
+    # opaque errors such as "corrupt patch at <stdin>:41". Strip only the
+    # outer markers; the actual diff still goes through the path and hunk
+    # validation below.
+    patch = re.sub(r"^\*\*\* Begin Patch\s*", "", patch)
+    patch = re.sub(r"\s*\*\*\* End Patch$", "", patch)
     marker = patch.find("diff --git ")
     if marker >= 0:
         patch = patch[marker:]

@@ -67,6 +67,8 @@ from contextgit.api.schemas import (
     ProviderModelsResult,
     ProviderTestResult,
     ProviderUpsertRequest,
+    ProjectMemoryApprovalRequest,
+    ProjectMemorySynthesisRequest,
     RepoSnapshot,
     ResearchRequest,
     RunMergeQueueRequest,
@@ -179,6 +181,7 @@ from contextgit.llm import (
     resolve_provider,
 )
 from contextgit.llm.base import UsageSink
+from contextgit.memory.project import synthesize_project_memory
 from contextgit.research import Fetcher, ResearchStore, extract_claims, run_research
 from contextgit.verify.bisect import bisect_gate, oldest_commit
 from contextgit.verify.detect import detect_gate
@@ -566,6 +569,103 @@ def create_app(
     @app.get("/api/v1/sessions")
     def sessions(current: Repo = repo_dep) -> list[dict[str, object]]:
         return [session.model_dump(mode="json") for session in current.list_sessions()]
+
+    @app.get("/api/v1/sessions/{session_id}/detail")
+    def session_detail(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """One bounded read for the complete AI-work record of a session."""
+        session = current.get_session(session_id)
+        commits = current.log(session.branch)
+        head = commits[0].id if commits else None
+        run = next((item for item in current.agent_runs(500) if item.session_id == session.id), None)
+        workspace = None
+        try:
+            workspace = current.session_workspace(session.id).model_dump(mode="json")
+        except Exception:
+            # Plain chat sessions and non-git projects have no worktree status.
+            workspace = None
+        memory = current.project_memory(session.project_path) if session.project_path else None
+        return {
+            "session": session.model_dump(mode="json"),
+            "messages": [item.model_dump(mode="json") for item in (current.build_context(head) if head else [])],
+            "staged_messages": [item.model_dump(mode="json") for item in current.staged(session.id)],
+            "agent_run": (
+                {
+                    **run.model_dump(mode="json"),
+                    "steps": [step.model_dump(mode="json") for step in current.agent_steps(run.id)],
+                    "artifacts": [artifact.model_dump(mode="json") for artifact in current.agent_artifacts(run.id)],
+                }
+                if run else None
+            ),
+            "workspace_status": workspace,
+            "commits": [commit.model_dump(mode="json") for commit in commits[:100]],
+            "project_memory_preview": {
+                "revision": memory.revision,
+                "summary": memory.summary,
+                "text": current.project_memory_text(memory),
+            } if memory else None,
+        }
+
+    @app.get("/api/v1/project-memory")
+    def project_memory(project_path: str, current: Repo = repo_dep) -> dict[str, object]:
+        canonical = current.canonical_project_path(project_path)
+        memory = current.project_memory(canonical)
+        return {
+            "project_path": canonical,
+            "current": memory.model_dump(mode="json") if memory else None,
+            "text": current.project_memory_text(memory),
+        }
+
+    @app.post("/api/v1/project-memory/synthesize")
+    def synthesize_memory(
+        body: ProjectMemorySynthesisRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        active = llm
+        provider_id = body.provider
+        model = body.model
+        if body.provider:
+            active, resolved = build_for(body.provider, current.list_providers())
+            if getattr(resolved, "kind", None) == "mock":
+                raise ProviderConfigError("project-memory synthesis requires a real provider")
+            model = body.model or resolved.model
+        elif provider is None and isinstance(active, FakeProvider):
+            raise ProviderConfigError("project-memory synthesis requires a configured real provider")
+        try:
+            memory = synthesize_project_memory(
+                current,
+                active,
+                body.project_path,
+                body.session_ids,
+                provider_id=provider_id,
+                model=model,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return memory.model_dump(mode="json")
+
+    @app.post("/api/v1/project-memory/{revision_id}/approve")
+    def approve_memory(
+        revision_id: str,
+        body: ProjectMemoryApprovalRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        if body.memory.id != revision_id:
+            raise InvalidRefName("memory revision id does not match the request path")
+        canonical = current.canonical_project_path(body.memory.project_path)
+        if canonical != body.memory.project_path:
+            raise InvalidRefName("project path must be canonical")
+        allowed = {session.id for session in current.list_sessions() if session.project_path == canonical}
+        if any(session_id not in allowed for session_id in body.memory.source_session_ids):
+            raise InvalidRefName("memory sources must belong to the selected project")
+        draft = body.memory.model_copy(
+            update={
+                "project_path": canonical,
+                "revision": current.next_project_memory_revision(canonical),
+                "status": "draft",
+                "approved_at": None,
+            }
+        )
+        current.save_project_memory(draft)
+        return current.approve_project_memory(revision_id).model_dump(mode="json")
 
     # ---------- versioned repository agent ----------
 

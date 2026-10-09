@@ -45,6 +45,14 @@ def test_snapshot_and_branch_commit_context(tmp_path: Path) -> None:
     assert commit.json()["commit"]["messages"][0]["content"] == "continue"
 
 
+def test_duplicate_branch_returns_validation_error(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "repo")
+    client = TestClient(create_app(repo=repo, provider=FakeProvider()))
+    response = client.post("/api/v1/branches", json={"name": "main"})
+    assert response.status_code == 422
+    assert response.json()["type"] == "InvalidRefName"
+
+
 def test_chat_sse_streams_and_commits(tmp_path: Path) -> None:
     repo = Repo.init(tmp_path / "repo")
     provider = FakeProvider(default="A deterministic answer")

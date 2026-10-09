@@ -14,7 +14,8 @@ END = "<!-- contextgit:end -->"
 
 
 def context_document(
-    runs: list[dict[str, str]], digest: str | None = None, rejected: list[str] | None = None
+    runs: list[dict[str, str]], digest: str | None = None, rejected: list[str] | None = None,
+    project_memory: str | None = None,
 ) -> str:
     """The body of the managed block for the given runs, plus an optional digest.
 
@@ -45,6 +46,8 @@ def context_document(
                 *[f"- {item}" for item in rejected],
             ]
         )
+    if project_memory and project_memory.strip():
+        lines.extend(["", "### Approved project memory", "", project_memory.strip()])
     if digest and digest.strip():
         lines.extend(["", digest.strip()])
     return "\n".join(lines)

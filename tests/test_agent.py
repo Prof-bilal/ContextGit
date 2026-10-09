@@ -40,6 +40,21 @@ def test_agent_strips_markdown_wrappers_from_generated_patches() -> None:
     assert patch.strip() == "diff --git a/app.py b/app.py"
 
 
+def test_agent_strips_apply_patch_envelope_from_generated_patches() -> None:
+    patch = _clean_patch(
+        "*** Begin Patch\n"
+        "*** Update File: app.py\n"
+        "diff --git a/app.py b/app.py\n"
+        "@@ -1 +1 @@\n"
+        "-return 1\n"
+        "+return 2\n"
+        "*** End Patch"
+    )
+    assert patch.startswith("diff --git a/app.py b/app.py\n")
+    assert "*** Begin Patch" not in patch
+    assert "*** End Patch" not in patch
+
+
 def git(root: Path, *args: str) -> str:
     result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True)
     return result.stdout.strip()

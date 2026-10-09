@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from contextgit.core.errors import InvalidRefName, SessionNotFound, StagingEmpty
+from contextgit.core.errors import BranchNotFound, CommitNotFound, InvalidRefName, SessionNotFound, StagingEmpty
 from contextgit.core.models import Message, Session
 from contextgit.core.repo import Repo, _project_from_worktree
 from contextgit.gitops.context import context_document
@@ -53,14 +53,16 @@ class TestSessions:
             repo.get_session(removed.id)
         assert repo.get_session(kept.id).name == "keep"
 
-    def test_delete_session_keeps_branch_and_commits(self, repo: Repo) -> None:
+    def test_delete_session_removes_private_branch_and_commits(self, repo: Repo) -> None:
         session = repo.create_session("temp")
         branch = session.branch
         repo.stage(session.id, _messages("hello"))
         commit = repo.commit_staged(session.id)
         repo.delete_session(session.id)
-        assert repo.get_branch(branch).head_commit_id == commit.id
-        assert repo.get_commit(commit.id).messages[0].content == "hello"
+        with pytest.raises(BranchNotFound):
+            repo.get_branch(branch)
+        with pytest.raises(CommitNotFound):
+            repo.get_commit(commit.id)
 
     def test_trash_and_restore_hides_then_reveals(self, repo: Repo) -> None:
         kept = repo.create_session("keep")

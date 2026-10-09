@@ -49,6 +49,7 @@ from contextgit.core.models import (
     IssueScanConfig,
     IssueScanRun,
     LocalIssue,
+    ProjectMemoryRevision,
     MergeQueueEntry,
     Message,
     ProviderRecord,
@@ -548,13 +549,17 @@ class Repo:
         """
         if kind not in {"chat", "terminal"}:
             raise InvalidRefName(f"unknown session kind: {kind!r}")
+        if project_path:
+            project_path = self.canonical_project_path(project_path)
         branch_name = branch or self._unique_branch_name(name)
         if not self._branch_exists(branch_name):
-            self.branch(branch_name, from_commit=from_commit)
+            self.branch(branch_name, from_commit=from_commit, project_path=project_path)
         elif self._storage.branch_is_trashed(branch_name):
             # Reusing a name that is sitting in Storage: bring the branch back
             # rather than binding this run to a hidden pointer.
             self._storage.restore_branch(branch_name)
+        if project_path:
+            self._storage.set_branch_project(branch_name, project_path)
         session = Session(
             id=uuid4().hex,
             name=name,
@@ -577,8 +582,11 @@ class Repo:
             # What this run could see. Best-effort: a capture failure must never
             # stop a run from starting.
             self.record_run_env(session.id)
-        if project_path and session.worktree_path:
-            self.sync_agent_context(project_path, self.shared_context(session.id))
+        if project_path:
+            self.sync_agent_context(
+                project_path,
+                self.shared_context(session.id) if session.worktree_path else None,
+            )
         return session
 
     def _attach_worktree(self, session: Session, project_path: str, base_ref: str | None) -> None:
@@ -687,16 +695,55 @@ class Repo:
         return session
 
     def delete_session(self, session_id: str, *, remove_worktree: bool = True) -> None:
-        """Permanently delete a session and its staged messages. Commits/branches survive.
+        """Permanently delete a session, its branch, and exclusive commits.
 
         The session's git worktree is removed when clean; a worktree with
-        uncommitted changes is kept so no work is lost. Callers that want to
-        keep the run recoverable should use `trash_session` instead.
+        uncommitted changes is kept so no work is lost. Commits reachable from
+        another branch, tag, or session are preserved. Callers that want to
+        keep the run and its history recoverable should use `trash_session`.
         """
         session = self._storage.get_session(session_id)
         if remove_worktree and session.worktree_path:
             self._remove_worktree(session.worktree_path)
+        self._purge_session_history(session)
         self._storage.delete_session(session_id)
+
+    def _purge_session_history(self, session: Session) -> None:
+        """Remove private branch history without harming shared references."""
+        if session.branch == self.current_branch():
+            return
+        if any(
+            other.id != session.id and other.branch == session.branch
+            for other in self._storage.list_sessions(include_deleted=True)
+        ):
+            return
+        try:
+            target = self._storage.get_branch(session.branch)
+        except BranchNotFound:
+            return
+
+        def reachable(starts: list[str]) -> set[str]:
+            seen: set[str] = set()
+            pending = list(starts)
+            while pending:
+                commit_id = pending.pop()
+                if commit_id in seen or not self._storage.has_commit(commit_id):
+                    continue
+                seen.add(commit_id)
+                pending.extend(self._storage.get_commit(commit_id).parent_ids)
+            return seen
+
+        protected = reachable(
+            [
+                branch.head_commit_id
+                for branch in self._storage.list_branches(include_deleted=True)
+                if branch.name != session.branch
+            ]
+            + [tag.commit_id for tag in self._storage.list_tags()]
+        )
+        owned = reachable([target.head_commit_id]) - protected
+        self._storage.delete_branch(session.branch)
+        self._storage.delete_commits(sorted(owned))
 
     @staticmethod
     def _remove_worktree(worktree_path: str) -> None:
@@ -805,7 +852,47 @@ class Repo:
         ]
         scope = [glob for session in sessions for glob in session.scope]
         rejected = self.rejected_alternatives(project_path, scope)
-        write_context_block(project_path, context_document(runs, digest, rejected))
+        memory = self.project_memory(project_path)
+        memory_text = self.project_memory_text(memory)
+        write_context_block(project_path, context_document(runs, digest, rejected, memory_text))
+
+    @staticmethod
+    def canonical_project_path(project_path: str | Path) -> str:
+        return str(Path(project_path).expanduser().resolve())
+
+    def project_memory(self, project_path: str | Path) -> ProjectMemoryRevision | None:
+        return self._storage.project_memory(self.canonical_project_path(project_path))
+
+    @staticmethod
+    def project_memory_text(memory: ProjectMemoryRevision | None) -> str:
+        if memory is None:
+            return ""
+        sections = [f"### Project summary\n{memory.summary}" if memory.summary else ""]
+        for title, values in (
+            ("Architecture", memory.architecture),
+            ("Workflow", memory.workflow),
+            ("Conventions", memory.conventions),
+            ("Decisions", memory.decisions),
+            ("Rejected approaches", memory.rejected),
+            ("Required skills", memory.skills),
+            ("Validation", memory.validation),
+            ("Open questions", memory.open_questions),
+        ):
+            if values:
+                sections.append(f"### {title}\n" + "\n".join(f"- {item}" for item in values))
+        return "\n\n".join(section for section in sections if section)
+
+    def save_project_memory(self, memory: ProjectMemoryRevision) -> ProjectMemoryRevision:
+        self._storage.insert_project_memory(memory)
+        return memory
+
+    def next_project_memory_revision(self, project_path: str | Path) -> int:
+        return self._storage.next_project_memory_revision(self.canonical_project_path(project_path))
+
+    def approve_project_memory(self, revision_id: str) -> ProjectMemoryRevision:
+        memory = self._storage.approve_project_memory(revision_id, utcnow().isoformat())
+        self.sync_agent_context(memory.project_path)
+        return memory
 
     def rejected_alternatives(
         self, project_path: str, scope: list[str], *, limit: int = 6
@@ -1857,16 +1944,27 @@ class Repo:
 
     # ---------- branches ----------
 
-    def branch(self, name: str, from_commit: str | None = None) -> Branch:
+    def branch(
+        self,
+        name: str,
+        from_commit: str | None = None,
+        project_path: str | None = None,
+    ) -> Branch:
         """Create a branch pointing at `from_commit` (default: current head)."""
         self._check_ref_name(name)
+        if self._branch_exists(name):
+            raise InvalidRefName(f"branch '{name}' already exists")
         if from_commit is None:
             head_id = self._storage.get_branch(self._storage.get_current_branch()).head_commit_id
         elif self._storage.has_commit(from_commit):
             head_id = from_commit
         else:
             raise CommitNotFound(f"commit {from_commit[:12]} not found")
-        branch = Branch(name=name, head_commit_id=head_id)
+        branch = Branch(
+            name=name,
+            head_commit_id=head_id,
+            project_path=self.canonical_project_path(project_path) if project_path else None,
+        )
         self._storage.insert_branch(branch)
         return branch
 
