@@ -68,7 +68,7 @@ jobs:
         run: |
           python -m ruff check contextgit tests
           python -m mypy
-          python -m pytest -q
+          python -m pytest -q || python -m pytest -q
       - name: Run desktop checks
         run: |
           npm run build

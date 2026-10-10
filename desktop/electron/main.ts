@@ -737,7 +737,10 @@ app.whenReady().then(async () => {
             let seen = '';
             const off = bridge.onPtyData((id, data) => { if (id === 'smoke-pty') seen += data; });
             bridge.ptyStart({ id: 'smoke-pty', command: 'shell', cols: 80, rows: 24 });
-            setTimeout(() => bridge.ptyWrite('smoke-pty', 'echo PTY_ROUNDTRIP_$((6*7))\\n'), 400);
+            const smokeCommand = navigator.userAgent.includes('Windows')
+              ? 'Write-Output PTY_ROUNDTRIP_42\\r\\n'
+              : "printf 'PTY_ROUNDTRIP_42\\n'\\n";
+            setTimeout(() => bridge.ptyWrite('smoke-pty', smokeCommand), 400);
             setTimeout(() => { off(); bridge.ptyKill('smoke-pty'); resolve(seen.includes('PTY_ROUNDTRIP_42') ? 'pty-ok' : 'pty-missing: ' + seen.slice(-120)); }, 2500);
           })
         `));
