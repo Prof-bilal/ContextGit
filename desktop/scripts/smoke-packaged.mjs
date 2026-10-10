@@ -21,6 +21,10 @@ const candidates = process.platform === "win32"
         path.join(root, "release", "linux-unpacked", "ContextGit"),
         path.join(root, "release", "linux-unpacked", "contextgit-desktop"),
         path.join(root, "release", "linux-unpacked", "ContextGit-desktop"),
+        path.join(root, "release", "linux-arm64-unpacked", "contextgit"),
+        path.join(root, "release", "linux-arm64-unpacked", "ContextGit"),
+        path.join(root, "release", "linux-arm64-unpacked", "contextgit-desktop"),
+        path.join(root, "release", "linux-arm64-unpacked", "ContextGit-desktop"),
       ];
 const executable = candidates.find((candidate) => fs.existsSync(candidate));
 if (!executable) throw new Error(`Packaged executable not found. Tried: ${candidates.join(", ")}`);
