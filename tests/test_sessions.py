@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from contextgit.core.errors import BranchNotFound, CommitNotFound, InvalidRefName, SessionNotFound, StagingEmpty
+from contextgit.core.errors import (
+    BranchNotFound,
+    CommitNotFound,
+    InvalidRefName,
+    SessionNotFound,
+    StagingEmpty,
+)
 from contextgit.core.models import Message, Session
 from contextgit.core.repo import Repo, _project_from_worktree
 from contextgit.gitops.context import context_document
