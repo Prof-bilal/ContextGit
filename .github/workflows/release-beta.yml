@@ -103,7 +103,14 @@ jobs:
         continue-on-error: ${{ runner.os == 'Windows' }}
         run: npm run clean:release --prefix desktop
       - name: Build installers
+        if: runner.os != 'Windows'
         run: npx electron-builder --projectDir desktop
+      - name: Build Windows installer in a fresh output directory
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          npx electron-builder --projectDir desktop --config.directories.output=release-installer
+          Copy-Item desktop/release-installer/* desktop/release/ -Force
       - name: Generate checksums
         run: npm run checksums --prefix desktop
       - name: Upload test logs
