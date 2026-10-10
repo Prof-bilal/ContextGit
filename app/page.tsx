@@ -86,7 +86,7 @@ export default function Page() {
             <span /><span /><span /><span /><span />
           </div>
           <div className="wrap">
-            <p className="eyebrow reveal"><span className="chip">Friends beta · 0.1.0</span><span>Local-first terminal + Git workbench</span></p>
+            <p className="eyebrow reveal"><span className="chip">Beta · 0.1.0</span><span>Local-first terminal + Git workbench</span></p>
             <h1 id="hero-title" className="reveal" style={d(60)}>
               <span className="h1-a">Run your AI agents.</span>
               <span className="h1-b">Keep the work.</span>
@@ -98,7 +98,7 @@ export default function Page() {
               <a className="btn btn-primary" href="/download">Download the beta <span aria-hidden="true">&rarr;</span></a>
               <a className="btn btn-ghost" href="#workbench">See how it works</a>
             </div>
-            <p className="fineprint reveal" style={d(200)}>Unsigned friends beta for Windows, macOS, and Linux. No account required. Open source under Apache-2.0.</p>
+            <p className="fineprint reveal" style={d(200)}>Unsigned beta for Windows, macOS, and Linux. No account required. Open source under Apache-2.0.</p>
 
             <ul className="trust-strip reveal" style={d(220)}>
               <li>Local-first</li>
@@ -349,7 +349,7 @@ export default function Page() {
               <p className="eyebrow"><span className="eyebrow-no">06</span>Trust</p>
               <h2 id="trust-title">Simple to understand. Local by default.</h2>
               <p className="lede">
-                The friends beta needs no ContextGit account. Your history is stored locally, and the app works with the Git and terminal setup you already use.
+                The beta needs no ContextGit account. Your history is stored locally, and the app works with the Git and terminal setup you already use.
               </p>
             </header>
             <ul className="pillars trust-pillars reveal" style={d(80)}>
@@ -378,7 +378,7 @@ export default function Page() {
 
             <div className="cta reveal">
               <h2 className="cta-title">Start with a local beta.</h2>
-              <p className="cta-lede">Run an agent, inspect the diff, and keep the checkpoint. Download the unsigned friends beta for Windows, macOS, or Linux.</p>
+              <p className="cta-lede">Run an agent, inspect the diff, and keep the checkpoint. Download the unsigned beta for Windows, macOS, or Linux.</p>
               <div className="cta-actions">
                 <a className="btn btn-signal" href="/download">Download beta <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-link-cta" href={GITHUB}>View on GitHub <span aria-hidden="true">&rarr;</span></a>

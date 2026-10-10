@@ -12,7 +12,7 @@ const RELEASE_ASSET_BASE = `${GITHUB}/releases/download/v0.1.0-beta.1`;
 export const metadata: Metadata = {
   title: "Download ContextGit",
   description:
-    "Install the ContextGit friends beta for Windows, macOS, or Linux and start a local terminal-agent workbench.",
+    "Install the ContextGit beta for Windows, macOS, or Linux and start a local terminal-agent workbench.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -88,7 +88,7 @@ export default function DownloadPage() {
         <section className="section page-hero" data-section aria-labelledby="download-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="chip">Friends beta</span><span>Install like a normal desktop app</span></p>
+              <p className="eyebrow"><span className="chip">Beta</span><span>Install like a normal desktop app</span></p>
               <h1 id="download-title" className="page-h1">Download. Install. Start an agent.</h1>
               <p className="lede">
                 You do not need to clone the repository, create a Python environment, or start a

@@ -1,5 +1,5 @@
-name: Friends beta bug
-description: Report a reproducible issue in the ContextGit friends beta.
+name: Beta bug
+description: Report a reproducible issue in the ContextGit beta.
 title: "[beta] "
 labels: ["beta"]
 body:

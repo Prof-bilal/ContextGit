@@ -1,6 +1,6 @@
 # ContextGit `0.1.0-beta.1`
 
-This is an unsigned friends beta for Windows x64, macOS Intel/Apple Silicon,
+This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
 Linux users can choose the format that matches their distribution: AppImage or
 `.tar.gz` for any distro, `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL/SUSE,
