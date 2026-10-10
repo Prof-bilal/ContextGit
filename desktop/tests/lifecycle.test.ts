@@ -319,7 +319,9 @@ test("observer events use file observation time and ignore unchanged or partial 
     fs.writeFileSync(file, '{"total_tokens":');
     assert.equal((await manager.read("pi", "session")).totals?.total_tokens, 123);
     fs.writeFileSync(file, JSON.stringify({ total_tokens: 456, total_cost: .03, requests: 2 }));
-    await new Promise(resolve => setTimeout(resolve, 150));
+    for (let attempt = 0; attempt < 20 && updates.at(-1)?.totals?.total_tokens !== 456; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     assert.equal(updates.at(-1)?.totals?.total_tokens, 456);
     assert.equal((await manager.read("pi", "other")).state, "waiting");
   } finally { unsubscribe(); manager.stop(); fs.rmSync(directory, { recursive: true, force: true }); }
