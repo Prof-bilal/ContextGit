@@ -1,8 +1,9 @@
 # ContextGit `0.1.0-beta.1`
 
 This is an unsigned friends beta for Windows x64, macOS Intel/Apple Silicon,
-and Linux x64. Download the installer and matching `SHA256SUMS` file from the
-GitHub prerelease page.
+and Linux x64/arm64. Linux users can choose either a portable AppImage or a
+Debian/Ubuntu `.deb` package. Download the installer and matching `SHA256SUMS`
+file from the GitHub prerelease page.
 
 The beta focuses on terminal agents and Git context. It does not bundle an
 editor and does not expose the Why analysis surface.

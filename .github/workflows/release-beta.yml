@@ -18,6 +18,9 @@ jobs:
           - name: linux-x64
             runner: ubuntu-22.04
             python: "3.11"
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            python: "3.11"
           - name: windows-x64
             runner: windows-2022
             python: "3.11"
@@ -38,6 +41,15 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: Verify native Linux architecture
+        if: startsWith(matrix.name, 'linux-')
+        shell: bash
+        run: |
+          case "${{ matrix.name }}" in
+            linux-x64) test "$(uname -m)" = "x86_64" ;;
+            linux-arm64) test "$(uname -m)" = "aarch64" ;;
+            *) echo "Unknown Linux matrix entry: ${{ matrix.name }}" >&2; exit 1 ;;
+          esac
       - name: Install backend dependencies
         run: python -m pip install -e ".[dev]"
       - name: Install desktop dependencies

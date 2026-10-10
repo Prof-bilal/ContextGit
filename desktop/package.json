@@ -5,6 +5,7 @@
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
+  "desktopName": "dev.contextgit.desktop",
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -49,6 +50,7 @@
   "build": {
     "appId": "dev.contextgit.desktop",
     "productName": "ContextGit",
+    "icon": "assets/icons/contextgit-icon.png",
     "files": [
       "dist/**",
       "dist-electron/**",
@@ -68,7 +70,16 @@
         "AppImage",
         "deb"
       ],
-      "category": "Development"
+      "category": "Development",
+      "desktop": {
+        "entry": {
+          "Name": "ContextGit",
+          "Comment": "Run AI coding agents and keep the work",
+          "Categories": "Development;",
+          "Terminal": false,
+          "Type": "Application"
+        }
+      }
     },
     "mac": {
       "target": [
@@ -80,6 +91,12 @@
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "ContextGit",
+      "menuCategory": "Development"
     }
   },
   "allowScripts": {

@@ -58,7 +58,9 @@ const INSTALLERS: Array<[string, string, string]> = [
   ["macOS Intel", "x64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit-0.1.0-beta.1.dmg`],
   ["macOS Apple Silicon", "arm64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit-0.1.0-beta.1.dmg`],
   ["Linux AppImage", "x64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.1.AppImage`],
+  ["Linux AppImage", "arm64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.1.0-beta.1.AppImage`],
   ["Linux .deb", "x64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop_0.1.0-beta.1_amd64.deb`],
+  ["Linux .deb", "arm64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop_0.1.0-beta.1_arm64.deb`],
 ];
 
 const REQUIREMENTS: Array<[string, string]> = [
@@ -109,7 +111,7 @@ export default function DownloadPage() {
 
             <ol className="dl-steps">
               {[
-                ["01", "Download the installer", "Choose Windows x64, macOS Intel/Apple Silicon, or Linux x64 from the beta release."],
+                ["01", "Download the installer", "Choose Windows x64, macOS Intel/Apple Silicon, or Linux x64/arm64 from the beta release."],
                 ["02", "Install and open ContextGit", "Windows may show SmartScreen and macOS may show Gatekeeper because the beta is unsigned."],
                 ["03", "Choose a project", "Select an existing Git repository or create a project folder from the app."],
                 ["04", "Start your agent", "Choose an installed terminal agent, open Code, and begin working. ContextGit manages the local backend automatically."],
