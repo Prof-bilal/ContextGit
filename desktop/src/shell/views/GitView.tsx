@@ -74,7 +74,6 @@ export default function GitView({
   onOpenStorage,
   projectName,
   sessionCount,
-  onSynthesize,
 }: {
   branches: Branch[];
   commits: Commit[];
@@ -91,7 +90,6 @@ export default function GitView({
   onOpenStorage: () => void;
   projectName: string;
   sessionCount: number;
-  onSynthesize?: () => void;
 }) {
   const [view, setView] = useState<"list" | "graph" | "git" | "activity">("list");
 
@@ -137,7 +135,6 @@ export default function GitView({
         <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>
           Refresh
         </button>
-        {onSynthesize && <button type="button" className="cg-btn cg-btn-sm" data-variant="primary" onClick={onSynthesize}>Synthesize knowledge</button>}
         <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenStorage}>
           Storage
         </button>

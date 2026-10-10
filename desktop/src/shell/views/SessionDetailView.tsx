@@ -105,7 +105,6 @@ export default function SessionDetailView({
         <aside>
           <Section title="Session facts"><div className="cg-fields"><Field label="Agent">{session.agent ?? "—"}</Field><Field label="Role">{session.role ?? "—"}</Field><Field label="Model">{detail.agent_run?.model ?? "—"}</Field><Field label="Scope">{session.scope.length ? session.scope.join(", ") : "No scope claimed"}</Field><Field label="Skills">{session.skills.length ? session.skills.join(", ") : "None recorded"}</Field><Field label="Staged">{detail.staged_messages.length} messages</Field></div></Section>
           <Section title="Files"><div className="cg-session-detail-files">{detail.workspace_status?.changed_files.length ? detail.workspace_status.changed_files.map((file) => <code key={file}>{file}</code>) : <p className="cg-empty-note">No changed files reported.</p>}</div></Section>
-          <Section title="Project memory"><p className="cg-empty-note">{detail.project_memory_preview ? `Loaded revision ${detail.project_memory_preview.revision}` : "No approved project memory yet."}</p>{detail.project_memory_preview?.summary && <p>{detail.project_memory_preview.summary}</p>}</Section>
         </aside>
       </div>}
     </div>
