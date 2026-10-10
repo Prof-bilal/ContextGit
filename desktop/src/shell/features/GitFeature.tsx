@@ -50,6 +50,13 @@ export default function GitFeature() {
   const [memoryProviderOpen, setMemoryProviderOpen] = useState(false);
   const [conversationOpen, setConversationOpen] = useState(false);
 
+  // The project list and repository resource initialize independently. When
+  // the active project arrives (or changes), refresh the snapshot for that
+  // project so Git is populated without requiring a manual Refresh click.
+  useEffect(() => {
+    void refreshRepo();
+  }, [activePath, refreshRepo]);
+
   const projectSessions = useMemo(
     () => sessions.filter((session) => (selectedProject ? session.project_path === selectedProject : true)),
     [sessions, selectedProject],
