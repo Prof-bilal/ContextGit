@@ -2,7 +2,7 @@ import type { AgentRun, NamedAgent } from "../../mock/fixtures";
 import Modal from "../Modal";
 import { Chip } from "../primitives";
 import { diffCounts, runDiff, type DiffChange } from "./runDiff";
-import { runSteps, shortHash } from "./runOutput";
+import { runSteps, shortHash } from "./runSteps";
 
 const SIGN: Record<DiffChange, string> = { added: "+", changed: "~", removed: "−" };
 const CHANGES: DiffChange[] = ["added", "changed", "removed"];

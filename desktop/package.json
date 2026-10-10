@@ -17,6 +17,7 @@
     "rebuild:native": "electron-builder install-app-deps",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
     "build:backend": "node scripts/build-backend.mjs",
+    "install:electron": "install-electron",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
     "checksums": "node scripts/checksums.mjs",

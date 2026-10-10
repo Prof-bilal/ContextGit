@@ -1,5 +1,5 @@
 import type { AgentRun } from "../../mock/fixtures";
-import { runSteps } from "./runOutput";
+import { runSteps } from "./runSteps";
 
 /** Expanded output for one run: stats, the step log, and what it produced. */
 export default function RunOutput({
