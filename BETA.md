@@ -1,9 +1,15 @@
 # ContextGit `0.1.0-beta.1`
 
 This is an unsigned friends beta for Windows x64, macOS Intel/Apple Silicon,
-and Linux x64/arm64. Linux users can choose either a portable AppImage or a
-Debian/Ubuntu `.deb` package. Download the installer and matching `SHA256SUMS`
-file from the GitHub prerelease page.
+and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
+Linux users can choose the format that matches their distribution: AppImage or
+`.tar.gz` for any distro, `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL/SUSE,
+or `.pacman` for Arch/Omarchy/Manjaro. Download the installer for your CPU
+architecture and the matching `SHA256SUMS` file from the GitHub prerelease page.
+
+For Omarchy and other Arch-based systems, use the **Linux x86_64 `.pacman`**
+package, or the x86_64 AppImage. Do not use an arm64/aarch64 package unless
+your machine reports `aarch64` or `arm64`.
 
 The beta focuses on terminal agents and Git context. It does not bundle an
 editor and does not expose the Why analysis surface.

@@ -57,10 +57,16 @@ const INSTALLERS: Array<[string, string, string]> = [
   ["Windows", "x64 · unsigned NSIS installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit-Setup-0.1.0-beta.1.exe`],
   ["macOS Intel", "x64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit-0.1.0-beta.1.dmg`],
   ["macOS Apple Silicon", "arm64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit-0.1.0-beta.1-arm64.dmg`],
-  ["Linux AppImage", "x64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.1.AppImage`],
-  ["Linux AppImage", "arm64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.1.0-beta.1-arm64.AppImage`],
-  ["Linux .deb", "x64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop_0.1.0-beta.1_amd64.deb`],
-  ["Linux .deb", "arm64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop_0.1.0-beta.1_arm64.deb`],
+  ["Linux x86_64 AppImage", "AMD/Intel 64-bit · any distro · recommended", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.1.AppImage`],
+  ["Linux x86_64 .pacman", "Arch/Omarchy/Manjaro · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop-0.1.0-beta.1.x86_64.pacman`],
+  ["Linux x86_64 .deb", "Debian/Ubuntu · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop_0.1.0-beta.1_amd64.deb`],
+  ["Linux x86_64 .rpm", "Fedora/RHEL/SUSE · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop-0.1.0-beta.1.x86_64.rpm`],
+  ["Linux x86_64 tar.gz", "Any distro · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop-0.1.0-beta.1.tar.gz`],
+  ["Linux ARM64 AppImage", "aarch64 · any distro", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.1.0-beta.1-arm64.AppImage`],
+  ["Linux ARM64 .pacman", "Arch/Omarchy/Manjaro · aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop-0.1.0-beta.1-arm64.pacman`],
+  ["Linux ARM64 .deb", "Debian/Ubuntu · aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop_0.1.0-beta.1_arm64.deb`],
+  ["Linux ARM64 .rpm", "Fedora/RHEL/SUSE · aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop-0.1.0-beta.1.aarch64.rpm`],
+  ["Linux ARM64 tar.gz", "Any distro · aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop-0.1.0-beta.1-arm64.tar.gz`],
 ];
 
 const REQUIREMENTS: Array<[string, string]> = [
@@ -111,7 +117,7 @@ export default function DownloadPage() {
 
             <ol className="dl-steps">
               {[
-                ["01", "Download the installer", "Choose Windows x64, macOS Intel/Apple Silicon, or Linux x64/arm64 from the beta release."],
+                ["01", "Download the installer", "Choose your exact operating system and CPU architecture. On AMD/Intel Linux, choose x86_64; on ARM Linux, choose ARM64/aarch64."],
                 ["02", "Install and open ContextGit", "Windows may show SmartScreen and macOS may show Gatekeeper because the beta is unsigned."],
                 ["03", "Choose a project", "Select an existing Git repository or create a project folder from the app."],
                 ["04", "Start your agent", "Choose an installed terminal agent, open Code, and begin working. ContextGit manages the local backend automatically."],
@@ -127,6 +133,9 @@ export default function DownloadPage() {
               <ul className="pillars">
                 {INSTALLERS.map(([platform, detail, href]) => <li key={platform}><h3 className="pillar-title"><a href={href}>{platform}</a></h3><p>{detail}</p><a className="fineprint" href={href}>Download installer <span aria-hidden="true">&rarr;</span></a></li>)}
               </ul>
+              <p className="fineprint" style={{ marginTop: "var(--s6)" }}>
+                Linux guide: Omarchy/Arch uses <code className="mono">.pacman</code>; Debian/Ubuntu uses <code className="mono">.deb</code>; Fedora/RHEL uses <code className="mono">.rpm</code>. AppImage and tar.gz work across distributions. x86_64 is the correct build for both AMD and Intel 64-bit PCs.
+              </p>
               <p className="hero-actions" style={{ marginTop: "var(--s8)" }}><a className="btn btn-primary" href={RELEASE_URL}>Choose your installer <span aria-hidden="true">&rarr;</span></a></p>
             </div>
           </div>

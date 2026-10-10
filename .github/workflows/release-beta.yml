@@ -143,7 +143,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p release
-          find release-artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -print0 | while IFS= read -r -d '' file; do
+          find release-artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.pacman' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -print0 | while IFS= read -r -d '' file; do
             platform="$(basename "$(dirname "$file")")"
             name="$(basename "$file")"
             safe_name="${name// /-}"
@@ -154,8 +154,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "ContextGit $GITHUB_REF_NAME" \
-            --notes-file BETA.md \
-            --prerelease
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "ContextGit $GITHUB_REF_NAME" \
+              --notes-file BETA.md \
+              --prerelease
+          else
+            gh release create "$GITHUB_REF_NAME" release/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "ContextGit $GITHUB_REF_NAME" \
+              --notes-file BETA.md \
+              --prerelease
+          fi

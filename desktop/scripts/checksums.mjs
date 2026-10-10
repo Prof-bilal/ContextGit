@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const release = path.join(root, "release");
 const files = fs.readdirSync(release)
-  .filter((name) => /\.(AppImage|deb|dmg|exe|zip)$/i.test(name))
+  .filter((name) => /\.(AppImage|deb|rpm|pacman|tar\.gz|dmg|exe|zip)$/i.test(name))
   .filter((name) => fs.statSync(path.join(release, name)).isFile())
   .sort();
 const lines = files.map((name) => {
