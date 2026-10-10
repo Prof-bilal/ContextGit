@@ -56,9 +56,9 @@ const STEPS: Array<{ no: string; title: string; body: React.ReactNode; code?: st
 const INSTALLERS: Array<[string, string, string]> = [
   ["Windows", "x64 · unsigned NSIS installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit-Setup-0.1.0-beta.1.exe`],
   ["macOS Intel", "x64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit-0.1.0-beta.1.dmg`],
-  ["macOS Apple Silicon", "arm64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit-0.1.0-beta.1.dmg`],
+  ["macOS Apple Silicon", "arm64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit-0.1.0-beta.1-arm64.dmg`],
   ["Linux AppImage", "x64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.1.AppImage`],
-  ["Linux AppImage", "arm64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.1.0-beta.1.AppImage`],
+  ["Linux AppImage", "arm64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.1.0-beta.1-arm64.AppImage`],
   ["Linux .deb", "x64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop_0.1.0-beta.1_amd64.deb`],
   ["Linux .deb", "arm64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-contextgit-desktop_0.1.0-beta.1_arm64.deb`],
 ];
