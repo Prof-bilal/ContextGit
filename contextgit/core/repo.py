@@ -868,7 +868,12 @@ class Repo:
 
     @staticmethod
     def canonical_project_path(project_path: str | Path) -> str:
-        return str(Path(project_path).expanduser().resolve())
+        path = Path(project_path).expanduser()
+        # Resolve real symlinks for projects that exist, but keep a stable
+        # absolute spelling for paths used in metadata before the project is
+        # created. macOS may expose /home through a synthetic /System/Volumes
+        # path, which should not rewrite a user-provided project identity.
+        return str(path.resolve()) if path.exists() else os.path.abspath(os.fspath(path))
 
     def project_memory(self, project_path: str | Path) -> ProjectMemoryRevision | None:
         return self._storage.project_memory(self.canonical_project_path(project_path))
