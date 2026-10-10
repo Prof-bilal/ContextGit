@@ -6,12 +6,15 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, "../..");
-const python = process.platform === "win32"
+const venvPython = process.platform === "win32"
   ? path.join(root, ".venv", "Scripts", "python.exe")
   : path.join(root, ".venv", "bin", "python");
+const python = fs.existsSync(venvPython)
+  ? venvPython
+  : process.platform === "win32" ? "python" : process.env.PYTHON ?? "python3";
 
-if (!fs.existsSync(python)) {
-  throw new Error(`Python virtualenv not found at ${python}. Create it and install the dev dependencies first.`);
+if (python === venvPython && !fs.existsSync(python)) {
+  throw new Error(`Python virtualenv not found at ${venvPython}. Create it and install the dev dependencies first.`);
 }
 
 execFileSync(python, ["-m", "pip", "install", "--quiet", "pyinstaller"], { cwd: root, stdio: "inherit" });

@@ -115,11 +115,15 @@ async function spawnBackend(): Promise<void> {
         .split(",").map(origin => origin.trim()).filter(Boolean),
     ])].join(","),
   };
+  const venvPython = path.join(repoRoot, process.platform === "win32" ? ".venv\\Scripts\\python.exe" : ".venv/bin/python");
+  const devPython = fs.existsSync(venvPython)
+    ? venvPython
+    : process.platform === "win32" ? "python" : process.env.PYTHON ?? "python3";
   const binary = isDev
-    ? path.join(repoRoot, process.platform === "win32" ? ".venv\\Scripts\\uvicorn.exe" : ".venv/bin/uvicorn")
+    ? devPython
     : path.join(process.resourcesPath, "backend", process.platform === "win32" ? "contextgit-api.exe" : "contextgit-api");
   const args = isDev
-    ? ["contextgit.api.main:app", "--host", "127.0.0.1", "--port", String(backendPort)]
+    ? ["-m", "uvicorn", "contextgit.api.main:app", "--host", "127.0.0.1", "--port", String(backendPort)]
     : [];
   if (isDev && !(await getPortFree(backendPort))) {
     setStatus({ state: "error", message: `Port ${backendPort} is occupied. Stop the existing backend or choose CONTEXTGIT_PORT; the desktop requires its own authenticated backend.` });
