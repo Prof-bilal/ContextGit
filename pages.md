@@ -216,7 +216,7 @@ Rewrite the home FAQ from `app/page.tsx` to match §4 of `content.md`. Suggested
 3. **Where does my data go?** — One local SQLite file. The only network traffic is calls to the model provider you chose.
 4. **Which agents does it run?** — Eleven agent CLIs plus a shell, with auto-install. Bring your own model key.
 5. **Do I need an account?** — No. The local app needs no account.
-6. **Does it work with my editor?** — The workbench includes an embedded VS Code, and you can also open files in your own editor.
+6. **Does it work with my editor?** — ContextGit launches your terminal agents; use the editor you already prefer alongside each worktree.
 7. **Is it free?** — The local app is free. Paid tiers (cloud, security audit, team) are coming; prices aren't set yet.
 8. **Does it support teams?** — Team mode is shipped locally. Cloud sync and multi-user collaboration are planned.
 9. **Is it production-ready?** — Early build. Expect rough edges. Open source, Apache-2.0.

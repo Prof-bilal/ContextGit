@@ -13,6 +13,12 @@ let savedSession: { id: string; branch: string };
 let savedCommit: string;
 const root = path.resolve(__dirname, "..");
 const nav = (name: string) => page.locator(".cg-segmented").getByRole("tab", { name, exact: true });
+const terminalReadyCommand = (index: number) => process.platform === "win32"
+  ? `$env:CG_KEEP='alive'; Write-Output 'CG_READY_${index}'`
+  : `CG_KEEP=alive; printf 'CG_READY_${index}\\n'; (while true; do printf 'CG_OUTPUT_${index}\\n'; sleep 1; done) &`;
+const terminalAliveCommand = (index: number) => process.platform === "win32"
+  ? `Write-Output \"CG_ALIVE_${index}=$env:CG_KEEP\"`
+  : `printf 'CG_ALIVE_${index}=%s\\n' \"$CG_KEEP\"`;
 test.describe.configure({ mode: "serial" });
 
 async function api<T>(route: string, method = "GET", body?: unknown): Promise<T> {
@@ -132,7 +138,7 @@ test("six live terminals remain usable across tab switching and backend restart"
     const pane = page.getByRole("region", { name: `reliability terminal ${index} terminal`, exact: true });
     await expect(pane).toBeVisible();
     await pane.locator(".cg-term-host").click();
-    await page.keyboard.type(`CG_KEEP=alive; printf 'CG_READY_${index}\\n'; (while true; do printf 'CG_OUTPUT_${index}\\n'; sleep 1; done) &`);
+    await page.keyboard.type(terminalReadyCommand(index));
     await page.keyboard.press("Enter");
     await expect(pane.locator(".xterm-accessibility-tree")).toContainText(`CG_READY_${index}`, { timeout: 15_000 });
   }
@@ -150,7 +156,7 @@ test("six live terminals remain usable across tab switching and backend restart"
     for (let index = 0; index < 6; index++) {
       const pane = page.getByRole("region", { name: `reliability terminal ${index} terminal`, exact: true });
       await pane.locator(".cg-term-host").click();
-      await page.keyboard.type(`printf 'CG_ALIVE_${index}=%s\\n' "$CG_KEEP"`);
+      await page.keyboard.type(terminalAliveCommand(index));
       await page.keyboard.press("Enter");
       await expect(pane.locator(".xterm-accessibility-tree")).toContainText(`CG_ALIVE_${index}=alive`);
       await pane.getByRole("button", { name: "Stage output", exact: true }).click();

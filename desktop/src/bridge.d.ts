@@ -4,6 +4,7 @@ export interface ContextGitBridge {
   apiToken: string;
   getStatus: () => { status: import("../shared/status").BackendStatus; apiBase: string };
   restartBackend: () => Promise<{ status: import("../shared/status").BackendStatus; apiBase: string }>;
+  runtimeInfo: () => Promise<import("../shared/runtime").RuntimeInfo>;
   onStatus: (callback: (status: import("../shared/status").BackendStatus) => void) => () => void;
   ptyStart: (options: {
     id: string;
@@ -70,10 +71,6 @@ export interface ContextGitBridge {
   viewFindStop: (id: string) => void;
   viewSetZoom: (id: string, level: number) => void;
   onViewEvent: (callback: (event: import("../shared/browser").ViewEvent) => void) => () => void;
-  /** Editor tab: the embedded VS Code sidecar. */
-  editorStatus: () => Promise<import("../shared/editor").EditorStatus>;
-  editorStart: () => Promise<import("../shared/editor").EditorStartResult>;
-  editorStop: () => Promise<import("../shared/editor").EditorStatus>;
   onPtyData: (callback: (id: string, data: string) => void) => () => void;
   onPtyExit: (callback: (id: string, code: number | undefined) => void) => () => void;
 }

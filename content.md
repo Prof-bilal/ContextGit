@@ -58,7 +58,7 @@ Grouped for the website. Each line is backed by the repo (README, `desktop/`, `c
 ### 4.1 One window (the all-in-one workbench)
 - **Terminal board** — live terminals (xterm + node-pty) per run.
 - **Code tab** — parallel runs, one terminal and one git branch each.
-- **Editor** — embedded VS Code (bundled `code-server` sidecar) with a ContextGit graph.
+- **Code** — terminal agents in isolated runs, with branchable Git context.
 - **Browser** — general-purpose in-app browser: tabs, history, bookmarks, find-in-page, zoom, DevTools.
 - **API client** — embedded Restfox sidecar; native runner is the default.
 - **Database** — embedded DbGate sidecar (MySQL, Postgres, SQL Server, MongoDB, Redis, SQLite, ClickHouse and more).

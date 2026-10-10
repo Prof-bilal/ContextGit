@@ -35,7 +35,7 @@ export const TIERS: Tier[] = [
       "Team mode \u2014 tasks, roles, ownership, quality gate",
       "Chat, Council, Research and Image surfaces",
       "Document export \u2014 Markdown, PDF, Word, PowerPoint",
-      "All workbench tabs: Git, Endpoints, Why, DB, API, Browser, Editor",
+      "Core workbench: terminal agents, Git history, branches, diffs and merges",
       "MCP server and every CLI harness",
       "Bring your own LLM provider and key",
       "Unlimited local projects and commits",

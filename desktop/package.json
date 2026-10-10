@@ -1,8 +1,10 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "license": "Apache-2.0",
+  "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
+  "homepage": "https://github.com/Prof-bilal/ContextGit",
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -11,12 +13,14 @@
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
     "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
-    "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:extension",
-    "build:extension": "node scripts/build-extension.mjs",
-    "build:backend": "bash scripts/build-backend.sh",
-    "fetch:editor": "node scripts/fetch-editor.mjs",
+    "rebuild:native": "electron-builder install-app-deps",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build:backend": "node scripts/build-backend.mjs",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
+    "checksums": "node scripts/checksums.mjs",
+    "clean:release": "node scripts/clean-release-dir.mjs",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
     "test:lifecycle": "node scripts/test-lifecycle.mjs",
     "test:opencode:live": "node scripts/verify-opencode-capture.mjs",
     "test:markdown": "node scripts/test-markdown.mjs"
@@ -52,16 +56,8 @@
     ],
     "extraResources": [
       {
-        "from": "build/backend/contextgit-api",
-        "to": "backend/contextgit-api"
-      },
-      {
-        "from": "build/editor",
-        "to": "editor"
-      },
-      {
-        "from": "build/extension",
-        "to": "extension"
+        "from": "build/backend",
+        "to": "backend"
       }
     ],
     "directories": {

@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { LuPlus } from "react-icons/lu";
 
 import type { FleetEntry, Session } from "@/lib/api";
 import type { Workspace } from "../../../shared/workspace";
 import { Chip } from "../primitives";
 import { openSessions } from "../terminal/PaneCanvas";
+import DiagnosticsDialog from "../DiagnosticsDialog";
 
 /**
  * Single mode's header: the runs rail drives the shared pane canvas that Shell
@@ -17,8 +19,6 @@ export default function CodeView({
   workspace,
   onNewTerminal,
   onChooseProject,
-  onOpenEditor,
-  onOpenWhy,
 }: {
   sessions: Session[];
   backendAvailable?: boolean;
@@ -27,9 +27,8 @@ export default function CodeView({
   workspace: Workspace | null;
   onNewTerminal: () => void;
   onChooseProject: () => void;
-  onOpenEditor: () => void;
-  onOpenWhy: () => void;
 }) {
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const clashing = fleet.filter((entry) => entry.overlaps.length > 0).length;
   const open = openSessions(sessions, openIds);
 
@@ -54,11 +53,8 @@ export default function CodeView({
           </Chip>
         )}
         <span className="cg-toolbar-spacer" />
-        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenWhy}>
-          Why this code?
-        </button>
-        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenEditor}>
-          Editor
+        <button type="button" className="cg-btn cg-btn-sm" onClick={() => setDiagnosticsOpen(true)}>
+          Diagnostics
         </button>
         <button
           type="button"
@@ -71,6 +67,7 @@ export default function CodeView({
           <LuPlus aria-hidden="true" /> New terminal
         </button>
       </div>
+      {diagnosticsOpen && <DiagnosticsDialog backendAvailable={backendAvailable} onClose={() => setDiagnosticsOpen(false)} />}
       {open.length === 0 && (
         <div className="cg-pane-empty">
           <strong>No terminals open</strong>

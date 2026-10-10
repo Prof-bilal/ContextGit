@@ -27,10 +27,10 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
 export async function terminateBackend(child: ChildProcess, graceMs = 5000, killMs = 2000): Promise<void> {
   if (exited(child)) return;
   const graceful = waitForExit(child, graceMs);
-  child.kill("SIGTERM");
+  child.kill(process.platform === "win32" ? undefined : "SIGTERM");
   if (await graceful) return;
   const forced = waitForExit(child, killMs);
-  child.kill("SIGKILL");
+  child.kill(process.platform === "win32" ? undefined : "SIGKILL");
   if (!(await forced)) throw new Error("The old backend did not exit. Retry reconnect after it stops.");
 }
 

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("contextgit", {
   apiToken: initial.apiToken,
   getStatus: () => ipcRenderer.sendSync("ctx:status-sync") as { status: BackendStatus; apiBase: string },
   restartBackend: () => ipcRenderer.invoke("ctx:restart-backend") as Promise<{ status: BackendStatus; apiBase: string }>,
+  runtimeInfo: () => ipcRenderer.invoke("ctx:runtime-info") as Promise<import("../shared/runtime").RuntimeInfo>,
   onStatus: (callback: (status: BackendStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, next: BackendStatus) => callback(next);
     ipcRenderer.on("ctx:status", listener);
@@ -127,13 +128,6 @@ contextBridge.exposeInMainWorld("contextgit", {
     ipcRenderer.on("ctx:view-event", listener);
     return () => ipcRenderer.removeListener("ctx:view-event", listener);
   },
-  // ---------- Editor tab (embedded VS Code sidecar) ----------
-  editorStatus: () =>
-    ipcRenderer.invoke("ctx:editor-status") as Promise<import("../shared/editor").EditorStatus>,
-  editorStart: () =>
-    ipcRenderer.invoke("ctx:editor-start") as Promise<import("../shared/editor").EditorStartResult>,
-  editorStop: () =>
-    ipcRenderer.invoke("ctx:editor-stop") as Promise<import("../shared/editor").EditorStatus>,
   onPtyData: (callback: (id: string, data: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data);
     ipcRenderer.on("ctx:pty-data", listener);

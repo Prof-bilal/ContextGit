@@ -18,7 +18,7 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   {
     id: "editor",
     label: "Editor",
-    blurb: "An embedded VS Code with the ContextGit graph beside your files.",
+    blurb: "Your terminal agents and Git context, with every run kept branchable.",
   },
   {
     id: "browser",

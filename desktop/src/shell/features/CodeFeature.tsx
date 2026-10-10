@@ -15,12 +15,8 @@ import TaskDetail from "../team/TaskDetail";
 import TaskForm from "../team/TaskForm";
 import TeamMessages from "../team/TeamMessages";
 import TeamRail from "../team/TeamRail";
-import EditorFeature from "./EditorFeature";
 import CodeView from "../views/CodeView";
 import TeamView from "../views/TeamView";
-import WhyRail from "../rail/WhyRail";
-import WhyView, { WhyFindingDetail } from "../views/WhyView";
-import { useWhy } from "../why/useWhy";
 import { useWorkbench } from "../WorkbenchContext";
 import { useFeatureAction } from "../useFeatureAction";
 import { FeaturePorts } from "../FeaturePorts";
@@ -28,9 +24,8 @@ import { FeaturePorts } from "../FeaturePorts";
 
 export default function CodeFeature() {
   const { error: actionError, run: runAction } = useFeatureAction();
-  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError, model, whyRequest } = useWorkbench();
+  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError } = useWorkbench();
   const { fleet, error: fleetError } = useFleet();
-  const whyState = useWhy(activePath ?? null, { providerId: model.providerId, modelId: model.modelId }, whyRequest);
 
   const mergeQueue = useMergeQueue();
 
@@ -46,12 +41,6 @@ export default function CodeFeature() {
   const [taskForm, setTaskForm] = useState<{ task: Task | null } | null>(null);
 
   const [teamBusy, setTeamBusy] = useState(false);
-
-  const [surface, setSurface] = useState<"runs" | "editor" | "why">("runs");
-
-  useEffect(() => {
-    if (whyRequest) setSurface("why");
-  }, [whyRequest]);
 
   const activeSession = sessions.find((session) => session.id === activeId) ?? null;
 
@@ -354,12 +343,7 @@ export default function CodeFeature() {
     }
   }, [activeSession, refresh, refreshRepo]);
 
-  if (surface === "editor") {
-    return <EditorFeature onClose={() => setSurface("runs")} />;
-  }
-
   const rail = () => {
-    if (surface === "why") return <WhyRail state={whyState} />;
     return mode === "team" ? (
       <TeamRail
         onMergeAgent={() => setMergeAgentOpen(value => !value)}
@@ -392,7 +376,6 @@ export default function CodeFeature() {
   };
 
   const view = () => <>
-    {surface === "why" ? <WhyView state={whyState} /> : <>
     {mergeAgentOpen && workspace && <MergeAgentPanel project={workspace.path} sessions={sessions} />}
 
     {mode === "team" ? (
@@ -419,25 +402,14 @@ export default function CodeFeature() {
         onNewTerminal={() => void newTerminal()}
         backendAvailable={backendAvailable}
         onChooseProject={() => setProjectOpen(true)}
-        onOpenEditor={() => setSurface("editor")}
-        onOpenWhy={() => setSurface("why")}
       />
     )}
 
     {/* One canvas for both modes: switching must never restart an agent. */}
-    </>}
 
   </>;
 
   const dock = () => {
-    if (surface === "why") {
-      const finding = whyState.answer?.findings[0];
-      return finding ? (
-        <WhyFindingDetail finding={finding} />
-      ) : (
-        <p className="cg-empty-note">Explain a file to inspect its recorded reasoning.</p>
-      );
-    }
     if (mode === "team") {
       return selectedTask ? (
         <>
@@ -590,21 +562,6 @@ export default function CodeFeature() {
   };
 
   const footer = () => {
-    if (surface === "why") {
-      return (
-        <footer className="cg-bottombar" aria-label="Why actions">
-          <span className="cg-bb-info">
-            <strong>Why this code?</strong>
-            <span className="cg-view-sub">Trace decisions and rejected alternatives.</span>
-          </span>
-          <span className="cg-bb-actions cg-bb-end">
-            <button type="button" className="cg-btn" onClick={() => setSurface("runs")}>
-              Back to runs
-            </button>
-          </span>
-        </footer>
-      );
-    }
     if (tab === "code" && mode === "team") {
       return (
         <footer className="cg-bottombar">

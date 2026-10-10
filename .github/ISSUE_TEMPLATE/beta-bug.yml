@@ -1,0 +1,39 @@
+name: Friends beta bug
+description: Report a reproducible issue in the ContextGit friends beta.
+title: "[beta] "
+labels: ["beta"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: ContextGit version
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      placeholder: Windows 11 x64 / macOS 15 arm64 / Ubuntu 24.04 x64
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and version
+      placeholder: OpenCode 1.18.33, Claude Code 1.x, or plain shell
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics output
+      description: Remove API keys, tokens, private paths, and conversation text before pasting.
+    validations:
+      required: false

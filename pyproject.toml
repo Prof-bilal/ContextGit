@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "contextgit"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "Version control for LLM conversations: branch, diff, merge, and roll back context."
 readme = "files/README.md"
 requires-python = ">=3.11"

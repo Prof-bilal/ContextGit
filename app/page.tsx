@@ -15,7 +15,7 @@ import { AGENTS, FOOTER_LINKS, GITHUB, HEADER_CTA, NAV } from "@/lib/site";
 export const metadata: Metadata = {
   title: "ContextGit — the one window for AI development",
   description:
-    "ContextGit is a desktop workbench for AI development: run parallel coding agents in isolated git worktrees, with an editor, browser, API and database client in one window, and version-controlled AI context. Local-first.",
+    "ContextGit is a local-first terminal-agent and Git context workbench: run parallel coding agents in isolated git worktrees and keep their AI context versioned.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -43,7 +43,7 @@ const FAQ: Array<[string, React.ReactNode]> = [
   ],
   [
     "Does it work with my editor?",
-    <>The workbench includes an embedded VS Code with the ContextGit graph, and you can open the same files in your own editor — every run is a real git worktree on disk.</>,
+    <>ContextGit launches the terminal agents you already use. Bring your own editor alongside it — every run is a real git worktree on disk.</>,
   ],
   [
     "Is it free?",
@@ -93,7 +93,7 @@ export default function Page() {
               <span className="h1-b">Keep the context that worked.</span>
             </h1>
             <p className="lede hero-lede reveal" style={d(120)}>
-              ContextGit puts your coding agents, editor, browser, API and database clients in one desktop app. Each agent gets its own git worktree, so parallel runs never collide, and every AI conversation is a branchable history you can merge.
+              ContextGit puts your coding agents and Git context in one local-first desktop app. Each agent gets its own git worktree, so parallel runs never collide, and every AI conversation is a branchable history you can merge.
             </p>
             <div className="hero-actions reveal" style={d(180)}>
               <a className="btn btn-primary" href={GITHUB}>Get the desktop app <span aria-hidden="true">&rarr;</span></a>
@@ -146,7 +146,7 @@ export default function Page() {
             <ul className="pillars reveal" style={d(120)}>
               <li>
                 <h3 className="pillar-title">One window</h3>
-                <p>Agents, editor, browser, API and database clients, git. No alt-tab.</p>
+                <p>Agents, terminals and Git context. No lost reasoning.</p>
               </li>
               <li>
                 <h3 className="pillar-title">Agents that don&apos;t collide</h3>

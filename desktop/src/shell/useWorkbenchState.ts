@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ProviderCapability, type Session } from "@/lib/api";
 import { type ModelSelection } from "./providers";
-import { type WhyRequest } from "./why/useWhy";
 import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, type ClosedPane } from "./storage/recentlyClosed";
 import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource, useProviderResource } from "./WorkbenchResources";
 
@@ -85,8 +84,6 @@ export function useWorkbenchState() {
     () => readStoredModel() ?? { providerId: "", modelId: "" },
   );
 
-  const [whyRequest, setWhyRequest] = useState<WhyRequest | null>(null);
-
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [providerDialog, setProviderDialog] = useState<{
@@ -153,5 +150,5 @@ export function useWorkbenchState() {
     if (!restoredPanes.current) return;
     saveOpenPanes(openIds);
   }, [openIds]);
-  return { mode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, whyRequest, setWhyRequest, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, closeTerminal, restoredPanes };
+  return { mode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, closeTerminal, restoredPanes };
 }

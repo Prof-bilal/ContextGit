@@ -9,7 +9,7 @@ import { FOOTER_LINKS, GITHUB, HEADER_CTA, ISSUES, NAV } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Download ContextGit",
   description:
-    "Get ContextGit on your machine: run it from source in five minutes, or install the CLI with pip. Signed installers for macOS, Windows and Linux are coming.",
+    "Get the ContextGit friends beta for macOS, Windows and Linux, or run the local-first terminal-agent workbench from source.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -54,7 +54,7 @@ const REQUIREMENTS: Array<[string, string]> = [
   ["Python", "3.11 or newer — core, API and CLI."],
   ["Node.js", "20 or newer — desktop app and sidecars."],
   ["Git", "Worktrees are how runs stay isolated."],
-  ["Disk", "The editor (code-server) and database client (DbGate) are fetched on first run."],
+  ["Disk", "The beta does not bundle an editor; use the editor you already have installed."],
 ];
 
 export default function DownloadPage() {
@@ -81,8 +81,8 @@ export default function DownloadPage() {
                 <a className="btn btn-ghost" href="#source">Run from source</a>
               </p>
               <p className="fineprint reveal" style={d(120)}>
-                Signed installers for macOS, Windows and Linux are being prepared. Until they are
-                published, source is the supported path — and nothing here needs an account.
+                Unsigned beta installers for macOS, Windows and Linux will be published through
+                GitHub Releases. Your OS may show a first-run trust warning.
               </p>
             </header>
           </div>
@@ -172,7 +172,7 @@ export default function DownloadPage() {
           <div className="wrap">
             <div className="cta reveal">
               <h2 id="download-cta-title" className="cta-title">Five minutes from clone to first run.</h2>
-              <p className="cta-lede">One window for your agents, editor, browser, API and database clients — with context you can branch and merge.</p>
+              <p className="cta-lede">One local-first workbench for terminal agents and Git context — with conversations you can branch and merge.</p>
               <div className="cta-actions">
                 <a className="btn btn-signal" href={GITHUB}>Clone from GitHub <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-link-cta" href="/features">See features <span aria-hidden="true">&rarr;</span></a>

@@ -13,7 +13,7 @@ dialogs can also be dismissed to release native-view obscuring. Retrying a rende
 region preserves controller state; retrying a failed controller recreates only
 that controller's local state. It never repeats a mutation automatically.
 
-Code, Browser and Editor content remain mounted across tab switches. Other content
+Code terminal content remains mounted across tab switches. Other content
 mounts while active, while its controller retains selection and draft state.
 `TerminalHost` is a sibling of Code's controller, and each terminal pane has a
 boundary. Code UI failures and retries must not unmount or restart live terminals.

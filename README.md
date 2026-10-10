@@ -8,7 +8,7 @@ ContextGit pairs a **conversation DAG** (content-addressed, immutable commits of
 messages) with a **git worktree per agent run**, so parallel agents work in
 isolated checkouts and their reasoning merges together with their diffs.
 
-> Status: early / experimental. Interfaces and schema may change.
+> Status: `0.1.0-beta.1` friends beta. Interfaces and schema may change.
 
 ## Full workbench archive
 
@@ -59,13 +59,12 @@ that history a mergeable artefact alongside your code.
   pre-flight and conflict blocking.
 - **Paired code + context merge** — merging a run lands its diff on the git
   branch *and* its reasoning on the context branch.
-- **Desktop workbench** — Electron app with five primary tabs: Chat / Code / Issues /
-  Git / Assets. Storage is embedded in Git; Editor is embedded in Code; Usage is
-  embedded in Agent; and Why is embedded in Code. Live terminals (xterm + node-pty)
-  run per agent, alongside a file-asset library with an AI agent and an **embedded
-  VS Code** (a bundled `code-server` sidecar) with a ContextGit graph. The retired
-  standalone surfaces remain available only in the [full workbench archive](https://github.com/Prof-bilal/ContextGit-legacy-features).
-  Editor setup: `npm run fetch:editor --prefix desktop`.
+- **Desktop workbench** — Electron app with Code / Git / Issues / Assets workflows.
+  Storage is embedded in Git, and live terminals (xterm + node-pty) run per agent.
+  The beta launches user-installed terminal agents and keeps their work branchable;
+  native transcript capture is verified per agent, with OpenCode currently the
+  strongest integration. The embedded editor and Why analysis are deferred from
+  this beta.
 - **CLI harnesses** — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama,
   Freebuff, Cline, Pi, Kilo Code and Command Code, each with its real brand icon.
   A harness you don't have is installed in the background with a progress bar —

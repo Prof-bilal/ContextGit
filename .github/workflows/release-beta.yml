@@ -1,0 +1,116 @@
+name: ContextGit beta release
+
+on:
+  push:
+    tags: ["v*.*.*-beta.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-22.04
+            python: "3.11"
+          - name: windows-x64
+            runner: windows-2022
+            python: "3.11"
+          - name: macos-x64
+            runner: macos-13
+            python: "3.11"
+          - name: macos-arm64
+            runner: macos-14
+            python: "3.11"
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install backend dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Install desktop dependencies
+        run: npm ci --prefix desktop
+      - name: Install E2E dependencies
+        run: npm ci
+      - name: Rebuild native Electron dependencies
+        run: npm run rebuild:native --prefix desktop
+      - name: Run backend checks
+        run: |
+          python -m ruff check contextgit tests
+          python -m mypy
+          python -m pytest -q
+      - name: Run desktop checks
+        run: |
+          npm run build
+          npm run typecheck --prefix desktop
+          npm run build:renderer --prefix desktop
+          npm run build:electron --prefix desktop
+          npm run test:lifecycle --prefix desktop
+          npm run test:markdown --prefix desktop
+          npm audit --audit-level=high
+          npm audit --prefix desktop --audit-level=high
+      - name: Run beta desktop E2E
+        run: npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1
+      - name: Build unpacked application
+        run: npm run dist:dir --prefix desktop
+      - name: Smoke test packaged application
+        run: npm run smoke:packaged --prefix desktop
+      - name: Remove unpacked smoke-test directory
+        run: npm run clean:release --prefix desktop
+      - name: Build installers
+        run: npx electron-builder --projectDir desktop
+      - name: Generate checksums
+        run: npm run checksums --prefix desktop
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextgit-${{ matrix.name }}-logs
+          if-no-files-found: ignore
+          path: |
+            test-results/**
+            playwright-report/**
+            desktop/test-results/**
+            desktop/release/builder-debug.yml
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextgit-${{ matrix.name }}
+          path: desktop/release/*
+
+  publish:
+    name: Publish GitHub prerelease
+    needs: build
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find release-artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec cp {} release/ \;
+          sha256sum release/* > release/SHA256SUMS
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ContextGit $GITHUB_REF_NAME" \
+            --notes-file BETA.md \
+            --prerelease

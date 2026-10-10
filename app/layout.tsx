@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ContextGit — the one window for AI development",
   description:
-    "ContextGit is a desktop workbench for AI development: run parallel coding agents in isolated git worktrees, with an editor, browser, API and database client in one window, and version-controlled AI context. Local-first.",
+    "ContextGit is a local-first terminal-agent and Git context workbench: run parallel coding agents in isolated git worktrees and keep their AI context versioned.",
 };
 
 export const viewport: Viewport = {

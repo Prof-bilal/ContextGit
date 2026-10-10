@@ -12,7 +12,7 @@ import { AGENTS, FOOTER_LINKS, HEADER_CTA, NAV, DOC } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Features — ContextGit",
   description:
-    "Everything in ContextGit: the editor, browser, API and database clients, parallel agent runs, team mode and versioned conversations, in one local desktop app.",
+    "Everything in ContextGit: terminal agents, parallel runs, Git history, team mode and versioned conversations, in one local desktop app.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -37,10 +37,6 @@ const FEATURES: Feature[] = [
     items: [
       ["Terminal board", "Live terminals (xterm + node-pty) for every run."],
       ["Code tab", "Parallel runs — one terminal and one git branch each."],
-      ["Editor", "Embedded VS Code (a bundled code-server sidecar) with the ContextGit graph."],
-      ["Browser", "A general-purpose in-app browser: tabs, history, bookmarks, find-in-page, zoom and DevTools."],
-      ["API client", "An embedded Restfox client, with a native runner as the default."],
-      ["Database", "An embedded DbGate client — MySQL, Postgres, SQL Server, MongoDB, Redis, SQLite, ClickHouse and more."],
       ["Assets", "A file-asset library with its own AI agent."],
       ["Git", "History, graph, diffs and the merge preview, next to the work."],
       ["Chat, Docs, Usage", "Chat turns, document generation (Markdown, PDF, Word, PowerPoint) and one token-usage view."],
