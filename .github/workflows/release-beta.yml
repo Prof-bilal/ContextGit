@@ -107,13 +107,15 @@ jobs:
         run: npm run clean:release --prefix desktop
       - name: Build installers
         if: runner.os != 'Windows'
-        run: npx electron-builder --projectDir desktop
+        run: npx electron-builder --projectDir desktop --publish never
       - name: Build Windows installer in a fresh output directory
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          npx electron-builder --projectDir desktop --config.directories.output=release-installer
+          npx electron-builder --projectDir desktop --publish never --config.directories.output=release-installer
           Copy-Item desktop/release-installer/* desktop/release/ -Force
+      - name: Generate updater metadata
+        run: node desktop/scripts/write-update-metadata.mjs
       - name: Generate checksums
         run: npm run checksums --prefix desktop
       - name: Upload test logs
@@ -152,7 +154,24 @@ jobs:
             safe_name="${name// /-}"
             cp "$file" "release/${platform}-${safe_name}"
           done
-          sha256sum release/* > release/SHA256SUMS
+          # Keep electron-updater's canonical metadata names. The current beta
+          # has one native metadata file per platform; package-manager users
+          # use the release-page fallback and never get a silent replacement.
+          for spec in \
+            'contextgit-windows-x64 latest.yml' \
+            'contextgit-linux-x64 latest-linux.yml' \
+            'contextgit-macos-x64 latest-mac.yml'; do
+            platform="${spec% *}"
+            metadata="${spec#* }"
+            source="$(find "release-artifacts/$platform" -type f -name "$metadata" -print -quit 2>/dev/null || true)"
+            if [ -n "$source" ]; then
+              # Metadata points at the original builder artifact name. Rewrite
+              # those paths to the collision-safe release asset name.
+              sed -E "s#(url|path): ([^[:space:]]+)#\\1: ${platform}-\\2#g" "$source" > "release/$metadata"
+            fi
+          done
+          # Checksums intentionally cover installers only, not updater metadata.
+          find release -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.pacman' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}

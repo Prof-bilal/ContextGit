@@ -30,6 +30,9 @@ import { AssetLibrary } from "./library";
 import { ViewManager } from "./viewmanager";
 import type { ViewBounds } from "../shared/browser";
 import type { AssetPatch } from "../shared/assets";
+import type { UpdateStatus } from "../shared/update";
+import { UPDATE_RELEASE_URL } from "../shared/update";
+import { ContextGitUpdater } from "./updater";
 
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(app.getAppPath(), "..");
@@ -51,6 +54,12 @@ protocol.registerSchemesAsPrivileged([
 let backend: ChildProcess | null = null;
 let status: BackendStatus = { state: "starting" };
 let mainWindow: BrowserWindow | null = null;
+const updater = new ContextGitUpdater({
+  currentVersion: app.getVersion(),
+  packaged: app.isPackaged,
+  statusSink: (next: UpdateStatus) => mainWindow?.webContents.send("ctx:update-status", next),
+});
+updater.initialize();
 
 function setStatus(next: BackendStatus): void {
   status = next;
@@ -284,6 +293,14 @@ async function createWindow(): Promise<void> {
 ipcMain.on("ctx:status-sync", (event) => {
   event.returnValue = { status, apiBase, apiToken };
 });
+
+ipcMain.on("ctx:update-status-sync", (event) => {
+  event.returnValue = updater.getStatus();
+});
+ipcMain.handle("ctx:update-check", () => updater.check(true));
+ipcMain.handle("ctx:update-download", () => updater.download());
+ipcMain.handle("ctx:update-install", () => updater.install());
+ipcMain.handle("ctx:update-open-release", () => shell.openExternal(UPDATE_RELEASE_URL));
 
 ipcMain.handle("ctx:runtime-info", () => ({
   platform: process.platform,
@@ -724,6 +741,10 @@ app.whenReady().then(async () => {
   // Window first so the user sees the "starting" screen while the backend boots.
   await createWindow();
   await spawnBackend();
+  if (app.isPackaged && !process.env.CONTEXTGIT_SMOKE) {
+    // Give the first window time to mount before sending the initial status.
+    setTimeout(() => { void updater.check(false); }, 2500);
+  }
   if (process.env.CONTEXTGIT_SMOKE) {
     // Automated smoke test: verify the rendered DOM, then exit.
     setTimeout(async () => {

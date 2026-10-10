@@ -11,6 +11,7 @@ import { WorkspaceDialogs } from "./WorkspaceDialogs";
 import TerminalHost from "./terminal/TerminalHost";
 import CodeFeature from "./features/CodeFeature";
 import GitFeature from "./features/GitFeature";
+import { UpdateCheckButton } from "../UpdateBanner";
 
 const FEATURES: Array<TabDef & { title: string; Controller: ComponentType }> = [
   { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
@@ -75,6 +76,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
         <TopNav tabs={TABS} active={tab} onChange={setTab} />
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint"><LuCommand aria-hidden="true" />K</button>
+        <UpdateCheckButton />
         <button type="button" className="cg-theme-btn" aria-pressed={theme === "dark"} onClick={() => setTheme(value => value === "dark" ? "light" : "dark")}>
           <span aria-hidden="true">{theme === "dark" ? <LuSun /> : <LuMoon />}</span>{theme === "dark" ? "Light" : "Dark"}
         </button>

@@ -320,6 +320,18 @@
   color: var(--cg-ink);
 }
 
+.cg-update-check {
+  border: 1px solid var(--cg-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cg-ink-2);
+  padding: 0.35rem 0.6rem;
+  font: 600 0.72rem/1 "Schibsted Grotesk", sans-serif;
+  cursor: pointer;
+}
+.cg-update-check:hover:not(:disabled) { border-color: var(--cg-signal); color: var(--cg-ink); }
+.cg-update-check:disabled { opacity: 0.6; cursor: wait; }
+
 /* ------------------------------------------------------------------ body --- */
 
 .cg-body {
@@ -1309,6 +1321,22 @@ button.cg-chip[aria-pressed="true"] {
     monospace;
   border-bottom: 1px solid var(--cg-line);
 }
+
+.cg-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.9rem;
+  background: color-mix(in srgb, var(--cg-signal) 14%, var(--cg-surface));
+  color: var(--cg-ink-2);
+  border-bottom: 1px solid var(--cg-line);
+}
+.cg-update-copy { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; min-width: 0; }
+.cg-update-copy strong { color: var(--cg-ink); font-size: 0.8rem; }
+.cg-update-copy span { font: 400 0.72rem/1.4 "Martian Mono", monospace; }
+.cg-update-progress { width: 8rem; height: 0.35rem; accent-color: var(--cg-signal); }
+.cg-update-actions { display: flex; align-items: center; gap: 0.45rem; flex-shrink: 0; }
 
 .cg-view-toolbar {
   display: flex;

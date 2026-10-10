@@ -6,6 +6,12 @@ export interface ContextGitBridge {
   restartBackend: () => Promise<{ status: import("../shared/status").BackendStatus; apiBase: string }>;
   runtimeInfo: () => Promise<import("../shared/runtime").RuntimeInfo>;
   onStatus: (callback: (status: import("../shared/status").BackendStatus) => void) => () => void;
+  getUpdateStatus: () => import("../shared/update").UpdateStatus;
+  checkForUpdates: () => Promise<import("../shared/update").UpdateStatus>;
+  downloadUpdate: () => Promise<import("../shared/update").UpdateStatus>;
+  installUpdate: () => Promise<import("../shared/update").UpdateStatus>;
+  openUpdateRelease: () => Promise<void>;
+  onUpdateStatus: (callback: (status: import("../shared/update").UpdateStatus) => void) => () => void;
   ptyStart: (options: {
     id: string;
     command: string;

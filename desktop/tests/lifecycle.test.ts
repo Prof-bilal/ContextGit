@@ -13,6 +13,20 @@ import { PollingTask } from "../src/shell/pollingTask";
 import { BackendRestart, launchBackend, terminateBackend } from "../electron/backendProcess";
 import { once } from "node:events";
 import { prepareOpenCodeCapture } from "../electron/conversationCapture";
+import { compareVersions, isBetaVersion, isLinuxPackageManagerInstall } from "../shared/update";
+
+test("beta update channel compares prereleases and stable releases safely", () => {
+  assert.equal(isBetaVersion("0.1.0-beta.1"), true);
+  assert.equal(compareVersions("0.1.0-beta.2", "0.1.0-beta.1") > 0, true);
+  assert.equal(compareVersions("0.1.0", "0.1.0-beta.9") > 0, true);
+  assert.equal(compareVersions("0.1.0-beta.1", "0.1.0-beta.1"), 0);
+});
+
+test("package-managed Linux installs use the release-page fallback", () => {
+  assert.equal(isLinuxPackageManagerInstall("linux", undefined), true);
+  assert.equal(isLinuxPackageManagerInstall("linux", "/tmp/contextgit.AppImage"), false);
+  assert.equal(isLinuxPackageManagerInstall("darwin", undefined), false);
+});
 
 test("OpenCode launch capture persists exact identity and rejects a second root conversation", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-capture-"));

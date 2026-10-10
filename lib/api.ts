@@ -507,8 +507,10 @@ export interface TaskInput {
 function repositoryHeaders(): Record<string, string> {
   const status = typeof window !== "undefined" ? window.contextgit?.getStatus().status : undefined;
   if (status?.state === "ready" && status.repoId) {
-    expectedRepository ??= status.repoId;
-    if (expectedRepository !== status.repoId) throw new ApiError("Backend repository changed. Reopen this workspace.", 409, "RepositoryMismatch");
+    // The Electron main process rebinds the local backend when the active
+    // project changes. Adopt the new identity in the existing renderer
+    // instead of treating a normal project switch as a stale workspace.
+    if (expectedRepository !== status.repoId) expectedRepository = status.repoId;
   }
   return expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {};
 }

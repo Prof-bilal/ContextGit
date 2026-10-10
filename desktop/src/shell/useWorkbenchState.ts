@@ -56,7 +56,9 @@ export function useWorkbenchState() {
 
   useEffect(() => {
     if (!removedIds.length) return;
-    setOpenIds((current) => current.filter((id) => !removedIds.includes(id)));
+    // A project switch can temporarily hide sessions owned by the previous
+    // project while its backend is being rebound. Keep their panes and PTYs
+    // alive so switching projects does not kill user work.
     setActiveId((current) => current && removedIds.includes(current) ? null : current);
   }, [removedIds]);
 

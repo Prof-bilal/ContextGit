@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { HarnessCheck, HarnessInstallEvent } from "../shared/harnesses";
 import type { BackendStatus } from "../shared/status";
 import type { Workspace } from "../shared/workspace";
+import type { UpdateStatus } from "../shared/update";
 
 const initial = ipcRenderer.sendSync("ctx:status-sync") as {
   status: BackendStatus;
@@ -21,6 +22,17 @@ contextBridge.exposeInMainWorld("contextgit", {
     const listener = (_event: Electron.IpcRendererEvent, next: BackendStatus) => callback(next);
     ipcRenderer.on("ctx:status", listener);
     return () => ipcRenderer.removeListener("ctx:status", listener);
+  },
+  // ---------- App updates ----------
+  getUpdateStatus: () => ipcRenderer.sendSync("ctx:update-status-sync") as UpdateStatus,
+  checkForUpdates: () => ipcRenderer.invoke("ctx:update-check") as Promise<UpdateStatus>,
+  downloadUpdate: () => ipcRenderer.invoke("ctx:update-download") as Promise<UpdateStatus>,
+  installUpdate: () => ipcRenderer.invoke("ctx:update-install") as Promise<UpdateStatus>,
+  openUpdateRelease: () => ipcRenderer.invoke("ctx:update-open-release") as Promise<void>,
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, next: UpdateStatus) => callback(next);
+    ipcRenderer.on("ctx:update-status", listener);
+    return () => ipcRenderer.removeListener("ctx:update-status", listener);
   },
   // ---------- PTY terminals ----------
   ptyStart: (options: {

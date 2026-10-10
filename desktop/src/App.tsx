@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Shell from "./shell/Shell";
 import ErrorBoundary from "./ErrorBoundary";
 import type { BackendStatus } from "../shared/status";
+import { UpdateBanner } from "./UpdateBanner";
 
 const fallback = { status: { state: "ready" } as BackendStatus, apiBase: "http://127.0.0.1:8756" };
 
@@ -66,6 +67,7 @@ export default function App() {
 
   return (
     <>
+      <UpdateBanner />
       {backend.status.state !== "ready" && (
         <div className="cg-banner" role="alert">
           {backend.status.state === "error" ? backend.status.message : "Reconnecting to the backend…"}

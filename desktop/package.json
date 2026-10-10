@@ -1,7 +1,7 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
@@ -13,7 +13,7 @@
     "dev:mock": "vite",
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:electron-updater --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
     "rebuild:native": "electron-builder install-app-deps",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
     "build:backend": "node scripts/build-backend.mjs",
@@ -32,6 +32,7 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.12.0",
+    "electron-updater": "^6.8.9",
     "node-pty": "^1.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -87,7 +88,8 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.developer-tools"
     },
@@ -96,6 +98,12 @@
         "nsis"
       ]
     },
+    "publish": [{
+      "provider": "github",
+      "owner": "Prof-bilal",
+      "repo": "ContextGit",
+      "releaseType": "prerelease"
+    }],
     "nsis": {
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
