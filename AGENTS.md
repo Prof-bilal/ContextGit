@@ -4,5 +4,5 @@
 Each run works in its own git worktree. Stay inside the files you own;
 if you must touch a file owned by another run, say so before editing.
 
-- shell 1 [shell] - (no scope claimed)
+- fix_folder_structre [codex] - (no scope claimed) · role: CTO / Tech Lead · skills: Scope & priorities, Architecture review, Risk assessment, Delegation, Release decision
 <!-- contextgit:end -->
