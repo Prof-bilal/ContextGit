@@ -100,6 +100,7 @@ jobs:
           Get-Process ContextGit,contextgit,contextgit-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 3
       - name: Remove unpacked smoke-test directory
+        continue-on-error: ${{ runner.os == 'Windows' }}
         run: npm run clean:release --prefix desktop
       - name: Build installers
         run: npx electron-builder --projectDir desktop
