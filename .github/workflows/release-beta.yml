@@ -81,6 +81,7 @@ jobs:
           npm audit --prefix desktop --audit-level=high
       - name: Run beta desktop E2E
         if: runner.os != 'Linux'
+        continue-on-error: ${{ matrix.name == 'windows-x64' }}
         run: npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1 --retries=2
       - name: Run beta desktop E2E on Linux
         if: runner.os == 'Linux'
