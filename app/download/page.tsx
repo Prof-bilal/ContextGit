@@ -6,10 +6,13 @@ import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
 import { FOOTER_LINKS, GITHUB, HEADER_CTA, ISSUES, NAV } from "@/lib/site";
 
+const RELEASE_URL = `${GITHUB}/releases/tag/v0.1.0-beta.1`;
+const RELEASE_ASSET_BASE = `${GITHUB}/releases/download/v0.1.0-beta.1`;
+
 export const metadata: Metadata = {
   title: "Download ContextGit",
   description:
-    "Get the ContextGit friends beta for macOS, Windows and Linux, or run the local-first terminal-agent workbench from source.",
+    "Install the ContextGit friends beta for Windows, macOS, or Linux and start a local terminal-agent workbench.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -50,11 +53,18 @@ const STEPS: Array<{ no: string; title: string; body: React.ReactNode; code?: st
   },
 ];
 
+const INSTALLERS: Array<[string, string, string]> = [
+  ["Windows", "x64 · unsigned NSIS installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit-Setup-0.1.0-beta.1.exe`],
+  ["macOS Intel", "x64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit-0.1.0-beta.1.dmg`],
+  ["macOS Apple Silicon", "arm64 · unsigned DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit-0.1.0-beta.1.dmg`],
+  ["Linux AppImage", "x64 · portable installer", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.1.AppImage`],
+  ["Linux .deb", "x64 · Debian package", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-contextgit-desktop_0.1.0-beta.1_amd64.deb`],
+];
+
 const REQUIREMENTS: Array<[string, string]> = [
-  ["Python", "3.11 or newer — core, API and CLI."],
-  ["Node.js", "20 or newer — desktop app and sidecars."],
-  ["Git", "Worktrees are how runs stay isolated."],
-  ["Disk", "The beta does not bundle an editor; use the editor you already have installed."],
+  ["Git", "Required for isolated worktrees and diffs."],
+  ["Terminal agent", "Install the agent you want to launch, such as OpenCode, Claude Code, Codex, or Gemini CLI."],
+  ["Editor", "Use the editor you already have installed; the beta does not bundle one."],
 ];
 
 export default function DownloadPage() {
@@ -70,63 +80,76 @@ export default function DownloadPage() {
         <section className="section page-hero" data-section aria-labelledby="download-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="chip">Download</span><span>Local-first. No account.</span></p>
-              <h1 id="download-title" className="page-h1">Get ContextGit on your machine.</h1>
+              <p className="eyebrow"><span className="chip">Friends beta</span><span>Install like a normal desktop app</span></p>
+              <h1 id="download-title" className="page-h1">Download. Install. Start an agent.</h1>
               <p className="lede">
-                The product is the desktop workbench. Today it runs from source in about five
-                minutes — the CLI alone takes one command.
+                You do not need to clone the repository, create a Python environment, or start a
+                backend manually. Download the installer for your operating system and ContextGit
+                starts its local backend for you.
               </p>
               <p className="hero-actions reveal" style={d(80)}>
-                <a className="btn btn-primary" href={GITHUB}>Clone from GitHub <span aria-hidden="true">&rarr;</span></a>
-                <a className="btn btn-ghost" href="#source">Run from source</a>
+                <a className="btn btn-primary" href={RELEASE_URL}>Open beta downloads <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-ghost" href="#install">How installation works</a>
               </p>
               <p className="fineprint reveal" style={d(120)}>
-                Unsigned beta installers for macOS, Windows and Linux will be published through
-                GitHub Releases. Your OS may show a first-run trust warning.
+                Unsigned installers are published through GitHub Releases. Verify the matching
+                SHA-256 checksum before opening the app.
               </p>
             </header>
           </div>
         </section>
 
-        <section className="section section-tint" id="source" data-section aria-labelledby="source-title">
+        <section className="section section-tint" id="install" data-section aria-labelledby="install-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">01</span>Run from source</p>
-              <h2 id="source-title">Four commands to the first agent run.</h2>
-              <p className="lede">Two terminals: one for the backend, one for the desktop app. Copy buttons are live.</p>
+              <p className="eyebrow"><span className="eyebrow-no">01</span>Install flow</p>
+              <h2 id="install-title">A regular desktop app, with a local backend included.</h2>
+              <p className="lede">The installer contains the desktop shell and backend. You choose a project and agent after launch.</p>
+            </header>
+
+            <ol className="dl-steps">
+              {[
+                ["01", "Download the installer", "Choose Windows x64, macOS Intel/Apple Silicon, or Linux x64 from the beta release."],
+                ["02", "Install and open ContextGit", "Windows may show SmartScreen and macOS may show Gatekeeper because the beta is unsigned."],
+                ["03", "Choose a project", "Select an existing Git repository or create a project folder from the app."],
+                ["04", "Start your agent", "Choose an installed terminal agent, open Code, and begin working. ContextGit manages the local backend automatically."],
+              ].map(([no, title, body], i) => (
+                <li key={no} className="dl-step reveal" style={d(i * 60)}>
+                  <p className="dl-step-head"><span className="dl-step-no mono">{no}</span><strong>{title}</strong></p>
+                  <p className="dl-step-body">{body}</p>
+                </li>
+              ))}
+            </ol>
+
+            <div className="reveal" style={d(260)}>
+              <ul className="pillars">
+                {INSTALLERS.map(([platform, detail, href]) => <li key={platform}><h3 className="pillar-title"><a href={href}>{platform}</a></h3><p>{detail}</p><a className="fineprint" href={href}>Download installer <span aria-hidden="true">&rarr;</span></a></li>)}
+              </ul>
+              <p className="hero-actions" style={{ marginTop: "var(--s8)" }}><a className="btn btn-primary" href={RELEASE_URL}>Choose your installer <span aria-hidden="true">&rarr;</span></a></p>
+            </div>
+          </div>
+        </section>
+
+        <section className="section" id="developer" data-section aria-labelledby="cli-title">
+          <div className="wrap">
+            <header className="section-head reveal">
+              <p className="eyebrow"><span className="eyebrow-no">02</span>For developers</p>
+              <h2 id="cli-title">Want to run from source instead?</h2>
+              <p className="lede">
+                Source installation is available for contributors and developers. It is not required
+                for normal desktop use.
+              </p>
             </header>
 
             <ol className="dl-steps">
               {STEPS.map((s, i) => (
                 <li key={s.no} className="dl-step reveal" style={d(i * 60)}>
-                  <p className="dl-step-head">
-                    <span className="dl-step-no mono">{s.no}</span>
-                    <strong>{s.title}</strong>
-                  </p>
+                  <p className="dl-step-head"><span className="dl-step-no mono">{s.no}</span><strong>{s.title}</strong></p>
                   <p className="dl-step-body">{s.body}</p>
-                  {s.code ? (
-                    <div className="install dl-install">
-                      <pre className="term"><code>{s.code}</code></pre>
-                      <button type="button" className="btn btn-ghost btn-copy" data-copy={s.copy} aria-label={`Copy command for ${s.title}`}>Copy</button>
-                    </div>
-                  ) : null}
+                  {s.code ? <div className="install dl-install"><pre className="term"><code>{s.code}</code></pre><button type="button" className="btn btn-ghost btn-copy" data-copy={s.copy} aria-label={`Copy command for ${s.title}`}>Copy</button></div> : null}
                 </li>
               ))}
             </ol>
-          </div>
-        </section>
-
-        <section className="section" id="cli" data-section aria-labelledby="cli-title">
-          <div className="wrap">
-            <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">02</span>CLI only</p>
-              <h2 id="cli-title">Prefer the terminal? Start with the CLI.</h2>
-              <p className="lede">
-                The core library and the CLI are the same package the desktop app uses. It gives
-                you init, commit, branch, checkout, log, diff and merge without opening the
-                workbench.
-              </p>
-            </header>
 
             <div className="reveal" style={d(80)}>
               <div className="install">
@@ -171,10 +194,10 @@ export default function DownloadPage() {
         <section className="section section-end" data-section aria-labelledby="download-cta-title">
           <div className="wrap">
             <div className="cta reveal">
-              <h2 id="download-cta-title" className="cta-title">Five minutes from clone to first run.</h2>
-              <p className="cta-lede">One local-first workbench for terminal agents and Git context — with conversations you can branch and merge.</p>
+              <h2 id="download-cta-title" className="cta-title">Install once. Start locally.</h2>
+              <p className="cta-lede">Download the beta, open a project, and launch the terminal agent you already use.</p>
               <div className="cta-actions">
-                <a className="btn btn-signal" href={GITHUB}>Clone from GitHub <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-signal" href={RELEASE_URL}>Open beta downloads <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-link-cta" href="/features">See features <span aria-hidden="true">&rarr;</span></a>
               </div>
               <p className="fineprint cta-fine">Early build. Everything stays on your machine except the model calls you make.</p>

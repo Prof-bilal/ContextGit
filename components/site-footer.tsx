@@ -6,7 +6,7 @@ export default function SiteFooter({ links }: { links: NavLink[] }) {
       <div className="wrap footer-inner">
         <div>
           <p className="footer-brand">ContextGit</p>
-          <p className="footer-tag">Version control for LLM conversations.</p>
+          <p className="footer-tag">Run agents. Keep the work.</p>
         </div>
         <ul className="footer-links">
           {links.map((link) => (

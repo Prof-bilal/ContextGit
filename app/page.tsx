@@ -9,25 +9,24 @@ import AppDemo from "@/components/app-demo";
 import WorkbenchTabs from "@/components/workbench-tabs";
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
-import PricingTiers from "@/components/pricing-tiers";
 import { AGENTS, FOOTER_LINKS, GITHUB, HEADER_CTA, NAV } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "ContextGit — the one window for AI development",
+  title: "ContextGit — run agents, keep the work",
   description:
-    "ContextGit is a local-first terminal-agent and Git context workbench: run parallel coding agents in isolated git worktrees and keep their AI context versioned.",
+    "ContextGit is a local-first desktop workbench for terminal AI agents and Git: run agents, review diffs, checkpoint progress, and recover the work.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
 const FAQ: Array<[string, React.ReactNode]> = [
   [
-    "Isn't this just summarizing my chat?",
-    <>A summary replaces history. ContextGit keeps history as immutable commits and only summarizes at merge time, with a preview, a conflict check and the full branch still intact.</>,
+    "What does ContextGit do?",
+    <>It gives terminal-agent work a visible, recoverable home: each run has its own workspace, changes are reviewable as Git diffs, and useful states can be checkpointed, branched, merged, or rolled back.</>,
   ],
   [
-    "Is a merge lossless?",
-    <>No. A merge is a compact summary of decisions, facts, dead ends and open questions. That is why the original branch is never deleted, and why merge quality is tracked with probe questions.</>,
+    "Does it replace my editor or agent?",
+    <>No. ContextGit launches the terminal agents you already use and works alongside the editor you already have. The beta focuses on terminal sessions and Git context.</>,
   ],
   [
     "Where does my data go?",
@@ -35,7 +34,7 @@ const FAQ: Array<[string, React.ReactNode]> = [
   ],
   [
     "Which agents does it run?",
-    <>Eleven agent CLIs plus a plain shell — Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama, Freebuff, Cline, Pi, Kilo Code and Command Code. A missing CLI is installed in the background, and you bring your own model key.</>,
+    <>It can launch installed shell and terminal agents, including Claude Code, Codex, OpenCode, Gemini CLI, Aider, Ollama, Cline, Pi, Kilo Code, Command Code, and a plain shell. Terminal support, usage reporting, and transcript capture are separate capabilities.</>,
   ],
   [
     "Do I need an account?",
@@ -50,8 +49,8 @@ const FAQ: Array<[string, React.ReactNode]> = [
     <>The local app is free: unlimited projects, runs and commits. Paid tiers (cloud sync, security audit, team) are coming, and prices are not set yet. See <a href="/pricing">Pricing</a>.</>,
   ],
   [
-    "Does it support teams?",
-    <>Team mode is shipped locally — tasks, roles, a quality gate, an independent verifier and an MCP channel across parallel runs. Cloud sync and multi-user collaboration are on the roadmap.</>,
+    "Is transcript capture supported?",
+    <>Capture is verified per agent. OpenCode is the first fully verified integration; other agents remain usable as terminals until their capture path is tested.</>,
   ],
   [
     "Is it production-ready?",
@@ -69,11 +68,11 @@ export default function Page() {
       <nav className="rail" aria-label="Page sections">
         <ol>
           <li><a href="#top" data-label="Overview"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">01</span><span className="rail-label">Overview</span></a></li>
-          <li><a href="#workbench" data-label="One window"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">02</span><span className="rail-label">One window</span></a></li>
-          <li><a href="#fleet" data-label="Control tower"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">03</span><span className="rail-label">Control tower</span></a></li>
-          <li><a href="#context" data-label="Versioned context"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">04</span><span className="rail-label">Versioned context</span></a></li>
-          <li><a href="#merge" data-label="Merge engine"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">05</span><span className="rail-label">Merge engine</span></a></li>
-          <li><a href="#pricing" data-label="Pricing"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">06</span><span className="rail-label">Pricing</span></a></li>
+          <li><a href="#workbench" data-label="How it works"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">02</span><span className="rail-label">How it works</span></a></li>
+          <li><a href="#agents" data-label="Agents"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">03</span><span className="rail-label">Agents</span></a></li>
+          <li><a href="#context" data-label="Recovery"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">04</span><span className="rail-label">Recovery</span></a></li>
+          <li><a href="#merge" data-label="Review"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">05</span><span className="rail-label">Review</span></a></li>
+          <li><a href="#trust" data-label="Trust"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">06</span><span className="rail-label">Trust</span></a></li>
           <li><a href="#install" data-label="Questions"><span className="rail-node" aria-hidden="true"></span><span className="rail-no">07</span><span className="rail-label">Questions</span></a></li>
         </ol>
       </nav>
@@ -87,28 +86,24 @@ export default function Page() {
             <span /><span /><span /><span /><span />
           </div>
           <div className="wrap">
-            <p className="eyebrow reveal"><span className="chip">Local-first</span><span>The one window for AI development</span></p>
+            <p className="eyebrow reveal"><span className="chip">Friends beta · 0.1.0</span><span>Local-first terminal + Git workbench</span></p>
             <h1 id="hero-title" className="reveal" style={d(60)}>
-              <span className="h1-a">Build in one window.</span>
-              <span className="h1-b">Keep the context that worked.</span>
+              <span className="h1-a">Run your AI agents.</span>
+              <span className="h1-b">Keep the work.</span>
             </h1>
             <p className="lede hero-lede reveal" style={d(120)}>
-              ContextGit puts your coding agents and Git context in one local-first desktop app. Each agent gets its own git worktree, so parallel runs never collide, and every AI conversation is a branchable history you can merge.
+              ContextGit is a local-first desktop workbench for terminal AI agents and Git. Give every run its own workspace, review the diff, checkpoint progress, and recover the decisions that mattered.
             </p>
             <div className="hero-actions reveal" style={d(180)}>
-              <a className="btn btn-primary" href={GITHUB}>Get the desktop app <span aria-hidden="true">&rarr;</span></a>
-              <a className="btn btn-ghost" href="/features">See features</a>
-              <div className="install">
-                <code>pip install contextgit</code>
-                <button type="button" className="btn btn-ghost btn-copy" data-copy="pip install contextgit" aria-label="Copy install command">Copy</button>
-              </div>
+              <a className="btn btn-primary" href="/download">Download the beta <span aria-hidden="true">&rarr;</span></a>
+              <a className="btn btn-ghost" href="#workbench">See how it works</a>
             </div>
-            <p className="fineprint reveal" style={d(200)}>Early build. Expect rough edges. Open source, Apache-2.0, and built in the open.</p>
+            <p className="fineprint reveal" style={d(200)}>Unsigned friends beta for Windows, macOS, and Linux. No account required. Open source under Apache-2.0.</p>
 
             <ul className="trust-strip reveal" style={d(220)}>
               <li>Local-first</li>
               <li>Apache-2.0</li>
-              <li>11 agent CLIs</li>
+              <li>Bring your agent</li>
               <li>No account</li>
               <li>Only your model calls leave the machine</li>
             </ul>
@@ -130,12 +125,10 @@ export default function Page() {
         <section className="section" id="workbench" data-section aria-labelledby="workbench-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">02</span>One window</p>
-              <h2 id="workbench-title">Everything the agent reaches for, in the same window.</h2>
+              <p className="eyebrow"><span className="eyebrow-no">02</span>How it works</p>
+              <h2 id="workbench-title">From agent run to recoverable work.</h2>
               <p className="lede">
-                A working day is a dozen apps: an editor, several terminals, an API client, a
-                database tool, a browser with DevTools. ContextGit ships them as tabs in one
-                native window — so switching tools stops costing you focus.
+                Keep the terminal workflow you already know. ContextGit adds the missing layer around it: isolated runs, visible changes, and Git-backed checkpoints.
               </p>
             </header>
 
@@ -145,30 +138,28 @@ export default function Page() {
 
             <ul className="pillars reveal" style={d(120)}>
               <li>
-                <h3 className="pillar-title">One window</h3>
-                <p>Agents, terminals and Git context. No lost reasoning.</p>
+                <h3 className="pillar-title">Run</h3>
+                <p>Launch an installed terminal agent in its own workspace.</p>
               </li>
               <li>
-                <h3 className="pillar-title">Agents that don&apos;t collide</h3>
-                <p>One worktree per run, claimed files, a merge queue, an independent verifier.</p>
+                <h3 className="pillar-title">Review</h3>
+                <p>See the terminal output, changed files, branch, and diff together.</p>
               </li>
               <li>
-                <h3 className="pillar-title">Context you can version</h3>
-                <p>Branch a conversation, diff it, merge what was learned, roll back.</p>
+                <h3 className="pillar-title">Recover</h3>
+                <p>Checkpoint, branch, merge, or roll back without losing the original work.</p>
               </li>
             </ul>
           </div>
         </section>
 
-        <section className="section section-tint" id="fleet" data-section aria-labelledby="fleet-title">
+        <section className="section section-tint" id="agents" data-section aria-labelledby="fleet-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">03</span>Control tower</p>
-              <h2 id="fleet-title">One project, many agents, no collisions.</h2>
+              <p className="eyebrow"><span className="eyebrow-no">03</span>Agents</p>
+              <h2 id="fleet-title">Use the agents you already have.</h2>
               <p className="lede">
-                Each run gets its own worktree and branch. ContextGit shows what every agent
-                changed and flags the moment two of them reach for the same file, before
-                anything merges.
+                Each run gets its own worktree and branch. ContextGit shows what changed and flags overlap before anything merges.
               </p>
             </header>
 
@@ -192,8 +183,8 @@ export default function Page() {
                   <span>Merging a run lands its diff on the git branch and its reasoning on the context branch, in one step.</span>
                 </li>
                 <li>
-                  <strong>Team mode</strong>
-                  <span>A mission split into tasks with roles, file scopes and dependencies — each with a quality gate and an independent verifier before anything lands.</span>
+                  <strong>Bring your own setup</strong>
+                  <span>Use your installed CLI and model provider. ContextGit does not ask you to switch agents or create another account.</span>
                 </li>
               </ul>
             </div>
@@ -203,12 +194,10 @@ export default function Page() {
         <section className="section" id="context" data-section aria-labelledby="context-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">04</span>Versioned context</p>
-              <h2 id="context-title">A chat is one line. Real thinking is a tree.</h2>
+              <p className="eyebrow"><span className="eyebrow-no">04</span>Recovery</p>
+              <h2 id="context-title">Useful work should never disappear into a chat scroll.</h2>
               <p className="lede">
-                You explore, backtrack, compare and decide — every chat app flattens that into
-                one scroll. ContextGit gives each conversation commits, branches, diffs and
-                rollbacks, so a dead end costs one branch, not the whole context window.
+                Checkpoints give agent work a concrete history. Branch from a useful moment, compare approaches, keep a dead end for reference, and return to a known-good state.
               </p>
             </header>
 
@@ -247,9 +236,9 @@ export default function Page() {
         <section className="section section-night" id="merge" data-section aria-labelledby="merge-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">05</span>Merge engine</p>
-              <h2 id="merge-title">The hard part: merging meaning, not lines.</h2>
-              <p className="lede">A branch is not a patch. ContextGit pulls out decisions, facts, dead ends and open questions, flags contradictions, and never resolves a conflict without you.</p>
+              <p className="eyebrow"><span className="eyebrow-no">05</span>Review before merge</p>
+              <h2 id="merge-title">You stay in control of what lands.</h2>
+              <p className="lede">ContextGit shows the proposed changes and context before a merge. Conflicts are surfaced for you to decide; the original branch stays intact.</p>
             </header>
 
             <div className="merge-grid">
@@ -354,23 +343,20 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="section section-tint" id="pricing" data-section aria-labelledby="pricing-teaser-title">
+        <section className="section section-tint" id="trust" data-section aria-labelledby="trust-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="eyebrow-no">06</span>Pricing</p>
-              <h2 id="pricing-teaser-title">Free on your machine. Paid to scale.</h2>
+              <p className="eyebrow"><span className="eyebrow-no">06</span>Trust</p>
+              <h2 id="trust-title">Simple to understand. Local by default.</h2>
               <p className="lede">
-                The whole local workbench is free, forever — unlimited projects, runs and
-                commits, no account. Pro adds the security audit, cloud sync and cloud agents;
-                Team adds collaboration. No numbers yet — early access.
+                The friends beta needs no ContextGit account. Your history is stored locally, and the app works with the Git and terminal setup you already use.
               </p>
             </header>
-
-            <div className="reveal"><PricingTiers compact limit={4} /></div>
-
-            <p className="pricing-more reveal" style={d(80)}>
-              <a className="btn btn-primary" href="/pricing">See full pricing <span aria-hidden="true">&rarr;</span></a>
-            </p>
+            <ul className="pillars trust-pillars reveal" style={d(80)}>
+              <li><h3 className="pillar-title">No account</h3><p>Start locally without a ContextGit sign-in.</p></li>
+              <li><h3 className="pillar-title">Your provider</h3><p>Use the model keys and agent accounts you already chose.</p></li>
+              <li><h3 className="pillar-title">Honest support</h3><p>Terminal support, usage reporting, and transcript capture are labeled separately.</p></li>
+            </ul>
           </div>
         </section>
 
@@ -391,13 +377,13 @@ export default function Page() {
             </div>
 
             <div className="cta reveal">
-              <h2 className="cta-title">One window. Every agent. Context you can keep.</h2>
-              <p className="cta-lede">Run it from source in five minutes, or start with the CLI. It all stays on your machine.</p>
+              <h2 className="cta-title">Start with a local beta.</h2>
+              <p className="cta-lede">Run an agent, inspect the diff, and keep the checkpoint. Download the unsigned friends beta for Windows, macOS, or Linux.</p>
               <div className="cta-actions">
-                <a className="btn btn-signal" href="/download">Download <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-signal" href="/download">Download beta <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-link-cta" href={GITHUB}>View on GitHub <span aria-hidden="true">&rarr;</span></a>
               </div>
-              <p className="fineprint cta-fine">Early build. Everything stays on your machine except the model calls you make.</p>
+              <p className="fineprint cta-fine">Verify the SHA-256 checksum before installing. Expect rough edges and tell us what broke.</p>
             </div>
           </div>
         </section>

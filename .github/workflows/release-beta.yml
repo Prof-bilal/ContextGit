@@ -103,7 +103,12 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p release
-          find release-artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec cp {} release/ \;
+          find release-artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -print0 | while IFS= read -r -d '' file; do
+            platform="$(basename "$(dirname "$file")")"
+            name="$(basename "$file")"
+            safe_name="${name// /-}"
+            cp "$file" "release/${platform}-${safe_name}"
+          done
           sha256sum release/* > release/SHA256SUMS
       - name: Publish prerelease
         env:
