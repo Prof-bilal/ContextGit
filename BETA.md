@@ -1,4 +1,4 @@
-# ContextGit `0.1.0-beta.2`
+# ContextGit `0.1.0-beta.3`
 
 This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.

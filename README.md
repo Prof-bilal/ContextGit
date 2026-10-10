@@ -8,7 +8,7 @@ ContextGit pairs a **conversation DAG** (content-addressed, immutable commits of
 messages) with a **git worktree per agent run**, so parallel agents work in
 isolated checkouts and their reasoning merges together with their diffs.
 
-> Status: `0.1.0-beta.2` beta. Interfaces and schema may change.
+> Status: `0.1.0-beta.3` beta. Interfaces and schema may change.
 
 ## Full workbench archive
 

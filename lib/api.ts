@@ -506,6 +506,10 @@ export interface TaskInput {
 
 function repositoryHeaders(): Record<string, string> {
   const status = typeof window !== "undefined" ? window.contextgit?.getStatus().status : undefined;
+  if (status?.state !== "ready") {
+    expectedRepository = undefined;
+    return {};
+  }
   if (status?.state === "ready" && status.repoId) {
     // The Electron main process rebinds the local backend when the active
     // project changes. Adopt the new identity in the existing renderer

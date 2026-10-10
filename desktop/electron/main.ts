@@ -35,6 +35,11 @@ import { UPDATE_RELEASE_URL } from "../shared/update";
 import { ContextGitUpdater } from "./updater";
 
 const isDev = !app.isPackaged;
+// Keep local development state separate from an installed release. Without
+// this, `npm run dev` and the packaged app share projects.json, assets, usage,
+// and other userData, making a folder opened in development appear in the
+// downloaded app.
+if (isDev) app.setPath("userData", path.join(app.getPath("appData"), "ContextGit-dev"));
 const repoRoot = path.resolve(app.getAppPath(), "..");
 const backendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
 const apiBase = `http://127.0.0.1:${backendPort}`;

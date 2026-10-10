@@ -227,7 +227,7 @@ def create_app(
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": "Backend repository changed. Reopen the workspace to continue.",
+                    "error": "Backend repository changed. Reconnecting to the active workspace.",
                     "type": "RepositoryMismatch",
                 },
             )
