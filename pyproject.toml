@@ -46,6 +46,7 @@ export = [
     "weasyprint>=60",
 ]
 dev = [
+    "mcp>=2",
     "pytest>=8",
     "pytest-cov>=5",
     "hypothesis>=6",
