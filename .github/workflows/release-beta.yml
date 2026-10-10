@@ -84,7 +84,11 @@ jobs:
       - name: Build unpacked application
         run: npm run dist:dir --prefix desktop
       - name: Smoke test packaged application
+        if: runner.os != 'Linux'
         run: npm run smoke:packaged --prefix desktop
+      - name: Smoke test packaged application on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke:packaged --prefix desktop
       - name: Remove unpacked smoke-test directory
         run: npm run clean:release --prefix desktop
       - name: Build installers
