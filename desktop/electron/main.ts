@@ -775,6 +775,12 @@ app.whenReady().then(async () => {
       console.log("SMOKE_STATUS", JSON.stringify(status));
       console.log("SMOKE_PTY", pty);
       console.log("SMOKE_DOM", JSON.stringify(dom));
+      // app.exit() does not reliably wait for child processes on Windows.
+      // Stop the backend and PTYs explicitly before letting the runner remove
+      // the unpacked application directory.
+      ptys.killAll();
+      killInstalls();
+      await stopBackend().catch(cause => console.error("Smoke backend shutdown failed:", cause));
       app.exit(status.state === "ready" && pty === "pty-ok" && domOk ? 0 : 1);
     }, 14_000);
   }
