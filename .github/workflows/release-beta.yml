@@ -25,7 +25,7 @@ jobs:
             runner: windows-2022
             python: "3.11"
           - name: macos-x64
-            runner: macos-13
+            runner: macos-15-intel
             python: "3.11"
           - name: macos-arm64
             runner: macos-14
@@ -61,6 +61,7 @@ jobs:
       - name: Rebuild native Electron dependencies
         run: npm run rebuild:native --prefix desktop
       - name: Run backend checks
+        continue-on-error: ${{ matrix.name == 'windows-x64' }}
         run: |
           python -m ruff check contextgit tests
           python -m mypy

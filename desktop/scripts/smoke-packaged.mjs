@@ -27,7 +27,13 @@ if (!executable) throw new Error(`Packaged executable not found. Tried: ${candid
 
 const child = spawn(executable, process.platform === "linux" ? ["--no-sandbox"] : [], {
   cwd: root,
-  env: { ...process.env, CONTEXTGIT_SMOKE: "1" },
+  env: {
+    ...process.env,
+    CONTEXTGIT_SMOKE: "1",
+    // Give the packaged app a real project so the smoke test can exercise
+    // terminal startup, session creation, and Git-backed state.
+    CONTEXTGIT_WORKDIR: process.env.CONTEXTGIT_WORKDIR ?? root,
+  },
   stdio: "inherit",
 });
 child.on("error", (error) => { throw error; });
