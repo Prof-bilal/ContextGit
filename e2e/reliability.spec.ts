@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { electronExecutable } from "./electron-path";
 
 let app: ElectronApplication;
 let page: Page;
@@ -44,7 +45,7 @@ test.beforeAll(async () => {
   const port = (probe.address() as net.AddressInfo).port;
   await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
   app = await electron.launch({
-    executablePath: path.join(root, "desktop/node_modules/electron/dist/electron"),
+    executablePath: electronExecutable(root),
     args: [path.join(root, "desktop"), "--no-sandbox", `--user-data-dir=${path.join(directory, "profile")}`],
     env: { ...process.env, VITE_DEV_SERVER_URL: "", CONTEXTGIT_PORT: String(port), CONTEXTGIT_WORKDIR: project },
   });

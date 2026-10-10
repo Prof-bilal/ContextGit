@@ -76,7 +76,11 @@ jobs:
           npm audit --audit-level=high
           npm audit --prefix desktop --audit-level=high
       - name: Run beta desktop E2E
+        if: runner.os != 'Linux'
         run: npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1
+      - name: Run beta desktop E2E on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1
       - name: Build unpacked application
         run: npm run dist:dir --prefix desktop
       - name: Smoke test packaged application

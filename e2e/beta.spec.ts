@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { electronExecutable } from "./electron-path";
 
 let app: ElectronApplication;
 let page: Page;
@@ -15,7 +16,7 @@ test.beforeAll(async () => {
   fs.mkdirSync(project);
   fs.writeFileSync(path.join(project, "README.md"), "# Beta fixture\n");
   app = await electron.launch({
-    executablePath: path.resolve("desktop/node_modules/electron/dist/electron"),
+    executablePath: electronExecutable(),
     args: [path.resolve("desktop"), "--no-sandbox", `--user-data-dir=${path.join(directory, "profile")}`],
     env: { ...process.env, VITE_DEV_SERVER_URL: "", CONTEXTGIT_PORT: "8762", CONTEXTGIT_WORKDIR: project },
   });

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "../desktop/node_modules/esbuild";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { electronExecutable } from "./electron-path";
 
 let directory: string;
 let app: ElectronApplication;
@@ -17,7 +18,7 @@ test.beforeAll(async () => {
   });
   fs.writeFileSync(path.join(directory, "index.html"), '<!doctype html><link rel="stylesheet" href="renderer.css"><div id="root"></div><script src="renderer.js"></script>');
   fs.writeFileSync(path.join(directory, "main.cjs"), 'const {app,BrowserWindow}=require("electron"); app.whenReady().then(()=>{ const win=new BrowserWindow({width:1400,height:1000,webPreferences:{contextIsolation:true,nodeIntegration:false}}); win.loadFile(__dirname+"/index.html"); });');
-  app = await electron.launch({ executablePath: path.resolve("desktop/node_modules/electron/dist/electron"), args: [path.join(directory, "main.cjs"), "--no-sandbox"] });
+  app = await electron.launch({ executablePath: electronExecutable(), args: [path.join(directory, "main.cjs"), "--no-sandbox"] });
   page = await app.firstWindow();
   await expect(page.getByLabel("git draft")).toBeVisible();
 });
