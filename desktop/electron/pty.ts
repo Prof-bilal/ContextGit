@@ -51,10 +51,10 @@ export class PtyManager {
     const command = options.command === "" || options.command === "shell"
       ? null
       : preset?.command ?? options.command;
-    const taskPrompt = options.command === "opencode" ? options.input?.trim() : undefined;
-    const args = taskPrompt
-      ? [...(preset?.args ?? []), ...(options.extraArgs ?? []), "run", taskPrompt]
-      : [...(preset?.args ?? []), ...(options.extraArgs ?? [])];
+    // Keep OpenCode interactive. Its `run` subcommand is a headless/scripted
+    // mode and prints tool output as plain text instead of opening the TUI.
+    // Briefings are typed into the interactive prompt below after first paint.
+    const args = [...(preset?.args ?? []), ...(options.extraArgs ?? [])];
     const pty = spawn(command ?? defaultShell(), args, {
       name: "xterm-256color",
       cols: Math.max(20, options.cols),
@@ -63,10 +63,9 @@ export class PtyManager {
       env: { ...process.env, ...options.env } as Record<string, string>,
     });
     pty.onData((data) => this._onData(options.id, data));
-    // Team OpenCode sessions use `opencode run` above, so they submit the task
-    // as a CLI argument. Other harnesses keep the interactive initial-input
-    // path because their command-line prompt interfaces differ.
-    if (!taskPrompt && options.input && options.input.trim()) {
+    // Submit a briefing through the live terminal so OpenCode keeps its full
+    // interactive UI while still receiving role/team context automatically.
+    if (options.input && options.input.trim()) {
       const payload = `${options.input.trim()}\r`;
       let sent = false;
       let inputTimer: ReturnType<typeof setTimeout> | null = null;
