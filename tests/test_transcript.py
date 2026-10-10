@@ -219,6 +219,45 @@ def test_first_launch_is_not_blocked_by_a_missing_native_database(capture_repo):
     assert client.post(f"/api/v1/sessions/{session.id}/capture").json()["status"] == "missing"
 
 
+def test_session_detail_reads_current_native_messages_without_staging(capture_repo):
+    repo, session, database = capture_repo
+    repo.transcripts.bind(session.id, "one")
+    repo.transcripts.capture(session.id)
+    commit = repo.commit_staged(session.id)
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "UPDATE part SET data = ? WHERE id = 'one-1'",
+            (json.dumps({"type": "text", "text": "Current live reply"}),),
+        )
+        conn.execute(
+            "UPDATE message SET data = ? WHERE id = 'one-1'",
+            (json.dumps({"role": "assistant", "time": {}}),),
+        )
+    client = TestClient(create_app(repo=repo))
+    detail = client.get(f"/api/v1/sessions/{session.id}/detail").json()
+    assert detail["conversation_status"] == "live"
+    assert [item["role"] for item in detail["messages"]] == ["user", "assistant"]
+    assert detail["messages"][1]["content"] == "Current live reply"
+    assert detail["staged_messages"] == []
+    assert repo.staged(session.id) == []
+    assert repo.get_commit(commit.id).messages[1].content.startswith("Reply from one")
+    with pytest.raises(CaptureUnavailable):
+        repo.transcripts.capture(session.id)
+
+
+def test_unbound_session_detail_excludes_terminal_snapshots(capture_repo):
+    from contextgit.core.models import Message
+
+    repo, session, _ = capture_repo
+    repo.stage(session.id, [Message(role="tool", content="Old TUI usage snapshot")])
+    detail = TestClient(create_app(repo=repo)).get(
+        f"/api/v1/sessions/{session.id}/detail"
+    ).json()
+    assert detail["conversation_status"] == "unbound"
+    assert detail["messages"] == []
+    assert detail["staged_messages"] == []
+
+
 def test_10000_message_history_pages_are_ordered_and_bounded(capture_repo):
     from contextgit.core.models import Message
 

@@ -586,14 +586,32 @@ def create_app(
             # Plain chat sessions and non-git projects have no worktree status.
             workspace = None
         memory = current.project_memory(session.project_path) if session.project_path else None
+        conversation = current.build_context(head) if head else []
+        staged = current.staged(session.id)
+        conversation_status = "saved"
+        conversation_error = None
+        if session.agent == "opencode":
+            from contextgit.integration.transcript import CaptureUnavailable
+
+            try:
+                conversation = current.transcripts.conversation(session.id)
+                staged = []  # Native history already includes staged and committed text.
+                conversation_status = "live"
+            except CaptureUnavailable as error:
+                conversation_status = error.status
+                conversation_error = str(error)
         return {
             "session": session.model_dump(mode="json"),
+            "conversation_status": conversation_status,
+            "conversation_error": conversation_error,
             "messages": [
                 item.model_dump(mode="json")
-                for item in (current.build_context(head) if head else [])
+                for item in conversation
+                if item.role in {"user", "assistant"}
             ],
             "staged_messages": [
-                item.model_dump(mode="json") for item in current.staged(session.id)
+                item.model_dump(mode="json") for item in staged
+                if item.role in {"user", "assistant"}
             ],
             "agent_run": (
                 {
@@ -655,6 +673,14 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            # Provider adapters wrap transport and provider-response failures in
+            # RuntimeError. Keep this an actionable gateway error instead of an
+            # opaque Starlette 500 page.
+            raise HTTPException(
+                status_code=502,
+                detail=f"Project-memory provider failed: {exc}",
+            ) from exc
         return memory.model_dump(mode="json")
 
     @app.post("/api/v1/project-memory/{revision_id}/approve")

@@ -11,6 +11,7 @@ export default function ProjectMemoryDialog({
   busy,
   error,
   onApprove,
+  onConfigure,
   onClose,
 }: {
   projectName: string;
@@ -18,13 +19,17 @@ export default function ProjectMemoryDialog({
   busy: boolean;
   error: string | null;
   onApprove: () => void;
+  onConfigure?: () => void;
   onClose: () => void;
 }) {
   return (
     <div className="cg-memory-modal-backdrop" role="presentation">
       <section className="cg-memory-modal" role="dialog" aria-modal="true" aria-labelledby="cg-memory-title">
         <header className="cg-memory-modal-head"><div><span className="cg-kicker">Project knowledge preview</span><h2 id="cg-memory-title">Synthesize {projectName}</h2></div><button type="button" className="cg-icon-btn" aria-label="Close" onClick={onClose}>×</button></header>
-        {error && <p className="cg-banner" role="alert">{error}</p>}
+        {error && <>
+          <p className="cg-banner" role="alert">{error}</p>
+          {onConfigure && <button type="button" className="cg-btn" onClick={onConfigure}>Configure Agnes AI or OpenRouter</button>}
+        </>}
         {!memory && !error && <p className="cg-empty-note">Reading the project sessions…</p>}
         {memory && <div className="cg-memory-preview">
           <p className="cg-memory-summary">{memory.summary || "No summary was generated."}</p>

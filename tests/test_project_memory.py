@@ -10,6 +10,11 @@ from contextgit.core.repo import Repo
 from contextgit.llm.fake import FakeProvider
 
 
+class FailingProvider(FakeProvider):
+    def complete(self, messages, **opts):
+        raise RuntimeError("HTTP 401: invalid provider key")
+
+
 def memory_reply() -> str:
     return json.dumps(
         {
@@ -114,3 +119,18 @@ def test_project_memory_rejects_cross_project_sources(tmp_path: Path) -> None:
     )
     assert response.status_code == 400
     assert "belong to the selected project" in response.json()["detail"]
+
+
+def test_project_memory_provider_failure_is_actionable_not_internal_error(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "contextgit")
+    project = tmp_path / "project"
+    project.mkdir()
+    client = TestClient(create_app(repo=repo, provider=FailingProvider()))
+
+    response = client.post(
+        "/api/v1/project-memory/synthesize",
+        json={"project_path": str(project)},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Project-memory provider failed: HTTP 401: invalid provider key"

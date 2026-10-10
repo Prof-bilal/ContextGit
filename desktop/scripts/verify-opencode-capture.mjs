@@ -50,6 +50,13 @@ assert sys.argv[3] in messages[1].content, messages[1].content
 commit = repo.commit_staged(sid)
 assert repo.transcripts.capture(sid) == [], "Repeated checkpoint duplicated history"
 assert repo.get_commit(commit.id).messages == messages
+from fastapi.testclient import TestClient
+from contextgit.api.app import create_app
+detail = TestClient(create_app(repo=repo)).get(f"/api/v1/sessions/{sid}/detail").json()
+assert detail["conversation_status"] == "live", detail
+assert sys.argv[3] in detail["messages"][-1]["content"], detail["messages"]
+assert all(m["role"] in {"user", "assistant"} for m in detail["messages"])
+assert repo.staged(sid) == [], "Viewing live history must not stage messages"
 print(json.dumps({"native_id": repo.transcripts.binding(sid)["native_id"], "roles": [m.role for m in messages], "commit": commit.id}))
 `, root, sessionId, index === 0 ? "FIRST_CAPTURE_OK" : "RESUME_CAPTURE_OK"));
     if (nativeId && nativeId !== result.native_id) throw new Error("Resume changed conversation identity");

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Session } from "@/lib/api";
+import { api, type ProviderInfo, type Session } from "@/lib/api";
 import BranchDialog from "../git/BranchDialog";
 import { commitsOnBranch } from "../git/branchCommits";
 import DiffSheet from "../git/DiffSheet";
@@ -12,12 +12,14 @@ import GitRail from "../rail/GitRail";
 import GitView, { type CommitFilter } from "../views/GitView";
 import SessionDetailView from "../views/SessionDetailView";
 import ProjectMemoryDialog from "../views/ProjectMemoryDialog";
+import AddProviderDialog from "../chat/AddProviderDialog";
+import { isReady } from "../chat/providerStatus";
 import { useWorkbench } from "../WorkbenchContext";
 import { FeaturePorts } from "../FeaturePorts";
 
 
 export default function GitFeature() {
-  const { snapshot, refreshRepo, repoLoading, refreshTrash, repoError, sessions, projects, activePath, refresh: refreshSessions, model } = useWorkbench();
+  const { snapshot, refreshRepo, repoLoading, refreshTrash, repoError, sessions, projects, activePath, refresh: refreshSessions, model, setModel, providers, addProvider, removeProvider, testProvider, fetchProviderModels } = useWorkbench();
   const branches = snapshot?.branches ?? [];
   const commits = [...(snapshot?.commits ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
@@ -45,6 +47,7 @@ export default function GitFeature() {
   const [memoryPreview, setMemoryPreview] = useState<import("@/lib/api").ProjectMemoryRevision | null>(null);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [memoryProviderOpen, setMemoryProviderOpen] = useState(false);
   const [conversationOpen, setConversationOpen] = useState(false);
 
   const projectSessions = useMemo(
@@ -146,6 +149,18 @@ export default function GitFeature() {
 
   const synthesizeMemory = async () => {
     if (!selectedProject) return;
+    const allowed = providers.filter((provider) => provider.id === "agnes" || provider.id === "openrouter");
+    const selected = allowed.find((provider) => provider.id === model.providerId) ?? allowed.find(isReady);
+    if (!selected || !isReady(selected)) {
+      setMemoryOpen(true);
+      setMemoryPreview(null);
+      setMemoryError("Choose and configure Agnes AI or OpenRouter before synthesizing project knowledge.");
+      setMemoryProviderOpen(true);
+      return;
+    }
+    if (model.providerId !== selected.id) {
+      setModel({ providerId: selected.id, modelId: selected.default_model ?? selected.models[0] ?? "" });
+    }
     setMemoryOpen(true);
     setMemoryPreview(null);
     setMemoryError(null);
@@ -154,8 +169,8 @@ export default function GitFeature() {
       const preview = await api.synthesizeProjectMemory({
         projectPath: selectedProject,
         sessionIds: projectSessions.map((session) => session.id),
-        provider: model.providerId || undefined,
-        model: model.modelId || undefined,
+        provider: selected.id,
+        model: model.providerId === selected.id ? model.modelId || selected.default_model || undefined : selected.default_model || undefined,
       });
       setMemoryPreview(preview);
     } catch (cause) {
@@ -354,7 +369,23 @@ export default function GitFeature() {
         onClose={() => setMergeOpen(false)}
       />
     )}
-    {memoryOpen && <ProjectMemoryDialog projectName={projectLabel} memory={memoryPreview} busy={memoryBusy} error={memoryError} onApprove={() => void approveMemory()} onClose={() => { if (!memoryBusy) setMemoryOpen(false); }} />}
+    {memoryOpen && <ProjectMemoryDialog projectName={projectLabel} memory={memoryPreview} busy={memoryBusy} error={memoryError} onConfigure={() => { setMemoryOpen(false); setMemoryProviderOpen(true); }} onApprove={() => void approveMemory()} onClose={() => { if (!memoryBusy) setMemoryOpen(false); }} />}
+    {memoryProviderOpen && <AddProviderDialog
+      providers={providers.filter((provider) => provider.id === "agnes" || provider.id === "openrouter")}
+      capability="chat"
+      title="Configure knowledge provider"
+      add={addProvider}
+      remove={removeProvider}
+      test={testProvider}
+      fetchModels={fetchProviderModels}
+      onSaved={(provider?: ProviderInfo) => {
+        if (provider) setModel({ providerId: provider.id, modelId: provider.default_model ?? provider.models[0] ?? "" });
+        setMemoryProviderOpen(false);
+        setMemoryOpen(true);
+        setMemoryError("Provider saved. Click Synthesize knowledge again to generate a preview.");
+      }}
+      onClose={() => setMemoryProviderOpen(false)}
+    />}
     {conversationOpen && activeCommit && <CommitConversationDialog commit={activeCommit} onClose={() => setConversationOpen(false)} />}
   </>;
   return <FeaturePorts id="git"

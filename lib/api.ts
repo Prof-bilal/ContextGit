@@ -324,6 +324,8 @@ export interface ProjectMemoryPreview {
 }
 
 export interface SessionDetail {
+  conversation_status?: string;
+  conversation_error?: string | null;
   session: Session;
   messages: Message[];
   staged_messages: Message[];

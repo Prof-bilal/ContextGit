@@ -47,7 +47,7 @@ def router(get_repo: Callable[[], Repo]) -> APIRouter:
     @routes.put("/sessions/{session_id}/capture")
     def bind(session_id: str, body: BindingRequest, repo: Repo = repo_dep) -> dict[str, Any]:
         try:
-            repo.transcripts.bind(session_id, body.native_id)
+            repo.transcripts.bind(session_id, body.native_id, require_complete=False)
             return state(session_id, repo)
         except CaptureUnavailable as error:
             raise HTTPException(409, {"status": error.status, "message": str(error)}) from error

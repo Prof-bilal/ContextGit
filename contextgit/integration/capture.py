@@ -96,3 +96,17 @@ class TranscriptService:
                 item for item in pending if (item.role, item.content, item.created_at) not in keys
             ]
             return self.repo.stage(session_id, additions) if additions else staged
+
+    def conversation(self, session_id: str) -> list[Message]:
+        """Read live text without staging or altering checkpoint history."""
+        binding = self.binding(session_id)
+        if not binding:
+            raise CaptureUnavailable(
+                "unbound", "Link this session's OpenCode conversation to view its current messages."
+            )
+        return [
+            item.message
+            for item in opencode_messages(
+                binding["native_id"], binding["directory"], require_complete=False
+            )
+        ]

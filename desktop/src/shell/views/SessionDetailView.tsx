@@ -1,19 +1,20 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type Session, type SessionDetail } from "@/lib/api";
 import { Chip, Field, StatusIcon } from "../primitives";
+import "../git/transcript.css";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return <section className="cg-session-detail-section"><header><span className="cg-kicker">{title}</span></header>{children}</section>;
 }
 
 function MessageList({ messages }: { messages: SessionDetail["messages"] }) {
-  if (messages.length === 0) return <p className="cg-empty-note">No committed conversation yet.</p>;
-  return <div className="cg-session-detail-messages">{messages.map((message, index) => (
-    <article className={`cg-session-detail-message cg-session-detail-message-${message.role}`} key={`${message.created_at ?? "message"}-${index}`}>
-      <span>{message.role}</span>
-      <p>{message.content}</p>
-    </article>
-  ))}</div>;
+  const conversation = messages.filter(message => message.role === "user" || message.role === "assistant");
+  if (conversation.length === 0) return <p className="cg-empty-note">No conversation messages available yet.</p>;
+  return <ol className="cg-history-transcript">{conversation.map((message, index) => (
+    <li data-role={message.role} key={`${message.created_at ?? "message"}-${index}`}>
+      <div>{message.content}</div>
+    </li>
+  ))}</ol>;
 }
 
 export default function SessionDetailView({
@@ -27,25 +28,41 @@ export default function SessionDetailView({
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const [candidates, setCandidates] = useState<{ id: string; title: string }[]>([]);
+  const [nativeId, setNativeId] = useState("");
+  const [linking, setLinking] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setDetail(null);
     setError(null);
-    void api.sessionDetail(session.id).then((value) => {
-      if (alive) setDetail(value);
-    }).catch((cause: unknown) => {
-      if (alive) setError(cause instanceof Error ? cause.message : "Could not load session detail");
-    });
-    return () => { alive = false; };
-  }, [session.id]);
+    setCandidates([]);
+    setNativeId("");
+    const load = async () => {
+      try {
+        const value = await api.sessionDetail(session.id);
+        if (alive) { setDetail(value); setError(null); }
+        if (alive && value.conversation_status === "unbound") {
+          const state = await api.captureState(session.id);
+          if (alive) setCandidates(state.candidates ?? []);
+        }
+      } catch (cause) {
+        if (alive) setError(cause instanceof Error ? cause.message : "Could not load session detail");
+      }
+      if (alive && session.agent === "opencode") timer = window.setTimeout(() => void load(), 5000);
+    };
+    let timer: number | undefined;
+    void load();
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [session.id, session.agent, refresh]);
 
   return (
     <div className="cg-session-detail">
       <header className="cg-session-detail-toolbar">
         <button type="button" className="cg-btn cg-btn-sm" onClick={onBack}>← Project history</button>
         <span className="cg-toolbar-spacer" />
-        <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>Refresh</button>
+        <button type="button" className="cg-btn cg-btn-sm" onClick={() => { setRefresh(value => value + 1); onRefresh(); }}>Refresh</button>
       </header>
       <header className="cg-session-detail-header">
         <div>
@@ -59,7 +76,22 @@ export default function SessionDetailView({
       {!detail && !error && <p className="cg-empty-note">Loading the session record…</p>}
       {detail && <div className="cg-session-detail-grid">
         <main>
-          <Section title="Conversation"><MessageList messages={[...detail.messages, ...detail.staged_messages]} /></Section>
+          <Section title="Conversation">
+            {detail.conversation_error && <p className="cg-empty-note" role="status">{detail.conversation_error} {detail.messages.length > 0 && "Showing saved checkpoint messages only."}</p>}
+            {detail.conversation_status === "unbound" && candidates.length > 0 && <div className="cg-inline">
+              <select aria-label="OpenCode conversation" value={nativeId} onChange={event => setNativeId(event.target.value)}>
+                <option value="">Select the current CLI conversation</option>
+                {candidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.title} · {candidate.id}</option>)}
+              </select>
+              <button className="cg-btn" disabled={!nativeId || linking} onClick={async () => {
+                setLinking(true);
+                try { await api.bindConversation(session.id, nativeId); setRefresh(value => value + 1); }
+                catch (cause) { setError(cause instanceof Error ? cause.message : "Could not link conversation"); }
+                finally { setLinking(false); }
+              }}>{linking ? "Linking…" : "Link conversation"}</button>
+            </div>}
+            <MessageList messages={[...detail.messages, ...detail.staged_messages]} />
+          </Section>
           {detail.agent_run && <Section title="Execution">
             <div className="cg-session-detail-run-head"><strong>{detail.agent_run.task}</strong><Chip>{detail.agent_run.status}</Chip></div>
             {detail.agent_run.plan?.summary && <p>{detail.agent_run.plan.summary}</p>}

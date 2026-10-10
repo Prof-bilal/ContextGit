@@ -67,6 +67,8 @@ def opencode_messages(
     native_id: str,
     directory: str,
     until: datetime | None = None,
+    *,
+    require_complete: bool = True,
 ) -> list[NativeMessage]:
     """Only text parts; exact ID plus project ownership, including completed replies."""
     try:
@@ -112,7 +114,7 @@ def opencode_messages(
                     interrupted = True
                     pending = True
                     continue  # Aborted/error text is not a completed AI response.
-                if role == "assistant" and (not completed or completed > end):
+                if role == "assistant" and (not completed or completed > end) and require_complete:
                     if until:
                         continue
                     raise CaptureUnavailable(
@@ -134,7 +136,7 @@ def opencode_messages(
                         ),
                     )
                 )
-            if not until and (pending or not result):
+            if require_complete and not until and (pending or not result):
                 raise CaptureUnavailable(
                     "interrupted" if interrupted else "incomplete",
                     "The OpenCode reply was interrupted. Resume it before checkpointing."

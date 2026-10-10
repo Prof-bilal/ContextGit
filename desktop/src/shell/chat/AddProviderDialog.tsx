@@ -49,7 +49,7 @@ export default function AddProviderDialog({
   remove: (id: string) => Promise<void>;
   test: (id: string) => Promise<ProviderTestResult>;
   fetchModels: (id: string) => Promise<ProviderModelsResult>;
-  onSaved: () => void;
+  onSaved: (provider?: ProviderInfo) => void;
   onClose: () => void;
 }) {
   const presets = useMemo(
@@ -91,7 +91,7 @@ export default function AddProviderDialog({
     setApiKey("");
   };
 
-  const probe = async (id: string) => {
+  const probe = async (id: string, saved?: ProviderInfo) => {
     const result = await test(id);
     setTested(result);
     if (result.ok) {
@@ -101,7 +101,7 @@ export default function AddProviderDialog({
         setModels(null);
       }
     }
-    onSaved();
+    onSaved(saved);
   };
 
   const save = async () => {
@@ -120,7 +120,7 @@ export default function AddProviderDialog({
       });
       setCurrent(provider);
       setApiKey("");
-      await probe(provider.id);
+      await probe(provider.id, provider);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the provider");
     } finally {
