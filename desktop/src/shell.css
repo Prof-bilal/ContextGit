@@ -1516,8 +1516,48 @@ button.cg-chip[aria-pressed="true"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cg-pane-role {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--cg-signal) 42%, var(--cg-line));
+  border-radius: 999px;
+  color: var(--cg-signal-hot);
+  background: color-mix(in srgb, var(--cg-signal) 8%, transparent);
+  font-size: 0.61rem;
+}
 .cg-pane-head .cg-toolbar-spacer {
   flex: 1;
+}
+.cg-pane-context {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.28rem 0.65rem;
+  border-bottom: 1px solid var(--cg-line);
+  background: color-mix(in srgb, var(--cg-signal) 4%, var(--cg-term-bg));
+}
+.cg-pane-context-label {
+  color: var(--cg-ink-3);
+  font: 600 0.59rem/1 "Martian Mono", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cg-pane-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+.cg-pane-skill {
+  padding: 0.12rem 0.38rem;
+  border: 1px solid var(--cg-line);
+  border-radius: 999px;
+  color: var(--cg-ink-2);
+  background: var(--cg-surface-2);
+  font: 500 0.62rem/1.2 "Schibsted Grotesk", sans-serif;
 }
 
 .cg-term {

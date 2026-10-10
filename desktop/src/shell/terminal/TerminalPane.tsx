@@ -8,6 +8,7 @@ import { LuX } from "react-icons/lu";
 
 import { api, type Session } from "@/lib/api";
 import { harnessFor } from "../../../shared/harnesses";
+import { roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, StatusIcon } from "../primitives";
 import HarnessInstall from "./HarnessInstall";
@@ -107,6 +108,15 @@ export default function TerminalPane({
   const disposeRef = useRef<(() => void) | null>(null);
   const restartingRef = useRef(false);
   const command = session.agent ?? "shell";
+  const role = roleFor(session.role);
+  const loadedSkills = session.skills.length > 0
+    ? session.skills
+    : role
+      ? roleSkills(role).map((skill) => skill.label)
+      : [];
+  const roleBriefing = initialInput ?? (role && loadedSkills.length > 0
+    ? `You are acting as a ${role.label} on "${session.name}". Apply these skills on this run: ${loadedSkills.join(", ")}. Read AGENTS.md for your file scope and the other runs.`
+    : undefined);
   /** True when this harness must be installed (npm) before its terminal starts. */
   const needsInstall = Boolean(harnessFor(command)?.npmPackage);
   const [nonce, setNonce] = useState(0);
@@ -228,7 +238,7 @@ export default function TerminalPane({
         // The run's own worktree when it has one, else the workspace folder.
         cwd: session.worktree_path ?? session.project_path ?? undefined,
         // Team mode hands the agent its task as the first line it sees.
-        input: initialInput,
+        input: roleBriefing,
         // Isolation + identity: its own port, and the task the MCP tools default to.
         env: {
           ...(session.port ? { PORT: String(session.port) } : {}),
@@ -424,6 +434,7 @@ export default function TerminalPane({
         <AgentMark agent={session.agent ?? "shell"} label={agentMonogram(session.agent)} />
         <span>{agentLabel(session.agent)}</span>
         <span className="cg-pane-cwd">{session.name}</span>
+        {role && <span className="cg-pane-role" title={`Role: ${role.label}`}>{role.label}</span>}
         <span className="cg-toolbar-spacer" />
         <span className="cg-pane-staged">{stagedCount} staged</span>
         <button type="button" className="cg-btn cg-btn-sm" onClick={() => void stageOutput()} disabled={stagingOutput}>
@@ -440,6 +451,14 @@ export default function TerminalPane({
           <LuX aria-hidden="true" />
         </button>
       </header>
+      {role && loadedSkills.length > 0 && (
+        <div className="cg-pane-context" data-testid="run-skills" aria-label={`Skills for ${role.label}`}>
+          <span className="cg-pane-context-label">Skills loaded</span>
+          <div className="cg-pane-skill-list">
+            {loadedSkills.map((skill) => <span className="cg-pane-skill" key={skill}>{skill}</span>)}
+          </div>
+        </div>
+      )}
       {exited && (
         <p className="cg-pane-exited" role="status">
           <span>Process exited.</span>
