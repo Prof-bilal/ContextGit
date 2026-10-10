@@ -69,10 +69,20 @@ export function UpdateBanner() {
 
 export function UpdateCheckButton() {
   const [checking, setChecking] = useState(false);
-  const check = async () => {
+  const update = async () => {
     if (!window.contextgit) return;
     setChecking(true);
-    try { await window.contextgit.checkForUpdates(); } finally { setChecking(false); }
+    try {
+      let result = await window.contextgit.checkForUpdates();
+      if (result.state === "available") {
+        if (result.supported === false) {
+          await window.contextgit.openUpdateRelease();
+        } else {
+          result = await window.contextgit.downloadUpdate();
+          if (result.state === "downloaded") await window.contextgit.installUpdate();
+        }
+      }
+    } finally { setChecking(false); }
   };
-  return <button type="button" className="cg-update-check" onClick={() => void check()} disabled={checking}>{checking ? "Checking…" : "Check for updates"}</button>;
+  return <button type="button" className="cg-update-check" onClick={() => void update()} disabled={checking}>{checking ? "Updating…" : "Update app"}</button>;
 }
