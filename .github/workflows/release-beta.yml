@@ -93,6 +93,9 @@ jobs:
       - name: Smoke test packaged application on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run smoke:packaged --prefix desktop
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
       - name: Close packaged app on Windows
         if: runner.os == 'Windows'
         shell: pwsh
