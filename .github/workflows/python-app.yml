@@ -51,11 +51,16 @@ jobs:
         cache: npm
         cache-dependency-path: |
           package-lock.json
+          website/package-lock.json
           desktop/package-lock.json
     - run: npm ci
+    - run: npm run check:structure
+    - run: npm run check:release
+    - run: npm ci --prefix website
     - run: npm ci --prefix desktop
     - name: Install desktop system dependencies
       run: npx playwright install --with-deps chromium
+    - run: npm run build --prefix website
     - run: npm run typecheck --prefix desktop
     - run: npm run build:renderer --prefix desktop
     - run: npm run build:electron --prefix desktop

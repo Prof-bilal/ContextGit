@@ -19,7 +19,7 @@ import {
   SiOpencode,
 } from "react-icons/si";
 
-import type { SessionStatus } from "@/lib/api";
+import type { SessionStatus } from "@/shared/api";
 import { CommandCodeMark, FreebuffMark, KiloMark, PiMark } from "./marks/brand";
 
 /** Real brand mark per agent / provider key; unknown keys fall back to a letter. */

@@ -8,7 +8,7 @@ import { validateBackend } from "../electron/backendHealth";
 import { codexLimits, claudeUsage, jsonRecords, geminiCounters, aiderReport, statsTotals } from "../electron/usageParsers";
 import { readCodex, UsageManager, SharedCodexUsage } from "../electron/usage";
 import { rendererCsp } from "../shared/security";
-import { apiRequest, ApiError, requestTimeout } from "../../lib/apiRequest";
+import { apiRequest, ApiError, requestTimeout } from "../../shared/apiRequest";
 import { PollingTask } from "../src/shell/pollingTask";
 import { BackendRestart, launchBackend, terminateBackend } from "../electron/backendProcess";
 import { once } from "node:events";
@@ -317,7 +317,7 @@ test("observer events use file observation time and ignore unchanged or partial 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cg-live-usage-"));
   fs.writeFileSync(path.join(directory, "usage-pi.mjs"), "");
   const manager = new UsageManager(directory, directory);
-  const updates: import("../../lib/api").HarnessLimits[] = [];
+  const updates: import("../../shared/api").HarnessLimits[] = [];
   const unsubscribe = manager.subscribe(value => updates.push(value));
   try {
     const launch = manager.prepare("pi-live", "session", "pi", directory);
@@ -359,7 +359,7 @@ if (request.method==='account/rateLimits/read') {
 }
 }});
 `, { mode: 0o700 });
-  const updates: import("../../lib/api").HarnessLimits[] = [];
+  const updates: import("../../shared/api").HarnessLimits[] = [];
   const connection = new SharedCodexUsage(value => updates.push(value), command);
   try {
     assert.equal((await connection.read()).windows[0].used, 22);
@@ -371,7 +371,7 @@ if (request.method==='account/rateLimits/read') {
 
 test("session totals and account quotas keep independent keys and reject old launches", async () => {
   const { mergeUsageReadings, displayedUsageReadings } = await import("../shared/usage");
-  const value: import("../../lib/api").HarnessLimits = {
+  const value: import("../../shared/api").HarnessLimits = {
     harness: "claude", label: "Claude Code", scope: "session", session_id: "selected", launch_id: "new",
     launch_started_at: "2026-10-08T10:00:00Z", fetched_at: "2026-10-08T10:05:00Z",
     state: "available", supported: true, signed_in: true, source: "status line", plan: null, credits: null, message: null,

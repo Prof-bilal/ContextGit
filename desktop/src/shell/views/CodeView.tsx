@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LuPlus } from "react-icons/lu";
 
-import type { FleetEntry, Session } from "@/lib/api";
+import type { FleetEntry, Session } from "@/shared/api";
 import type { Workspace } from "../../../shared/workspace";
 import { Chip } from "../primitives";
 import { openSessions } from "../terminal/PaneCanvas";

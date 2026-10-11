@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { LuCornerDownLeft, LuPlus } from "react-icons/lu";
 
-import type { ProviderInfo } from "@/lib/api";
+import type { ProviderInfo } from "@/shared/api";
 import { AgentMark, Chip } from "./primitives";
 import { brandFor, type ModelSelection } from "./providers";
 

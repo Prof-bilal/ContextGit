@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { Branch, Commit } from "@/lib/api";
+import type { Branch, Commit } from "@/shared/api";
 import { commitsOnBranch } from "./branchCommits";
 
 /** A repo accumulates one branch per run; cap the lanes so the graph stays legible. */

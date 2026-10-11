@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LuPlus } from "react-icons/lu";
 
-import type { Session, Task } from "@/lib/api";
+import type { Session, Task } from "@/shared/api";
 
 import { Chip } from "../primitives";
 import TeamBoard from "../team/TeamBoard";

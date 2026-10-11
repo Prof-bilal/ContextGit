@@ -1,4 +1,4 @@
-import type { Commit } from "@/lib/api";
+import type { Commit } from "@/shared/api";
 
 /** Commits reachable from a branch head, newest first (walks parent links). */
 export function commitsOnBranch(commits: Commit[], headId: string): Commit[] {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { api, type Task, type TaskInput } from "@/lib/api";
+import { api, type Task, type TaskInput } from "@/shared/api";
 
 import { ROLES, roleFor, roleSkills } from "../../../shared/roles";
 import { AGENTS, DEFAULT_AGENT } from "../agents";

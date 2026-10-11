@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, type Session, type SessionDetail } from "@/lib/api";
+import { api, type Session, type SessionDetail } from "@/shared/api";
 import { Chip, Field, StatusIcon } from "../primitives";
 import "../git/transcript.css";
 

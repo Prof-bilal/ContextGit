@@ -1,4 +1,4 @@
-import type { ProviderCapability, ProviderInfo } from "@/lib/api";
+import type { ProviderCapability, ProviderInfo } from "@/shared/api";
 
 import { AgentMark } from "../primitives";
 import { brandFor } from "../providers";

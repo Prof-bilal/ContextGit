@@ -1,6 +1,6 @@
 import { mergeUsageReadings, displayedUsageReadings } from "../../../shared/usage";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type HarnessLimits, type Session } from "@/lib/api";
+import { api, type HarnessLimits, type Session } from "@/shared/api";
 
 const BACKEND_HARNESSES = new Set(["freebuff", "commandcode", "cline"]);
 

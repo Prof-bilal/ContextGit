@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { api, type MergeQueueEntry } from "@/lib/api";
+import { api, type MergeQueueEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 

@@ -7,7 +7,7 @@ import type {
   ProviderInput,
   ProviderModelsResult,
   ProviderTestResult,
-} from "@/lib/api";
+} from "@/shared/api";
 
 import Modal from "../Modal";
 import { AgentMark, Chip } from "../primitives";

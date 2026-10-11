@@ -2,7 +2,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import MergeAgentPanel from "../terminal/MergeAgentPanel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuX } from "react-icons/lu";
-import { api, ApiError, type Message, type Session, type Task } from "@/lib/api";
+import { api, ApiError, type Message, type Session, type Task } from "@/shared/api";
 import { ROLE_BY_ID, roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel } from "../agents";
 import { Chip, Field, StatusIcon } from "../primitives";

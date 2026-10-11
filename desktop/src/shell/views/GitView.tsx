@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import type { IconType } from "react-icons";
 import { LuCircle, LuCircleDot, LuGitMerge, LuPencilLine } from "react-icons/lu";
 
-import type { Branch, Commit, RepoSnapshot } from "@/lib/api";
+import type { Branch, Commit, RepoSnapshot } from "@/shared/api";
 import type { ActivityDay } from "../charts/ActivityHeatmap";
 import { Chip, MiniSeg } from "../primitives";
 

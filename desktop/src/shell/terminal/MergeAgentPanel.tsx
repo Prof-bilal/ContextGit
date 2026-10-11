@@ -1,7 +1,7 @@
 import { useBackendPolling } from "../useBackendPolling";
 import HarnessLimitsPanel from "./HarnessLimitsPanel";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type IntegrationJob, type IntegrationSettings, type Session } from "@/lib/api";
+import { api, type IntegrationJob, type IntegrationSettings, type Session } from "@/shared/api";
 
 export default function MergeAgentPanel({ project, sessions }: { project: string; sessions: Session[] }) {
   const [settings, setSettings] = useState<IntegrationSettings | null>(null);

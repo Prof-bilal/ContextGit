@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { api, type ProviderInfo } from "@/lib/api";
+import { api, type ProviderInfo } from "@/shared/api";
 import type { AgentAction, Asset } from "../../../shared/assets";
 import AddProviderDialog from "../chat/AddProviderDialog";
 import Modal from "../Modal";

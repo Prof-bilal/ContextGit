@@ -54,8 +54,8 @@ contextBridge.exposeInMainWorld("contextgit", {
   ptyPresets: () => ipcRenderer.invoke("ctx:pty-presets") as Promise<string[]>,
   harnessUsage: (harness: string, sessionId?: string, refresh = false) => ipcRenderer.invoke("ctx:harness-usage", harness, sessionId, refresh),
   usageActivity: (visible: boolean, integrationActive = false) => ipcRenderer.send("ctx:usage-activity", visible, integrationActive),
-  onUsage: (callback: (value: import("../../lib/api").HarnessLimits) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, value: import("../../lib/api").HarnessLimits) => callback(value);
+  onUsage: (callback: (value: import("../../shared/api").HarnessLimits) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: import("../../shared/api").HarnessLimits) => callback(value);
     ipcRenderer.on("ctx:usage-update", listener);
     return () => ipcRenderer.removeListener("ctx:usage-update", listener);
   },

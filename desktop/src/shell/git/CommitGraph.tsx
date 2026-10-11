@@ -12,7 +12,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useMemo } from "react";
 
-import type { Branch, Commit } from "@/lib/api";
+import type { Branch, Commit } from "@/shared/api";
 
 type GraphNode = Node<{ commit: Commit; branches: string[] }, "commit">;
 type GraphEdge = Edge;

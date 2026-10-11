@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, type AgentRun } from "@/lib/api";
+import { api, type AgentRun } from "@/shared/api";
 import { AgentMark } from "../primitives";
 import WorkRunCard from "../chat/WorkRunCard";
 import { isReady } from "../chat/providerStatus";

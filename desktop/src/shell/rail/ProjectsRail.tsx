@@ -9,7 +9,7 @@ import {
   LuX,
 } from "react-icons/lu";
 
-import { api, type FleetEntry, type HarnessLimits, type Session } from "@/lib/api";
+import { api, type FleetEntry, type HarnessLimits, type Session } from "@/shared/api";
 import type { Workspace } from "../../../shared/workspace";
 import { ROLE_BY_ID, ROLES, roleFor, roleShort, roleSkills } from "../../../shared/roles";
 import { AGENTS, DEFAULT_AGENT, agentLabel, agentMonogram } from "../agents";

@@ -1,25 +1,19 @@
 {
-  "name": "contextgit-landing",
+  "name": "contextgit-tooling",
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "website:dev": "npm run dev --prefix website",
+    "website:build": "npm run build --prefix website",
+    "desktop:build": "npm run build --prefix desktop",
+    "check:structure": "node scripts/check-structure.mjs",
+    "check:release": "node scripts/check-release-metadata.mjs",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"
-  },
-  "dependencies": {
-    "@xyflow/react": "^12.12.0",
-    "next": "^16.4.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
     "@types/node": "^24.19.2",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
     "typescript": "^5.9.3"
   }
 }

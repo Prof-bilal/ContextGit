@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { api, type Session } from "@/lib/api";
+import { api, type Session } from "@/shared/api";
 import { Field } from "../primitives";
 import StorageRail, { type StorageCategory } from "../rail/StorageRail";
 import StorageView, { branchKey, closedKey, sessionKey } from "../views/StorageView";

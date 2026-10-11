@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Commit, type Message } from "@/lib/api";
+import { api, type Commit, type Message } from "@/shared/api";
 import Modal from "../Modal";
 import "./transcript.css";
 

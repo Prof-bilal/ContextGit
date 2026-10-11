@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuCornerUpLeft } from "react-icons/lu";
-import { api, type BranchBudget, type Message } from "@/lib/api";
+import { api, type BranchBudget, type Message } from "@/shared/api";
 import { commitsOnBranch } from "../git/branchCommits";
 import { AgentMark, Field } from "../primitives";
 import GovernorPanel from "../chat/GovernorPanel";

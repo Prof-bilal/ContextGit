@@ -1,4 +1,4 @@
-import type { Session, Task, TaskStatus } from "@/lib/api";
+import type { Session, Task, TaskStatus } from "@/shared/api";
 
 import { agentMonogram } from "../agents";
 import { AgentMark, Chip, StatusIcon } from "../primitives";

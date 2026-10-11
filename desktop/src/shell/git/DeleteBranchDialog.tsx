@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { api } from "@/lib/api";
+import { api } from "@/shared/api";
 import Modal from "../Modal";
 
 /** Confirm a branch delete. Commits survive; only the pointer goes. */

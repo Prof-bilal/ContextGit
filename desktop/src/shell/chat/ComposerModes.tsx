@@ -1,4 +1,4 @@
-import type { ProviderInfo } from "@/lib/api";
+import type { ProviderInfo } from "@/shared/api";
 
 import {
   ASPECTS,

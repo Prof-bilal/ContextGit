@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ProviderCapability, type Session } from "@/lib/api";
+import { type ProviderCapability, type Session } from "@/shared/api";
 import { type ModelSelection } from "./providers";
 import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, type ClosedPane } from "./storage/recentlyClosed";
 import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource, useProviderResource } from "./WorkbenchResources";
