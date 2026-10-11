@@ -1,5 +1,8 @@
 {
   "bundle": {
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../build/backend/contextgit-api.exe": "backend/contextgit-api.exe"
+    }
   }
 }
