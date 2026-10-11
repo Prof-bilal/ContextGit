@@ -641,6 +641,26 @@ class SqliteStorage:
             for row in rows
         ]
 
+    def append_terminal_transcript(self, session_id: str, content: str, updated_at: str) -> str:
+        if not content:
+            return self.terminal_transcript(session_id)
+        previous = self.terminal_transcript(session_id)
+        lines = (previous + content).splitlines(keepends=True)
+        bounded = "".join(lines[-10_000:])
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO terminal_transcripts(session_id, content, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(session_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
+                (session_id, bounded, updated_at),
+            )
+        return bounded
+
+    def terminal_transcript(self, session_id: str) -> str:
+        row = self._conn.execute(
+            "SELECT content FROM terminal_transcripts WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        return str(row[0]) if row else ""
+
     def clear_staged(self, session_id: str) -> None:
         with self._conn:
             self._conn.execute("DELETE FROM staging WHERE session_id = ?", (session_id,))

@@ -1,11 +1,13 @@
-# ContextGit `0.1.0-beta.6`
+# ContextGit `0.1.0-beta.7`
 
 This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
+This release publishes the Tauri desktop shell with its bundled backend.
 Linux users can choose the format that matches their distribution: AppImage or
 `.tar.gz` for any distro, `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL/SUSE,
 or `.pacman` for Arch/Omarchy/Manjaro. Download the installer for your CPU
 architecture and the matching `SHA256SUMS` file from the GitHub prerelease page.
+Linux beta installers are currently published as AppImage, `.deb`, and `.rpm`.
 
 For Omarchy and other Arch-based systems, use the **Linux x86_64 `.pacman`**
 package, or the x86_64 AppImage. Do not use an arm64/aarch64 package unless

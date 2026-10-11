@@ -319,6 +319,10 @@ class StageRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
 
 
+class TerminalTranscriptRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
 class CommitStagedRequest(BaseModel):
     """Commit the staged messages with an optional summary."""
 

@@ -8,10 +8,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function MessageList({ messages }: { messages: SessionDetail["messages"] }) {
-  const conversation = messages.filter(message => message.role === "user" || message.role === "assistant");
-  if (conversation.length === 0) return <p className="cg-empty-note">No conversation messages available yet.</p>;
-  return <ol className="cg-history-transcript">{conversation.map((message, index) => (
+  if (messages.length === 0) return <p className="cg-empty-note">No conversation messages available yet.</p>;
+  return <ol className="cg-history-transcript">{messages.map((message, index) => (
     <li data-role={message.role} key={`${message.created_at ?? "message"}-${index}`}>
+      <span className="cg-message-role">{message.role}</span>
       <div>{message.content}</div>
     </li>
   ))}</ol>;
@@ -92,6 +92,9 @@ export default function SessionDetailView({
             </div>}
             <MessageList messages={[...detail.messages, ...detail.staged_messages]} />
           </Section>
+          {detail.terminal_transcript && <Section title="Terminal transcript">
+            <pre className="cg-session-terminal-transcript">{detail.terminal_transcript}</pre>
+          </Section>}
           {detail.agent_run && <Section title="Execution">
             <div className="cg-session-detail-run-head"><strong>{detail.agent_run.task}</strong><Chip>{detail.agent_run.status}</Chip></div>
             {detail.agent_run.plan?.summary && <p>{detail.agent_run.plan.summary}</p>}

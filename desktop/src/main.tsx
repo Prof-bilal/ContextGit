@@ -7,10 +7,13 @@ import "./desktop.css";
 import "./shell.css";
 import "./shell/avatar/clay.css";
 
+import { installTauriBridge } from "./tauri-bridge";
 import App from "./App";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");
+
+installTauriBridge();
 
 createRoot(container).render(
   <StrictMode>

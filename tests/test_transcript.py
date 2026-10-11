@@ -255,7 +255,10 @@ def test_unbound_session_detail_excludes_terminal_snapshots(capture_repo):
     ).json()
     assert detail["conversation_status"] == "unbound"
     assert detail["messages"] == []
-    assert detail["staged_messages"] == []
+    assert [item["content"] for item in detail["staged_messages"]] == [
+        "Old TUI usage snapshot"
+    ]
+    assert detail["terminal_transcript"] == ""
 
 
 def test_10000_message_history_pages_are_ordered_and_bounded(capture_repo):

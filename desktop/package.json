@@ -1,7 +1,7 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
@@ -9,23 +9,27 @@
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "bun scripts/dev.mjs",
     "dev:mock": "vite",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
+    "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
+    "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
     "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:electron-updater --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
     "rebuild:native": "electron-builder install-app-deps",
-    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
-    "build:backend": "node scripts/build-backend.mjs",
+    "build": "bun run typecheck && bun run build:renderer && bun run build:electron",
+    "build:backend": "bun scripts/build-backend.mjs",
     "install:electron": "install-electron",
     "dist": "npm run build && npm run build:backend && electron-builder",
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
-    "checksums": "node scripts/checksums.mjs",
-    "clean:release": "node scripts/clean-release-dir.mjs",
-    "smoke:packaged": "node scripts/smoke-packaged.mjs",
-    "test:lifecycle": "node scripts/test-lifecycle.mjs",
-    "test:opencode:live": "node scripts/verify-opencode-capture.mjs",
-    "test:markdown": "node scripts/test-markdown.mjs"
+    "checksums": "bun scripts/checksums.mjs",
+    "collect:tauri": "bun scripts/collect-tauri-release.mjs",
+    "clean:release": "bun scripts/clean-release-dir.mjs",
+    "smoke:packaged": "bun scripts/smoke-packaged.mjs",
+    "test:lifecycle": "bun scripts/test-lifecycle.mjs",
+    "test:opencode:live": "bun scripts/verify-opencode-capture.mjs",
+    "test:markdown": "bun scripts/test-markdown.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -39,6 +43,7 @@
     "react-icons": "^5.7.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.0",
@@ -98,12 +103,14 @@
         "nsis"
       ]
     },
-    "publish": [{
-      "provider": "github",
-      "owner": "Prof-bilal",
-      "repo": "ContextGit",
-      "releaseType": "prerelease"
-    }],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Prof-bilal",
+        "repo": "ContextGit",
+        "releaseType": "prerelease"
+      }
+    ],
     "nsis": {
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,

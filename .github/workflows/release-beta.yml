@@ -44,6 +44,9 @@ jobs:
             package-lock.json
             website/package-lock.json
             desktop/package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.20"
       - name: Verify native Linux architecture
         if: startsWith(matrix.name, 'linux-')
         shell: bash
@@ -88,6 +91,13 @@ jobs:
           npm run test:markdown --prefix desktop
           npm audit --audit-level=high
           npm audit --prefix desktop --audit-level=high
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Build Tauri installer
+        run: bun run --cwd desktop tauri:build
+      - name: Collect Tauri release artifacts
+        run: bun run --cwd desktop collect:tauri
       - name: Run beta desktop E2E
         if: runner.os != 'Linux' && matrix.name != 'windows-x64'
         run: npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1 --retries=2

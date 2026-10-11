@@ -1727,6 +1727,14 @@ class Repo:
         self._storage.get_session(session_id)
         return self._storage.staged_messages(session_id)
 
+    def append_terminal_transcript(self, session_id: str, content: str) -> str:
+        self._storage.get_session(session_id)
+        return self._storage.append_terminal_transcript(session_id, content, utcnow().isoformat())
+
+    def terminal_transcript(self, session_id: str) -> str:
+        self._storage.get_session(session_id)
+        return self._storage.terminal_transcript(session_id)
+
     def unstage(self, session_id: str, last_only: bool = False) -> list[Message]:
         """Clear the staging buffer (or remove just the newest message)."""
         self._storage.get_session(session_id)

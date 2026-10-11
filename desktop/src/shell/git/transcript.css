@@ -25,3 +25,24 @@
   line-height: 1.65;
   color: var(--cg-ink);
 }
+.cg-message-role {
+  display: block;
+  margin-bottom: .45rem;
+  color: var(--cg-muted);
+  font: 11px/1.2 var(--cg-mono, ui-monospace, monospace);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.cg-session-terminal-transcript {
+  max-height: 50vh;
+  overflow: auto;
+  margin: 0;
+  padding: 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--cg-ink);
+  background: var(--cg-surface);
+  border: 1px solid var(--cg-line);
+  border-radius: 8px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
