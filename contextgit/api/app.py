@@ -22,11 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from contextgit.agent import approve_plan, commit_run, create_run, create_run_issue, reject_plan
 from contextgit.agents.asset_agent import (
     SYSTEM_PROMPT as ASSET_AGENT_SYSTEM,
-)
-from contextgit.agents.asset_agent import (
     build_prompt as build_asset_prompt,
-)
-from contextgit.agents.asset_agent import (
     parse_actions as parse_asset_actions,
 )
 from contextgit.api.cors import LocalAPI

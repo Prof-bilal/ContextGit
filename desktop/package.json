@@ -1,7 +1,7 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
@@ -27,9 +27,9 @@
     "collect:tauri": "bun scripts/collect-tauri-release.mjs",
     "clean:release": "bun scripts/clean-release-dir.mjs",
     "smoke:packaged": "bun scripts/smoke-packaged.mjs",
-    "test:lifecycle": "bun scripts/test-lifecycle.mjs",
+    "test:lifecycle": "node scripts/test-lifecycle.mjs",
     "test:opencode:live": "bun scripts/verify-opencode-capture.mjs",
-    "test:markdown": "bun scripts/test-markdown.mjs"
+    "test:markdown": "node scripts/test-markdown.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

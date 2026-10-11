@@ -649,8 +649,9 @@ class SqliteStorage:
         bounded = "".join(lines[-10_000:])
         with self._conn:
             self._conn.execute(
-                "INSERT INTO terminal_transcripts(session_id, content, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(session_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
+                "INSERT INTO terminal_transcripts(session_id, content, updated_at) "
+                "VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET "
+                "content = excluded.content, updated_at = excluded.updated_at",
                 (session_id, bounded, updated_at),
             )
         return bounded

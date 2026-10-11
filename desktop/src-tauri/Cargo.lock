@@ -340,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "contextgit-desktop"
-version = "0.1.0-beta.7"
+version = "0.1.0-beta.8"
 dependencies = [
  "serde",
  "serde_json",
