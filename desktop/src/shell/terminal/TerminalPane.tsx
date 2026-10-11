@@ -62,6 +62,14 @@ function newPtyId(sessionId: string): string {
   return `pty-${sessionId}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Store readable text rather than terminal escape sequences in the history view. */
+function readableTerminalOutput(value: string): string {
+  return value
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[@-_]/g, "");
+}
+
 /**
  * One xterm.js view bound to a node-pty process in the main process. The pane
  * owns its PTY and stays mounted (hidden) while the session is open, so the
@@ -126,6 +134,7 @@ export default function TerminalPane({
   const [error, setError] = useState<string | null>(null);
   const [captureChoices, setCaptureChoices] = useState<{ id: string; title: string }[]>([]);
   const [nativeChoice, setNativeChoice] = useState("");
+  const transcriptPendingRef = useRef("");
   /**
    * A harness CLI that ships via npm is installed on demand before its PTY
    * starts; `installReady` gates the terminal effect until the binary exists.
@@ -247,6 +256,35 @@ export default function TerminalPane({
         },
       });
 
+      let transcriptTimer: number | null = null;
+      let transcriptBusy = false;
+      function scheduleTranscriptFlush(): void {
+        if (transcriptTimer !== null) return;
+        transcriptTimer = window.setTimeout(() => {
+          transcriptTimer = null;
+          void flushTranscript();
+        }, 1500);
+      }
+      async function flushTranscript(): Promise<void> {
+        if (sessionRef.current.agent === "opencode" || transcriptBusy) return;
+        const content = transcriptPendingRef.current;
+        if (!content) return;
+        transcriptPendingRef.current = "";
+        transcriptBusy = true;
+        try {
+          await api.appendTerminalTranscript(
+            sessionRef.current.id,
+            readableTerminalOutput(content).slice(-90_000),
+          );
+        } catch {
+          // A transient backend failure must not interrupt the terminal.
+          transcriptPendingRef.current = content + transcriptPendingRef.current;
+        } finally {
+          transcriptBusy = false;
+          if (transcriptPendingRef.current) scheduleTranscriptFlush();
+        }
+      }
+
       // A live process means a running run: keep the rail's status dot honest.
       void api
         .updateSession(sessionRef.current.id, { status: "running" })
@@ -295,12 +333,17 @@ export default function TerminalPane({
       };
       const offData = bridge?.onPtyData((id, data) => {
         if (id !== ptyId) return;
+        if (sessionRef.current.agent !== "opencode") {
+          transcriptPendingRef.current += data;
+          scheduleTranscriptFlush();
+        }
         pending += data;
         if (!frame) frame = requestAnimationFrame(flush);
       });
       const offExit = bridge?.onPtyExit((id, code) => {
         if (id !== ptyId) return;
         setExited(true);
+        void flushTranscript();
         void finishRun(code);
       });
       const input = term.onData((data) => bridge?.ptyWrite(ptyId, data));
@@ -316,6 +359,9 @@ export default function TerminalPane({
       observer.observe(host);
 
       disposeRef.current = () => {
+        if (transcriptTimer !== null) window.clearTimeout(transcriptTimer);
+        transcriptTimer = null;
+        void flushTranscript();
         if (frame) cancelAnimationFrame(frame);
         observer.disconnect();
         input.dispose();

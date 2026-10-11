@@ -143,6 +143,15 @@ class TestSessions:
 
 
 class TestStaging:
+    def test_terminal_transcript_is_persistent_and_bounded(self, repo: Repo) -> None:
+        session = repo.create_session("terminal transcript", kind="terminal")
+        repo.append_terminal_transcript(session.id, "first\nsecond\n")
+        assert repo.terminal_transcript(session.id) == "first\nsecond\n"
+        repo.append_terminal_transcript(session.id, "".join(f"line-{i}\n" for i in range(10_005)))
+        transcript = repo.terminal_transcript(session.id)
+        assert len(transcript.splitlines()) == 10_000
+        assert transcript.splitlines()[0] == "line-5"
+
     def test_stage_accumulates_without_committing(self, repo: Repo) -> None:
         session = repo.create_session("stager")
         repo.stage(session.id, _messages("one"))

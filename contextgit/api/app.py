@@ -75,6 +75,7 @@ from contextgit.api.schemas import (
     SessionRequest,
     SessionUpdateRequest,
     StageRequest,
+    TerminalTranscriptRequest,
     TaskCreateRequest,
     TaskRejectRequest,
     TaskUpdateRequest,
@@ -588,6 +589,7 @@ def create_app(
         memory = current.project_memory(session.project_path) if session.project_path else None
         conversation = current.build_context(head) if head else []
         staged = current.staged(session.id)
+        terminal_transcript = current.terminal_transcript(session.id)
         conversation_status = "saved"
         conversation_error = None
         if session.agent == "opencode":
@@ -604,15 +606,9 @@ def create_app(
             "session": session.model_dump(mode="json"),
             "conversation_status": conversation_status,
             "conversation_error": conversation_error,
-            "messages": [
-                item.model_dump(mode="json")
-                for item in conversation
-                if item.role in {"user", "assistant"}
-            ],
-            "staged_messages": [
-                item.model_dump(mode="json") for item in staged
-                if item.role in {"user", "assistant"}
-            ],
+            "messages": [item.model_dump(mode="json") for item in conversation],
+            "staged_messages": [item.model_dump(mode="json") for item in staged],
+            "terminal_transcript": terminal_transcript,
             "agent_run": (
                 {
                     **run.model_dump(mode="json"),
@@ -1071,6 +1067,14 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}/staging")
     def get_staging(session_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
         return [message.model_dump(mode="json") for message in current.staged(session_id)]
+
+    @app.post("/api/v1/sessions/{session_id}/terminal-transcript")
+    def append_terminal_transcript(
+        session_id: str,
+        body: TerminalTranscriptRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, str]:
+        return {"content": current.append_terminal_transcript(session_id, body.content)}
 
     @app.post("/api/v1/sessions/{session_id}/staging")
     def stage_messages(

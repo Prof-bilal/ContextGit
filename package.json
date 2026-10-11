@@ -5,7 +5,10 @@
   "scripts": {
     "website:dev": "npm run dev --prefix website",
     "website:build": "npm run build --prefix website",
-    "desktop:build": "npm run build --prefix desktop",
+    "desktop:build": "bun run --cwd desktop build",
+    "desktop:tauri:dev": "bun run --cwd desktop tauri:dev",
+    "desktop:tauri:build": "bun run --cwd desktop tauri:build",
+    "desktop:tauri:check": "bun run --cwd desktop tauri:check",
     "check:structure": "node scripts/check-structure.mjs",
     "check:release": "node scripts/check-release-metadata.mjs",
     "test:e2e": "playwright test",

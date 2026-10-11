@@ -331,6 +331,7 @@ export interface SessionDetail {
   session: Session;
   messages: Message[];
   staged_messages: Message[];
+  terminal_transcript: string;
   agent_run: AgentRun | null;
   workspace_status: WorkspaceStatus | null;
   commits: Commit[];
@@ -1268,6 +1269,10 @@ export const api = {
   createAgentIssue: (id: string, title: string, body: string) => request<LocalIssue>(`/api/v1/agent/runs/${id}/issue`, { method: "POST", body: JSON.stringify({ title, body }) }),
   session: (id: string) => request<Session>(`/api/v1/sessions/${id}`),
   sessionDetail: (id: string) => request<SessionDetail>(`/api/v1/sessions/${id}/detail`),
+  appendTerminalTranscript: (id: string, content: string) =>
+    request<{ content: string }>(`/api/v1/sessions/${id}/terminal-transcript`, {
+      method: "POST", body: JSON.stringify({ content }),
+    }),
   workspace: (id: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
   fleet: () => request<FleetEntry[]>("/api/v1/fleet"),
