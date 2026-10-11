@@ -217,13 +217,15 @@ export interface ProviderModelsResult {
 // Electron preload injects the backend port; the web build falls back to env/default.
 const bridge =
   typeof window !== "undefined"
-    ? (window as { contextgit?: { apiBase?: string; apiToken?: string } }).contextgit
+    ? (window as { contextgit?: { apiBase?: string; apiToken?: string; getStatus?: () => { apiBase?: string } } }).contextgit
     : undefined;
 const envBase =
   typeof process !== "undefined"
     ? process.env.NEXT_PUBLIC_CONTEXTGIT_API
     : undefined;
-const base = bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
+function backendBase(): string {
+  return bridge?.getStatus?.().apiBase ?? bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
+}
 let expectedRepository: string | undefined;
 
 function launchHeaders(): Record<string, string> {
@@ -521,7 +523,7 @@ function repositoryHeaders(): Record<string, string> {
 
 async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   const repoHeaders = repositoryHeaders();
-  return apiRequest<T>(`${base}${path}`, {
+  return apiRequest<T>(`${backendBase()}${path}`, {
     timeoutMs: requestTimeout(path, init?.method),
     ...init,
     headers: { "Content-Type": "application/json", ...launchHeaders(), ...repoHeaders, ...init?.headers },
@@ -1501,7 +1503,7 @@ export async function readSse(
   onMessage: (message: SseMessage) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetch(`${backendBase()}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1869,7 +1871,7 @@ export async function streamDocument(
 
 /** Download URL for a rendered document. */
 export function documentUrl(id: string, format: DocumentFormat): string {
-  return `${base}/api/v1/documents/${encodeURIComponent(id)}?format=${format}`;
+  return `${backendBase()}/api/v1/documents/${encodeURIComponent(id)}?format=${format}`;
 }
 
 export interface IntegrationSettings {

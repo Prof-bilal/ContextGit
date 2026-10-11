@@ -21,6 +21,8 @@ export interface PtyStartOptions {
   id: string;
   /** Preset name or a raw command; shell when empty/"shell". */
   command: string;
+  /** Resolved executable path; important for Windows .cmd CLIs. */
+  executable?: string;
   cwd: string;
   cols: number;
   rows: number;
@@ -50,7 +52,7 @@ export class PtyManager {
     const preset = PTY_PRESETS[options.command];
     const command = options.command === "" || options.command === "shell"
       ? null
-      : preset?.command ?? options.command;
+      : options.executable ?? preset?.command ?? options.command;
     // Keep OpenCode interactive. Its `run` subcommand is a headless/scripted
     // mode and prints tool output as plain text instead of opening the TUI.
     // Briefings are typed into the interactive prompt below after first paint.

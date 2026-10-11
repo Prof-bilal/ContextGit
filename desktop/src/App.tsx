@@ -26,7 +26,7 @@ export default function App() {
   useEffect(() => {
     const bridge = window.contextgit;
     if (!bridge) return;
-    return bridge.onStatus((status) => setBackend({ status, apiBase: bridge.apiBase }));
+    return bridge.onStatus((status) => setBackend({ status, apiBase: bridge.getStatus().apiBase }));
   }, []);
 
   const restart = useCallback(async () => {
@@ -36,7 +36,7 @@ export default function App() {
     try {
       setBackend(await bridge.restartBackend());
     } catch (cause) {
-      setBackend({ apiBase: bridge.apiBase, status: { state: "error", message: cause instanceof Error ? cause.message : "Backend restart failed." } });
+      setBackend({ apiBase: bridge.getStatus().apiBase, status: { state: "error", message: cause instanceof Error ? cause.message : "Backend restart failed." } });
     } finally {
       setRestarting(false);
     }

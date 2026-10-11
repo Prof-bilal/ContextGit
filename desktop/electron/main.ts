@@ -20,6 +20,7 @@ import {
   augmentedPath,
   cancelInstall,
   checkHarness,
+  findCommand,
   installHarness,
   killInstalls,
 } from "./harness";
@@ -41,8 +42,12 @@ const isDev = !app.isPackaged;
 // downloaded app.
 if (isDev) app.setPath("userData", path.join(app.getPath("appData"), "ContextGit-dev"));
 const repoRoot = path.resolve(app.getAppPath(), "..");
-const backendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
-const apiBase = `http://127.0.0.1:${backendPort}`;
+const configuredBackendPort = Number(process.env.CONTEXTGIT_PORT ?? 8756);
+const preferredBackendPort = Number.isInteger(configuredBackendPort) && configuredBackendPort > 0
+  ? configuredBackendPort
+  : 8756;
+let backendPort = preferredBackendPort;
+let apiBase = `http://127.0.0.1:${backendPort}`;
 const apiToken = randomBytes(32).toString("hex");
 
 /**
@@ -80,6 +85,27 @@ function getPortFree(port: number): Promise<boolean> {
   });
 }
 
+/**
+ * Prefer the documented port, but do not make a second app instance—or a
+ * user's unrelated local service—take the whole workbench down.
+ */
+async function selectBackendPort(): Promise<void> {
+  if (await getPortFree(preferredBackendPort)) {
+    backendPort = preferredBackendPort;
+  } else {
+    backendPort = await new Promise<number>((resolve, reject) => {
+      const probe = net.createServer();
+      probe.once("error", reject);
+      probe.listen(0, "127.0.0.1", () => {
+        const address = probe.address();
+        const port = typeof address === "object" && address ? address.port : 0;
+        probe.close((error) => error ? reject(error) : resolve(port));
+      });
+    });
+  }
+  apiBase = `http://127.0.0.1:${backendPort}`;
+}
+
 let backendMonitor: ReturnType<typeof setInterval> | null = null;
 let probingBackend = false;
 let backendGeneration = 0;
@@ -115,6 +141,7 @@ function startBackendMonitor(): void {
 
 async function spawnBackend(): Promise<void> {
   const generation = backendGeneration;
+  await selectBackendPort();
   const env = {
     ...process.env,
     CONTEXTGIT_HOST: "127.0.0.1",
@@ -139,10 +166,6 @@ async function spawnBackend(): Promise<void> {
   const args = isDev
     ? ["-m", "uvicorn", "contextgit.api.main:app", "--host", "127.0.0.1", "--port", String(backendPort)]
     : [];
-  if (isDev && !(await getPortFree(backendPort))) {
-    setStatus({ state: "error", message: `Port ${backendPort} is occupied. Stop the existing backend or choose CONTEXTGIT_PORT; the desktop requires its own authenticated backend.` });
-    return;
-  }
   if (generation !== backendGeneration) return;
   const child = launchBackend(binary, args, {
     cwd: isDev ? repoRoot : process.resourcesPath,
@@ -675,9 +698,15 @@ ipcMain.on(
         usageManager?.finish(options.id);
         return;
       }
+      const preset = PTY_PRESETS[options.command];
+      const executableName = preset?.command ?? (preset ? null : options.command);
+      const executable = executableName ? await findCommand(executableName) : undefined;
+      if (executableName && !executable) {
+        throw new Error(`${executableName} was not found on PATH. Install it, then restart the run.`);
+      }
       pendingPtyStarts.delete(options.id);
       ptys.start({
-        ...options, cwd, extraArgs: observer.args,
+        ...options, cwd, executable: executable ?? undefined, extraArgs: observer.args,
         env: { TERM: "xterm-256color", PATH, ...(options.env ?? {}), ...observer.env, PWD: cwd },
       });
     } catch (cause) {
@@ -776,7 +805,7 @@ app.whenReady().then(async () => {
       try {
         dom = await mainWindow?.webContents.executeJavaScript(`
           (async () => {
-            const base = window.contextgit.apiBase;
+            const base = window.contextgit.getStatus().apiBase;
             const created = await fetch(base + '/api/v1/sessions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window.contextgit.apiToken },
