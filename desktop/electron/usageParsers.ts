@@ -1,4 +1,4 @@
-import type { HarnessLimits, LimitWindow, LimitTotals } from "../../shared/api";
+import type { HarnessLimits, LimitWindow, LimitTotals } from "../shared/api";
 import { HARNESS_BY_ID } from "../shared/harnesses";
 
 export function emptyUsage(harness: string, message: string, state: HarnessLimits["state"] = "unsupported"): HarnessLimits {

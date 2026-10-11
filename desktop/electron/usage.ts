@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
-import type { HarnessLimits } from "../../shared/api";
+import type { HarnessLimits } from "../shared/api";
 import { HARNESS_BY_ID } from "../shared/harnesses";
 import { augmentedPath, checkHarness } from "./harness";
 import { aiderReport, codexLimits, emptyUsage, geminiCounters, jsonRecords, statsTotals } from "./usageParsers";
