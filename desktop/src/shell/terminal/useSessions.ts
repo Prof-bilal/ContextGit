@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
-import { api, ApiError, type Session } from "@/lib/api";
+import { api, ApiError, type Session } from "@/shared/api";
 import { SessionRevision, uniqueSessions } from "./sessionState";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";

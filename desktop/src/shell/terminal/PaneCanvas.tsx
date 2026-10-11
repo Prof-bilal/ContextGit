@@ -2,7 +2,7 @@ import { lazy, Suspense, useRef } from "react";
 
 import { uniqueSessions } from "./sessionState";
 import ErrorBoundary from "../../ErrorBoundary";
-import type { Session } from "@/lib/api";
+import type { Session } from "@/shared/api";
 
 /** xterm is heavy and only needed once a terminal pane exists. */
 const TerminalPane = lazy(() => import("./TerminalPane"));

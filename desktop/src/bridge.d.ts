@@ -25,9 +25,9 @@ export interface ContextGitBridge {
   ptyWrite: (id: string, data: string) => void;
   ptyResize: (id: string, cols: number, rows: number) => void;
   ptyKill: (id: string) => void;
-  harnessUsage: (harness: string, sessionId?: string, refresh?: boolean) => Promise<import("../../lib/api").HarnessLimits>;
+  harnessUsage: (harness: string, sessionId?: string, refresh?: boolean) => Promise<import("../../shared/api").HarnessLimits>;
   usageActivity: (visible: boolean, integrationActive?: boolean) => void;
-  onUsage: (callback: (value: import("../../lib/api").HarnessLimits) => void) => () => void;
+  onUsage: (callback: (value: import("../../shared/api").HarnessLimits) => void) => () => void;
   ptyPresets: () => Promise<string[]>;
   harnessCheck: (id: string) => Promise<import("../shared/harnesses").HarnessCheck>;
   harnessInstall: (id: string) => Promise<{ started: boolean }>;

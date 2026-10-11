@@ -1,4 +1,4 @@
-import type { TeamMessage } from "@/lib/api";
+import type { TeamMessage } from "@/shared/api";
 
 function relativeTime(iso: string): string {
   const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);

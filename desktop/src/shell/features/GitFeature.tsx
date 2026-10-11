@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Session } from "@/lib/api";
+import { api, type Session } from "@/shared/api";
 import BranchDialog from "../git/BranchDialog";
 import { commitsOnBranch } from "../git/branchCommits";
 import DiffSheet from "../git/DiffSheet";
@@ -120,7 +120,7 @@ export default function GitFeature() {
     setSurface("session");
   };
 
-  const selectCommit = (commit: import("@/lib/api").Commit) => {
+  const selectCommit = (commit: import("@/shared/api").Commit) => {
     setCommitId(commit.id);
     setConversationOpen(true);
   };

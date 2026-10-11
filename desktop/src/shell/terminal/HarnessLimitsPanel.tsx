@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { LuRefreshCw } from "react-icons/lu";
 
-import type { HarnessLimits, LimitWindow } from "@/lib/api";
+import type { HarnessLimits, LimitWindow } from "@/shared/api";
 import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, Chip, IconButton } from "../primitives";
 

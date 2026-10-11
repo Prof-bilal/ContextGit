@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { api, type FleetEntry } from "@/lib/api";
+import { api, type FleetEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 

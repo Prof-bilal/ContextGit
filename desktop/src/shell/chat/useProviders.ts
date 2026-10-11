@@ -6,7 +6,7 @@ import {
   type ProviderInput,
   type ProviderModelsResult,
   type ProviderTestResult,
-} from "@/lib/api";
+} from "@/shared/api";
 
 function message(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;

@@ -1,4 +1,4 @@
-import { documentUrl, type DocumentFormat } from "@/lib/api";
+import { documentUrl, type DocumentFormat } from "@/shared/api";
 
 /**
  * Fetch a rendered document and save it: the native Save dialog in the desktop

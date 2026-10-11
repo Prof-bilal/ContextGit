@@ -1,4 +1,4 @@
-import type { SessionKind } from "@/lib/api";
+import type { SessionKind } from "@/shared/api";
 
 /** One pane the user closed, kept so it can be reopened from Storage. */
 export interface ClosedPane {

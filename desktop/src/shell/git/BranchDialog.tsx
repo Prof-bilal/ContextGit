@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { api, type Commit } from "@/lib/api";
+import { api, type Commit } from "@/shared/api";
 import Modal from "../Modal";
 
 /** Create a branch starting at the selected commit. */

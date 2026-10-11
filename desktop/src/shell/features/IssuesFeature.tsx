@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type IssueConfig, type IssueFinding, type IssueScanRun } from "@/lib/api";
+import { api, type IssueConfig, type IssueFinding, type IssueScanRun } from "@/shared/api";
 import { Chip, Field } from "../primitives";
 import { FeaturePorts } from "../FeaturePorts";
 import { useWorkbench } from "../WorkbenchContext";

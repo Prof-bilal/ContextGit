@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { api, type Message } from "@/lib/api";
+import { api, type Message } from "@/shared/api";
 import { Chip } from "../primitives";
 
 /** Rough token estimate for staged text (same ~4 chars/token as the backend). */

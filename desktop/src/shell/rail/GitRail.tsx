@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuFolder, LuGitBranch, LuX } from "react-icons/lu";
 
-import type { Branch, Commit, Session } from "@/lib/api";
+import type { Branch, Commit, Session } from "@/shared/api";
 import type { Workspace } from "../../../shared/workspace";
 import { commitsOnBranch } from "../git/branchCommits";
 import { StatusIcon } from "../primitives";

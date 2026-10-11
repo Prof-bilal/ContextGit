@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { api, type Session, type Task } from "@/lib/api";
+import { api, type Session, type Task } from "@/shared/api";
 
 import { agentLabel } from "../agents";
 import Modal from "../Modal";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LuDownload } from "react-icons/lu";
 
-import type { DocumentFormat, RenderedDocument } from "@/lib/api";
+import type { DocumentFormat, RenderedDocument } from "@/shared/api";
 import { Chip } from "../primitives";
 import { saveDocument } from "./downloadDocument";
 

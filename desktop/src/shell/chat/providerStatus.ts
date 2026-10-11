@@ -1,4 +1,4 @@
-import type { ProviderCapability, ProviderInfo } from "@/lib/api";
+import type { ProviderCapability, ProviderInfo } from "@/shared/api";
 
 /**
  * A provider is ready to run when it is genuinely usable: a real key for a

@@ -1,4 +1,4 @@
-import type { AgentRun } from "@/lib/api";
+import type { AgentRun } from "@/shared/api";
 
 export default function WorkRunCard({
   run,

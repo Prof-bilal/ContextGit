@@ -1,4 +1,4 @@
-import type { HarnessLimits } from "../../lib/api";
+import type { HarnessLimits } from "../../shared/api";
 
 export const usageKey = (value: HarnessLimits): string => `${value.harness}:${value.scope ?? "account"}:${value.session_id ?? ""}`;
 

@@ -1,4 +1,4 @@
-import type { Branch, Session } from "@/lib/api";
+import type { Branch, Session } from "@/shared/api";
 import type { ClosedPane } from "../storage/recentlyClosed";
 
 /** Which kind of recoverable item the Storage view shows. */

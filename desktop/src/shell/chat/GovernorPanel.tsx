@@ -1,4 +1,4 @@
-import type { CommitKind } from "@/lib/api";
+import type { CommitKind } from "@/shared/api";
 
 /** One real context change on the branch, shown as a governor receipt. */
 export interface GovernorCommit {

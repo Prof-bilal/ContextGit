@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { LuX } from "react-icons/lu";
 
-import { api, type Session } from "@/lib/api";
+import { api, type Session } from "@/shared/api";
 import { harnessFor } from "../../../shared/harnesses";
 import { roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel, agentMonogram } from "../agents";

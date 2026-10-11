@@ -6,8 +6,6 @@ import { defineConfig } from "vite";
 import { rendererCsp } from "./shared/security";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..");
-
 export default defineConfig(({ command }) => ({
   base: "./",
   plugins: [react(), {
@@ -17,20 +15,20 @@ export default defineConfig(({ command }) => ({
     },
   }],
   resolve: {
-    // Single React instance: shared components resolve react from the repo
-    // root's node_modules, the renderer from desktop's — force one copy.
+    // Single React instance: the renderer always resolves React from desktop's
+    // dependency tree, regardless of other packages in the repository.
     alias: [
       { find: /^react$/, replacement: path.join(here, "node_modules/react") },
       { find: /^react\/(.*)$/, replacement: path.join(here, "node_modules/react/$1") },
       { find: /^react-dom$/, replacement: path.join(here, "node_modules/react-dom") },
       { find: /^react-dom\/(.*)$/, replacement: path.join(here, "node_modules/react-dom/$1") },
-      { find: /^@\/(.*)$/, replacement: path.join(repoRoot, "$1") },
+      { find: /^@\/(.*)$/, replacement: path.join(here, "$1") },
     ],
   },
   server: {
     port: 5173,
     strictPort: true,
-    fs: { allow: [repoRoot] },
+    fs: { allow: [here] },
   },
   // Monaco is only reached through a dynamic import, so without this Vite
   // discovers it late, re-optimizes, and restarts the server mid-scan.

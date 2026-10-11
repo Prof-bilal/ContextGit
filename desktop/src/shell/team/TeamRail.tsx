@@ -1,6 +1,6 @@
 import { LuPlus } from "react-icons/lu";
 
-import type { Session, SessionStatus, Task, TaskStatus } from "@/lib/api";
+import type { Session, SessionStatus, Task, TaskStatus } from "@/shared/api";
 
 import { agentMonogram } from "../agents";
 import { AgentMark, Chip, StatusIcon } from "../primitives";

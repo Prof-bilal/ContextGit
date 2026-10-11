@@ -2,7 +2,7 @@
  * Sample data for the one tab still on fixtures (Agent). Chat, Code and Git all
  * read the real API now; Agent still needs its capture layer (plan.md Phase 10).
  */
-import type { SessionStatus } from "@/lib/api";
+import type { SessionStatus } from "@/shared/api";
 
 export interface AgentRun {
   id: string;

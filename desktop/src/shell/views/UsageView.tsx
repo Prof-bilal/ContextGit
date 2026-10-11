@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LuFlame } from "react-icons/lu";
 
-import { api, type ProviderInfo, type UsageSummary, type UsageSurface } from "@/lib/api";
+import { api, type ProviderInfo, type UsageSummary, type UsageSurface } from "@/shared/api";
 import { agentLabel, agentMonogram } from "../agents";
 import ActivityHeatmap, { type ActivityDay } from "../charts/ActivityHeatmap";
 import { isReady } from "../chat/providerStatus";

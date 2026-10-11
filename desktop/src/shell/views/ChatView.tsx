@@ -15,7 +15,7 @@ import {
   type ProviderInfo,
   type ResearchEvent,
   type Role,
-} from "@/lib/api";
+} from "@/shared/api";
 
 import {
   DEFAULT_CONTROLS,

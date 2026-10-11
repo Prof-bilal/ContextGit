@@ -8,7 +8,7 @@ import {
   LuTriangleAlert,
 } from "react-icons/lu";
 
-import { api, type Branch, type MergePreview } from "@/lib/api";
+import { api, type Branch, type MergePreview } from "@/shared/api";
 import Modal from "../Modal";
 import { Chip } from "../primitives";
 

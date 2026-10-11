@@ -1,6 +1,6 @@
 import { LuRotateCcw, LuUndo2, LuX } from "react-icons/lu";
 
-import type { Branch, Session } from "@/lib/api";
+import type { Branch, Session } from "@/shared/api";
 import { Chip } from "../primitives";
 import type { StorageCategory } from "../rail/StorageRail";
 import type { ClosedPane } from "../storage/recentlyClosed";

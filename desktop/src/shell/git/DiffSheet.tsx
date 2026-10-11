@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, type Commit, type Diff } from "@/lib/api";
+import { api, type Commit, type Diff } from "@/shared/api";
 import Modal from "../Modal";
 import { Chip } from "../primitives";
 

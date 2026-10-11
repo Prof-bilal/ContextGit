@@ -8,7 +8,7 @@ import {
   type DocumentInfo,
   type ProviderInfo,
   type RenderedDocument,
-} from "@/lib/api";
+} from "@/shared/api";
 import {
   DOCUMENT_FORMATS,
   DOCUMENT_TEMPLATES,
