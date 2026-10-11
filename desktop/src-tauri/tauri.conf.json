@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
     "resources": {
       "../build/backend/contextgit-api": "backend/contextgit-api"
     }
