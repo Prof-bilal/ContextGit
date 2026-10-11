@@ -6,8 +6,8 @@ import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
 import { FOOTER_LINKS, GITHUB, HEADER_CTA, ISSUES, NAV } from "@/lib/site";
 
-const RELEASE_URL = `${GITHUB}/releases/tag/v0.1.0-beta.9`;
-const RELEASE_ASSET_BASE = `${GITHUB}/releases/download/v0.1.0-beta.9`;
+const RELEASE_URL = `${GITHUB}/releases/tag/v0.1.0-beta.10`;
+const RELEASE_ASSET_BASE = `${GITHUB}/releases/download/v0.1.0-beta.10`;
 
 export const metadata: Metadata = {
   title: "Download ContextGit",
@@ -54,12 +54,12 @@ const STEPS: Array<{ no: string; title: string; body: React.ReactNode; code?: st
 ];
 
 const INSTALLERS: Array<[string, string, string]> = [
-  ["Windows", "x64 · unsigned Tauri installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit_0.1.0-beta.9_x64-setup.exe`],
-  ["macOS Intel", "x64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit_0.1.0-beta.9_x64.dmg`],
-  ["macOS Apple Silicon", "arm64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit_0.1.0-beta.9_aarch64.dmg`],
-  ["Linux x86_64 AppImage", "AMD/Intel 64-bit · any distro · recommended", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.1.0-beta.9_amd64.AppImage`],
-  ["Linux x86_64 .deb", "Debian/Ubuntu · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.1.0-beta.9_amd64.deb`],
-  ["Linux x86_64 .rpm", "Fedora/RHEL/SUSE · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.9-1.x86_64.rpm`],
+  ["Windows", "x64 · unsigned Tauri installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit_0.1.0-beta.10_x64-setup.exe`],
+  ["macOS Intel", "x64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit_0.1.0-beta.10_x64.dmg`],
+  ["macOS Apple Silicon", "arm64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit_0.1.0-beta.10_aarch64.dmg`],
+  ["Linux x86_64 AppImage", "AMD/Intel 64-bit · any distro · recommended", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.1.0-beta.10_amd64.AppImage`],
+  ["Linux x86_64 .deb", "Debian/Ubuntu · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.1.0-beta.10_amd64.deb`],
+  ["Linux x86_64 .rpm", "Fedora/RHEL/SUSE · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.1.0-beta.10-1.x86_64.rpm`],
 ];
 
 const REQUIREMENTS: Array<[string, string]> = [
