@@ -214,21 +214,27 @@ export interface ProviderModelsResult {
   source: "live" | "static";
 }
 
-// Electron preload injects the backend port; the web build falls back to env/default.
-const bridge =
-  typeof window !== "undefined"
-    ? (window as { contextgit?: { apiBase?: string; apiToken?: string; getStatus?: () => { apiBase?: string } } }).contextgit
+// Electron preload injects the backend port; Tauri installs its bridge during
+// application startup, after this module has been evaluated. Resolve it per
+// request so Tauri does not get stuck on the browser fallback port.
+type ApiBridge = { apiBase?: string; apiToken?: string; getStatus?: () => { apiBase?: string } };
+function getBridge(): ApiBridge | undefined {
+  return typeof window !== "undefined"
+    ? (window as { contextgit?: ApiBridge }).contextgit
     : undefined;
+}
 const envBase =
   typeof process !== "undefined"
     ? process.env.NEXT_PUBLIC_CONTEXTGIT_API
     : undefined;
 function backendBase(): string {
+  const bridge = getBridge();
   return bridge?.getStatus?.().apiBase ?? bridge?.apiBase ?? envBase ?? "http://127.0.0.1:8000";
 }
 let expectedRepository: string | undefined;
 
 function launchHeaders(): Record<string, string> {
+  const bridge = getBridge();
   return bridge?.apiToken ? { Authorization: `Bearer ${bridge.apiToken}` } : {};
 }
 
