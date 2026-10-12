@@ -709,11 +709,20 @@ fn pty_start(
     let exit_id = id.clone();
     let exit_sessions = sessions.clone();
     thread::spawn(move || {
-        let code = child
-            .lock()
-            .ok()
-            .and_then(|mut process| process.wait().ok())
-            .map(|status| status.exit_code());
+        // Poll instead of holding the child mutex across a blocking wait.
+        // pty_kill needs this mutex to stop the process when its pane closes;
+        // holding it here makes the entire Tauri command thread hang forever.
+        let code = loop {
+            let result = child
+                .lock()
+                .ok()
+                .and_then(|mut process| process.try_wait().ok());
+            match result {
+                Some(Some(status)) => break Some(status.exit_code()),
+                Some(None) => thread::sleep(Duration::from_millis(50)),
+                None => break None,
+            }
+        };
         let _ = exit_app.emit(
             "pty-exit",
             serde_json::json!({ "id": exit_id, "code": code }),
