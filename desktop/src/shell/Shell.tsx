@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ComponentType, type SetStateAction } from "react";
-import { LuCommand, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
+import { LuCommand, LuExternalLink, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
 import TopNav, { type PrimaryTabId, type TabDef, type TabId } from "./TopNav";
 import { IconButton } from "./primitives";
 import { Dock } from "./Dock";
@@ -52,7 +52,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
   const setFeatureOverlay = useCallback((id: TabId, open: boolean) => {
     setOverlays(current => current[id] === open ? current : { ...current, [id]: open });
   }, []);
-  const overlayOpen = Object.values(overlays).some(Boolean) || shared.pickerOpen || shared.providerDialog !== null || shared.projectOpen;
+  const overlayOpen = Object.values(overlays).some(Boolean) || shared.projectOpen;
   const [slots, setSlots] = useState<WorkbenchSlots>({ rail: null, dock: null, footer: null, dialogs: null, views: {} });
   // Stable ref callbacks prevent portals from being torn down on ordinary state updates.
   const hosts = useMemo(() => {
@@ -77,6 +77,9 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint"><LuCommand aria-hidden="true" />K</button>
         <UpdateCheckButton />
+        <button type="button" className="cg-theme-btn" onClick={() => void window.contextgit?.newWindow()} title="Open another ContextGit window">
+          <LuExternalLink aria-hidden="true" /> New window
+        </button>
         <button type="button" className="cg-theme-btn" aria-pressed={theme === "dark"} onClick={() => setTheme(value => value === "dark" ? "light" : "dark")}>
           <span aria-hidden="true">{theme === "dark" ? <LuSun /> : <LuMoon />}</span>{theme === "dark" ? "Light" : "Dark"}
         </button>

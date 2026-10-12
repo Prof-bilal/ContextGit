@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { Workspace } from "../../../shared/workspace";
 
-/** In a plain browser there is no Electron bridge and no project picker. */
+/** In a plain browser there is no Tauri bridge and no project picker. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**

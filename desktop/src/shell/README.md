@@ -35,12 +35,10 @@ fallible calculations inside a shared state updater that React executes in the
 shell.
 
 This is UI failure containment within the existing monorepo and local backend.
-Renderer hangs, Electron process crashes and backend process outages need separate
+Renderer hangs, Tauri process crashes and backend process outages need separate
 process supervision/isolation; these boundaries do not protect against them.
 
 Verification:
 
 - `npm run build --prefix desktop`
-- `npm run test:lifecycle --prefix desktop`
-- `npm run test:e2e -- e2e/feature-isolation.spec.ts --workers=1`
-- `npm run test:e2e -- e2e/desktop.spec.ts --workers=1`
+- `npm run tauri:check --prefix desktop`

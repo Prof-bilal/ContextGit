@@ -4,7 +4,7 @@ import { api, type MergeQueueEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
-/** In a plain browser there is no Electron bridge and no local API to poll. */
+/** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */

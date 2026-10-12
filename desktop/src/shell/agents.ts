@@ -1,6 +1,6 @@
 /**
  * Agent CLI metadata for the workspace UI. The canonical list lives in
- * desktop/shared/harnesses.ts (shared with the Electron main process); this
+ * desktop/shared/harnesses.ts (shared with the Tauri host process); this
  * module exposes the UI-facing subset.
  */
 import { DEFAULT_HARNESS, HARNESSES } from "../../shared/harnesses";

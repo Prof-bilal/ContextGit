@@ -1,27 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ProviderCapability, type Session } from "@/shared/api";
-import { type ModelSelection } from "./providers";
+import { type Session } from "@/shared/api";
 import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, type ClosedPane } from "./storage/recentlyClosed";
-import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource, useProviderResource } from "./WorkbenchResources";
-
-const MODEL_KEY = "cg-chat-model";
-function readStoredModel(): ModelSelection | null {
-  try {
-    const raw = window.localStorage.getItem(MODEL_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ModelSelection>;
-    if (
-      typeof parsed.providerId === "string" &&
-      parsed.providerId &&
-      typeof parsed.modelId === "string"
-    ) {
-      return { providerId: parsed.providerId, modelId: parsed.modelId };
-    }
-  } catch {
-    // ignore malformed storage
-  }
-  return null;
-}
+import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource } from "./WorkbenchResources";
 
 export function useWorkbenchState() {
   // Team mode was removed from the primary desktop UI. Keep the value stable
@@ -73,41 +53,6 @@ export function useWorkbenchState() {
 
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepoResource();
 
-  const {
-    providers,
-    error: providersError,
-    add: addProvider,
-    remove: removeProvider,
-    test: testProvider,
-    fetchModels: fetchProviderModels,
-  } = useProviderResource();
-
-  const [model, setModel] = useState<ModelSelection>(
-    () => readStoredModel() ?? { providerId: "", modelId: "" },
-  );
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const [providerDialog, setProviderDialog] = useState<{
-    capability?: ProviderCapability;
-    initialId?: string;
-  } | null>(null);
-
-  const openProviderDialog = useCallback(
-    (capability?: ProviderCapability, initialId?: string) =>
-      setProviderDialog({ capability, initialId }),
-    [],
-  );
-
-  useEffect(() => {
-    if (!model.providerId) return;
-    try {
-      window.localStorage.setItem(MODEL_KEY, JSON.stringify(model));
-    } catch {
-      // storage can be unavailable; the selection still applies this session
-    }
-  }, [model]);
-
   const openSession = useCallback((session: Session) => {
     setOpenIds((current) => (current.includes(session.id) ? current : [...current, session.id]));
     setActiveId(session.id);
@@ -152,5 +97,5 @@ export function useWorkbenchState() {
     if (!restoredPanes.current) return;
     saveOpenPanes(openIds);
   }, [openIds]);
-  return { mode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, closeTerminal, restoredPanes };
+  return { mode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
 }

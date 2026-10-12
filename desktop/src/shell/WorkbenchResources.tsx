@@ -5,7 +5,6 @@ import { useTeam } from "./team/useTeam";
 import { useProjects } from "./workspace/useProjects";
 import { useTrash } from "./storage/useTrash";
 import { useRepo } from "./git/useRepo";
-import { useProviders } from "./chat/useProviders";
 
 const unavailable = async (): Promise<never> => { throw new Error("This data source is unavailable. Try again before making changes."); };
 const refreshUnavailable = async () => { };
@@ -30,10 +29,6 @@ const useTrashSource = createIsolatedResource<ReturnType<typeof useTrash>>("Stor
 const useRepoSource = createIsolatedResource<ReturnType<typeof useRepo>>("Repository", useRepo, {
   snapshot: null, loading: true, error: null, refresh: refreshUnavailable,
 });
-const useProvidersSource = createIsolatedResource<ReturnType<typeof useProviders>>("Providers", useProviders, {
-  providers: [], loading: true, error: null, refresh: refreshUnavailable,
-  add: unavailable, remove: unavailable, test: unavailable, fetchModels: unavailable,
-});
 
 type Resources = {
   sessions: ReturnType<typeof useSessions>;
@@ -41,7 +36,6 @@ type Resources = {
   projects: ReturnType<typeof useProjects>;
   trash: ReturnType<typeof useTrash>;
   repo: ReturnType<typeof useRepo>;
-  providers: ReturnType<typeof useProviders>;
 };
 const Context = createContext<Resources | null>(null);
 
@@ -51,13 +45,12 @@ export function WorkbenchResources({ children }: { children: ReactNode }) {
   const projects = useProjectsSource();
   const trash = useTrashSource();
   const repo = useRepoSource();
-  const providers = useProvidersSource();
   return <Context.Provider value={{
     sessions: sessions.value, team: team.value, projects: projects.value,
-    trash: trash.value, repo: repo.value, providers: providers.value
+    trash: trash.value, repo: repo.value
   }}>
     <div className="cg-resource-errors" aria-label="Data source errors">
-      {sessions.host}{team.host}{projects.host}{trash.host}{repo.host}{providers.host}
+      {sessions.host}{team.host}{projects.host}{trash.host}{repo.host}
     </div>
     {children}
   </Context.Provider>;
@@ -73,4 +66,3 @@ export const useTeamResource = () => useResources().team;
 export const useProjectResource = () => useResources().projects;
 export const useTrashResource = () => useResources().trash;
 export const useRepoResource = () => useResources().repo;
-export const useProviderResource = () => useResources().providers;
