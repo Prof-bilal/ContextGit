@@ -12,7 +12,7 @@ import { AGENTS, FOOTER_LINKS, HEADER_CTA, NAV, DOC } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Features — ContextGit",
   description:
-    "Everything in ContextGit: terminal agents, parallel runs, Git history, team mode and versioned conversations, in one local desktop app.",
+    "Everything in ContextGit: terminal agents, parallel runs, Git history, team mode and versioned agent work, in one local desktop app.",
 };
 
 const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
@@ -37,9 +37,8 @@ const FEATURES: Feature[] = [
     items: [
       ["Terminal board", "Live terminals (xterm + node-pty) for every run."],
       ["Code tab", "Parallel runs — one terminal and one git branch each."],
-      ["Assets", "A file-asset library with its own AI agent."],
       ["Git", "History, graph, diffs and the merge preview, next to the work."],
-      ["Chat, Docs, Usage", "Chat turns, document generation (Markdown, PDF, Word, PowerPoint) and one token-usage view."],
+      ["Diagnostics", "Backend health, project state, and terminal lifecycle diagnostics."],
     ],
     doc: ["Design: workspace architecture", "docs/workspace-architecture.md"],
   },
@@ -92,11 +91,11 @@ const FEATURES: Feature[] = [
     id: "versioned-context",
     no: "05",
     eyebrow: "Versioned context",
-    title: "Commits, branches and merges for conversations.",
-    lede: "The core: an immutable, content-addressed history for every chat — with a semantic merge that extracts what was learned and never auto-resolves a conflict.",
+    title: "Commits, branches and merges for agent work.",
+    lede: "The core: an immutable, content-addressed history for every run, with explicit diffs and merge decisions.",
     items: [
-      ["Conversation DAG", "SHA-256 commits over messages; branch, tag, checkout, log, diff and roll back without destroying later work."],
-      ["Branch from any message", "Fork at the exact point the conversation went somewhere new; chat sessions stay isolated."],
+      ["Context DAG", "SHA-256 commits over agent work; branch, tag, checkout, log, diff and roll back without destroying later work."],
+      ["Branch from any run", "Fork at the exact point an agent run went somewhere new; terminal sessions stay isolated."],
       ["Staged turns", "Nothing lands on the branch until you press Commit, and a pending-changes diff shows exactly what will land."],
       ["Semantic merge", "Extracts decisions, facts, dead ends and open questions, detects contradictions, and shows a preview before anything is written."],
       ["Dead-end notes", "Failed attempts survive as a few lines of context instead of poisoning the next turn."],
@@ -285,8 +284,8 @@ export default function FeaturesPage() {
             </header>
 
             <div className="internals-grid">
-              <div className="layers reveal" role="img" aria-label="Architecture layers. The Electron desktop UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
-                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Desktop UI (Electron)</span><span className="layer">CLI (typer)</span></div>
+              <div className="layers reveal" role="img" aria-label="Architecture layers. The Tauri desktop UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
+                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Desktop UI (Tauri)</span><span className="layer">CLI (typer)</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>
                 <div className="layer-row" aria-hidden="true"><span className="layer">FastAPI &middot; HTTP and SSE</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>
