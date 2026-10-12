@@ -268,6 +268,22 @@ fn start_backend(
 fn stop_backend(supervisor: &BackendSupervisor) {
     if let Ok(mut guard) = supervisor.child.lock() {
         if let Some(mut child) = guard.take() {
+            // The packaged Python backend can create a child process while it
+            // starts. Kill descendants first so a project switch cannot leave
+            // the previous repo serving on the shared API port.
+            let pid = child.id().to_string();
+            #[cfg(unix)]
+            {
+                let _ = Command::new("pkill")
+                    .args(["-KILL", "-P", &pid])
+                    .status();
+            }
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &pid, "/T", "/F"])
+                    .status();
+            }
             let _ = child.kill();
             let _ = child.wait();
         }
