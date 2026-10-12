@@ -16,11 +16,18 @@ export function installTauriBridge(): void {
   if (!tauri?.core?.invoke || window.contextgit) return;
 
   let apiBase = "http://127.0.0.1:8756";
-  let status: BackendStatus = { state: "ready", apiBase };
+  let status: BackendStatus = { state: "starting", message: "Starting the local ContextGit backend…" };
   const unsupported = (name: string) => Promise.reject(new Error(`Tauri command not migrated yet: ${name}`));
   const noEvents = () => () => { };
   const onStatus = (callback: (next: BackendStatus) => void) => {
     let active = true;
+    let stopEvent: (() => void) | undefined;
+    void tauri.event?.listen("backend-status", event => {
+      if (!active) return;
+      status = event.payload as BackendStatus;
+      if (status.state === "ready") apiBase = status.apiBase;
+      callback(status);
+    }).then(unlisten => { stopEvent = unlisten; });
     const poll = async () => {
       try {
         status = await tauri.core!.invoke("backend_status") as typeof status;
@@ -32,7 +39,7 @@ export function installTauriBridge(): void {
       if (active) window.setTimeout(() => void poll(), 1000);
     };
     void poll();
-    return () => { active = false; };
+    return () => { active = false; stopEvent?.(); };
   };
   const baseBridge = {
     apiBase,
@@ -44,9 +51,10 @@ export function installTauriBridge(): void {
       if (status.state === "ready") apiBase = status.apiBase;
       return { status, apiBase };
     },
+    newWindow: () => tauri.core!.invoke("new_window") as Promise<void>,
     runtimeInfo: () => tauri.core!.invoke("runtime_info") as Promise<import("../shared/runtime").RuntimeInfo>,
     onStatus,
-    getUpdateStatus: () => ({ state: "idle", currentVersion: "0.1.0", supported: false } as import("../shared/update").UpdateStatus),
+    getUpdateStatus: () => ({ state: "idle", currentVersion: "0.2.0-beta.2", supported: false } as import("../shared/update").UpdateStatus),
     checkForUpdates: () => unsupported("check_for_updates"),
     downloadUpdate: () => unsupported("download_update"),
     installUpdate: () => unsupported("install_update"),
