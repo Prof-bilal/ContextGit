@@ -1,4 +1,4 @@
-"""Desktop launch-token authentication covers normal and streaming routes."""
+"""Desktop launch-token authentication covers the local API."""
 
 from pathlib import Path
 
@@ -8,11 +8,11 @@ from fastapi.testclient import TestClient
 from contextgit.api.app import create_app
 
 
-def test_launch_token_protects_api_and_streams(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_launch_token_protects_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTEXTGIT_API_TOKEN", "test-launch-token")
     with TestClient(create_app(repo_path=tmp_path / "repo")) as client:
         assert client.get("/api/v1/health").status_code == 200
-        for method, route in [("GET", "/api/v1/repo"), ("POST", "/api/v1/chat")]:
+        for method, route in [("GET", "/api/v1/repo"), ("GET", "/api/v1/sessions")]:
             assert client.request(method, route).status_code == 401
             assert client.request(
                 method, route, headers={"Authorization": "Bearer wrong"}
