@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundle = path.join(desktop, "src-tauri", "target", "release", "bundle");
 const release = path.join(desktop, "release");
+const publicVersion = JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).version;
+const artifactVersion = process.platform === "win32" ? publicVersion.replace(/-beta\.\d+$/, "-1") : publicVersion;
 const extensions = new Set([".AppImage", ".deb", ".rpm", ".pacman", ".dmg", ".msi", ".exe", ".zip", ".tar.gz"]);
 
 function filesUnder(directory) {
@@ -22,7 +24,8 @@ for (const entry of fs.readdirSync(release)) {
 for (const file of filesUnder(bundle)) {
   if (![...extensions].some((extension) => file.endsWith(extension))) continue;
   if (path.dirname(path.dirname(file)) !== bundle) continue;
-  const destination = path.join(release, path.basename(file));
+  const publicName = path.basename(file).replace(artifactVersion, publicVersion);
+  const destination = path.join(release, publicName);
   fs.copyFileSync(file, destination);
   console.log(`Collected ${destination}`);
 }

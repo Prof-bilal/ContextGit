@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundle = path.join(desktop, "src-tauri", "target", "release", "bundle");
 const version = JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).version;
+const artifactVersion = process.platform === "win32" ? version.replace(/-beta\.\d+$/, "-1") : version;
 
 function filesUnder(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -21,11 +22,11 @@ const expected = platform === "win32"
   : platform === "darwin"
     ? [".dmg"]
     : [".AppImage", ".deb", ".rpm"];
-const missing = expected.filter((extension) => !files.some((file) => file.includes(version) && file.endsWith(extension)));
+const missing = expected.filter((extension) => !files.some((file) => file.includes(artifactVersion) && file.endsWith(extension)));
 
 if (missing.length > 0) {
-  console.error(`Missing Tauri ${platform} artifact(s) for ${version}: ${missing.join(", ")}`);
+  console.error(`Missing Tauri ${platform} artifact(s) for ${artifactVersion}: ${missing.join(", ")}`);
   process.exit(1);
 }
 
-console.log(`Tauri artifacts are present for ${platform} ${version}.`);
+console.log(`Tauri artifacts are present for ${platform} ${artifactVersion}.`);
