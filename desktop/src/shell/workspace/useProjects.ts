@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Workspace } from "../../../shared/workspace";
 
 /** In a plain browser there is no Electron bridge and no project picker. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * The project folders the Code tab works in, plus which one is active. The main
@@ -16,7 +16,7 @@ export function useProjects() {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+    if (!hasBridge()) return;
     try {
       const [list, active] = await Promise.all([
         window.contextgit!.listProjects(),

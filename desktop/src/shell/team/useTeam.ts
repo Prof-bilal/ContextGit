@@ -5,7 +5,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * The team board (`GET /api/v1/team`), polled like the fleet so dependency
@@ -16,7 +16,7 @@ export function useTeam(intervalMs = 4000) {
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !current()) return;
+    if (!hasBridge() || !current()) return;
     try {
       const next = await api.team();
       if (!current()) return;

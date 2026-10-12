@@ -5,7 +5,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * Storage contents from the backend (`GET /api/v1/trash`), polled so trashed
@@ -17,7 +17,7 @@ export function useTrash() {
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !current()) return;
+    if (!hasBridge() || !current()) return;
     try {
       const snapshot = await api.trash();
       if (!current()) return;

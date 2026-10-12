@@ -5,7 +5,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
 /** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */
 export function useMergeQueue() {
@@ -13,7 +13,7 @@ export function useMergeQueue() {
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !current()) return;
+    if (!hasBridge() || !current()) return;
     try {
       const next = await api.mergeQueue();
       if (!current()) return;
