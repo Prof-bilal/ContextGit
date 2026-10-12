@@ -1,9 +1,10 @@
-/** Bridge exposed by desktop/electron/preload.ts. */
+/** Bridge exposed by the Tauri renderer adapter. */
 export interface ContextGitBridge {
   apiBase: string;
   apiToken: string;
   getStatus: () => { status: import("../shared/status").BackendStatus; apiBase: string };
   restartBackend: () => Promise<{ status: import("../shared/status").BackendStatus; apiBase: string }>;
+  newWindow: () => Promise<void>;
   runtimeInfo: () => Promise<import("../shared/runtime").RuntimeInfo>;
   onStatus: (callback: (status: import("../shared/status").BackendStatus) => void) => () => void;
   getUpdateStatus: () => import("../shared/update").UpdateStatus;

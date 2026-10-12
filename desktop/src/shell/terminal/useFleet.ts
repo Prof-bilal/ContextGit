@@ -4,8 +4,8 @@ import { api, type FleetEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
-/** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no local API to poll. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * Code state of every run (`GET /api/v1/fleet`), polled so the rail can show
@@ -17,7 +17,7 @@ export function useFleet() {
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !current()) return;
+    if (!hasBridge() || !current()) return;
     try {
       const next = await api.fleet();
       if (!current()) return;

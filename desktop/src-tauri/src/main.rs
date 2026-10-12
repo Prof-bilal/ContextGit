@@ -6,14 +6,14 @@ use std::sync::Arc;
 use std::{
     env, fs,
     io::{self, Read, Write},
-    net::TcpStream,
+    net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Clone, Serialize)]
@@ -34,7 +34,8 @@ enum BackendStatus {
 
 struct BackendSupervisor {
     child: Mutex<Option<Child>>,
-    api_base: String,
+    api_base: Mutex<String>,
+    last_error: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -116,8 +117,34 @@ impl BackendSupervisor {
         let port = env::var("CONTEXTGIT_PORT").unwrap_or_else(|_| "8756".to_string());
         Self {
             child: Mutex::new(None),
-            api_base: format!("http://127.0.0.1:{port}"),
+            api_base: Mutex::new(format!("http://127.0.0.1:{port}")),
+            last_error: Mutex::new(None),
         }
+    }
+
+    fn api_base(&self) -> Result<String, String> {
+        self.api_base
+            .lock()
+            .map(|value| value.clone())
+            .map_err(|_| "Backend address is unavailable".to_string())
+    }
+
+    fn set_api_base(&self, value: String) -> Result<(), String> {
+        *self
+            .api_base
+            .lock()
+            .map_err(|_| "Backend address is unavailable".to_string())? = value;
+        Ok(())
+    }
+
+    fn set_error(&self, value: Option<String>) {
+        if let Ok(mut error) = self.last_error.lock() {
+            *error = value;
+        }
+    }
+
+    fn error(&self) -> Option<String> {
+        self.last_error.lock().ok().and_then(|value| value.clone())
     }
 }
 
@@ -189,16 +216,51 @@ fn backend_command(api_base: &str, resource_dir: &Path, data_dir: &Path) -> (Com
     );
     fs::create_dir_all(data_dir).ok();
     fs::create_dir_all(Path::new(&repo)).ok();
+    let runtime_tmp = data_dir.join("backend-runtime");
+    fs::create_dir_all(&runtime_tmp).ok();
+    cleanup_runtime_tmp(&runtime_tmp);
     command.current_dir(data_dir);
+    // PyInstaller one-file builds extract into a temporary `_MEI*` folder.
+    // Keep those folders inside app data and clean only stale extractions.
+    command.env("TMPDIR", &runtime_tmp);
+    command.env("TMP", &runtime_tmp);
+    command.env("TEMP", &runtime_tmp);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(if cfg!(debug_assertions) {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        });
+        .stderr(Stdio::piped());
     (command, repo)
+}
+
+fn cleanup_runtime_tmp(runtime_tmp: &Path) {
+    let Ok(entries) = fs::read_dir(runtime_tmp) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("_MEI"))
+        {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+}
+
+fn choose_api_base() -> Result<String, String> {
+    if let Ok(port) = env::var("CONTEXTGIT_PORT") {
+        let address = format!("127.0.0.1:{port}");
+        if TcpListener::bind(&address).is_ok() {
+            return Ok(format!("http://{address}"));
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|error| format!("Could not reserve a local backend port: {error}"))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| format!("Could not read the local backend port: {error}"))?;
+    Ok(format!("http://{address}"))
 }
 
 fn backend_healthy(api_base: &str) -> bool {
@@ -256,18 +318,54 @@ fn start_backend(
     if child.is_some() {
         return Ok(());
     }
-    let (mut command, _) = backend_command(&supervisor.api_base, resource_dir, data_dir);
-    *child = Some(
-        command
-            .spawn()
-            .map_err(|error| format!("backend could not start: {error}"))?,
-    );
+    let api_base = choose_api_base()?;
+    supervisor.set_api_base(api_base.clone())?;
+    let (mut command, _) = backend_command(&api_base, resource_dir, data_dir);
+    let mut process = match command.spawn() {
+        Ok(process) => process,
+        Err(error) => {
+            let message = format!("backend could not start: {error}");
+            supervisor.set_error(Some(message.clone()));
+            return Err(message);
+        }
+    };
+    if let Some(stderr) = process.stderr.take() {
+        let log_path = data_dir.join("backend.log");
+        thread::spawn(move || {
+            let mut stderr = stderr;
+            if let Ok(mut log) = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+            {
+                let _ = io::copy(&mut stderr, &mut log);
+            }
+        });
+    }
+    *child = Some(process);
+    supervisor.set_error(None);
     Ok(())
 }
 
 fn stop_backend(supervisor: &BackendSupervisor) {
     if let Ok(mut guard) = supervisor.child.lock() {
         if let Some(mut child) = guard.take() {
+            // The packaged Python backend can create a child process while it
+            // starts. Kill descendants first so a project switch cannot leave
+            // the previous repo serving on the shared API port.
+            let pid = child.id().to_string();
+            #[cfg(unix)]
+            {
+                let _ = Command::new("pkill")
+                    .args(["-KILL", "-P", &pid])
+                    .status();
+            }
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &pid, "/T", "/F"])
+                    .status();
+            }
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -287,6 +385,9 @@ fn runtime_info() -> RuntimeInfo {
 
 #[tauri::command]
 fn backend_status(supervisor: tauri::State<'_, BackendSupervisor>) -> BackendStatus {
+    let api_base = supervisor
+        .api_base()
+        .unwrap_or_else(|_| "http://127.0.0.1:8756".to_string());
     let running = supervisor
         .child
         .lock()
@@ -297,9 +398,9 @@ fn backend_status(supervisor: tauri::State<'_, BackendSupervisor>) -> BackendSta
                 .map(|process| process.try_wait().ok().flatten().is_none())
         })
         .unwrap_or(false);
-    if running && backend_healthy(&supervisor.api_base) {
+    if running && backend_healthy(&api_base) {
         BackendStatus::Ready {
-            api_base: supervisor.api_base.clone(),
+            api_base,
         }
     } else if running {
         BackendStatus::Starting {
@@ -307,7 +408,9 @@ fn backend_status(supervisor: tauri::State<'_, BackendSupervisor>) -> BackendSta
         }
     } else {
         BackendStatus::Error {
-            message: "The local ContextGit backend is not running.".to_string(),
+            message: supervisor
+                .error()
+                .unwrap_or_else(|| "The local ContextGit backend is not running.".to_string()),
         }
     }
 }
@@ -327,21 +430,43 @@ fn restart_backend(
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
-    start_backend(&supervisor, &resource_dir, &data_dir)?;
-    if !wait_for_health(&supervisor.api_base, Duration::from_secs(30)) {
+    if let Err(error) = start_backend(&supervisor, &resource_dir, &data_dir) {
+        supervisor.set_error(Some(error.clone()));
+        let _ = app.emit("backend-status", BackendStatus::Error { message: error.clone() });
+        return Err(error);
+    }
+    let api_base = supervisor.api_base()?;
+    if !wait_for_health(&api_base, Duration::from_secs(30)) {
         return Err(format!(
             "The backend did not become healthy at {}",
-            supervisor.api_base
+            api_base
         ));
     }
-    Ok(BackendStatus::Ready {
-        api_base: supervisor.api_base.clone(),
-    })
+    let status = BackendStatus::Ready { api_base };
+    let _ = app.emit("backend-status", status.clone());
+    Ok(status)
 }
 
 #[tauri::command]
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+fn new_window(app: tauri::AppHandle) -> Result<(), String> {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let label = format!("workspace-{suffix}");
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+        .title("ContextGit")
+        .inner_size(1440.0, 920.0)
+        .min_inner_size(1100.0, 700.0)
+        .resizable(true)
+        .build()
+        .map(|_| ())
+        .map_err(|error| format!("Could not open a new ContextGit window: {error}"))
 }
 
 fn workspace_from_path(path: &Path) -> Workspace {
@@ -418,6 +543,7 @@ fn activate_project(app: &tauri::AppHandle, path: &Path) -> Result<Workspace, St
     state.active = Some(workspace.path.clone());
     write_projects(app, &state)?;
     set_backend_repo(app);
+    let _ = app.emit("project-changed", workspace.clone());
     Ok(workspace)
 }
 
@@ -693,11 +819,20 @@ fn pty_start(
     let exit_id = id.clone();
     let exit_sessions = sessions.clone();
     thread::spawn(move || {
-        let code = child
-            .lock()
-            .ok()
-            .and_then(|mut process| process.wait().ok())
-            .map(|status| status.exit_code());
+        // Poll instead of holding the child mutex across a blocking wait.
+        // pty_kill needs this mutex to stop the process when its pane closes;
+        // holding it here makes the entire Tauri command thread hang forever.
+        let code = loop {
+            let result = child
+                .lock()
+                .ok()
+                .and_then(|mut process| process.try_wait().ok());
+            match result {
+                Some(Some(status)) => break Some(status.exit_code()),
+                Some(None) => thread::sleep(Duration::from_millis(50)),
+                None => break None,
+            }
+        };
         let _ = exit_app.emit(
             "pty-exit",
             serde_json::json!({ "id": exit_id, "code": code }),
@@ -808,11 +943,27 @@ fn main() {
         .manage(BackendSupervisor::new())
         .manage(PtySupervisor::new())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
             let supervisor = app.state::<BackendSupervisor>();
             let resource_dir = app.path().resource_dir().map_err(io::Error::other)?;
             let data_dir = app.path().app_data_dir().map_err(io::Error::other)?;
-            start_backend(&supervisor, &resource_dir, &data_dir).map_err(io::Error::other)?;
+            let _ = app.emit(
+                "backend-status",
+                BackendStatus::Starting {
+                    message: "Starting the local ContextGit backend…".to_string(),
+                },
+            );
+            if let Err(error) = start_backend(&supervisor, &resource_dir, &data_dir) {
+                supervisor.set_error(Some(error.clone()));
+                let _ = app.emit("backend-status", BackendStatus::Error { message: error });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -820,6 +971,7 @@ fn main() {
             backend_status,
             restart_backend,
             app_version,
+            new_window,
             get_workspace,
             list_projects,
             use_project,

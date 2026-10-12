@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "ContextGit's least-privilege initial desktop capability",
-  "windows": ["main"],
+  "windows": ["main", "workspace-*"],
   "permissions": ["core:default", "dialog:default"]
 }

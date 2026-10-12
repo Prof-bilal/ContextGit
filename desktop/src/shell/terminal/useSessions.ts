@@ -5,8 +5,8 @@ import { SessionRevision, uniqueSessions } from "./sessionState";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
-/** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no local API to poll. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * Live terminal sessions from the backend (`GET /api/v1/sessions`), polled so
@@ -21,10 +21,10 @@ export function useSessions() {
   const creating = useRef(false);
   const [loaded, setLoaded] = useState(false);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
-  const connected = () => !HAS_BRIDGE || window.contextgit?.getStatus().status.state === "ready";
+  const connected = () => !hasBridge() || window.contextgit?.getStatus().status.state === "ready";
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !connected() || !current()) return;
+    if (!hasBridge() || !connected() || !current()) return;
     const ticket = revision.current.begin();
     try {
       const next = uniqueSessions(await api.sessions());

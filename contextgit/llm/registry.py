@@ -21,9 +21,7 @@ from contextgit.core.models import (
 from contextgit.llm.anthropic import AnthropicProvider
 from contextgit.llm.base import LLMProvider
 from contextgit.llm.fake import FakeProvider
-from contextgit.llm.images import ImageTransport, LocalSDImages, MockImages, OpenAIImages
 from contextgit.llm.openai_compatible import OpenAICompatibleProvider
-from contextgit.llm.search import MockSearch, SearchBackend, TavilySearch
 from contextgit.llm.spec import (
     BUILTIN_BY_ID,
     BUILTIN_PROVIDERS,
@@ -264,37 +262,3 @@ def all_provider_infos(
     if capability is not None:
         infos = [info for info in infos if info.capability == capability]
     return infos
-
-
-def build_search_for(
-    provider_id: str,
-    records: list[ProviderRecord],
-    environ: Mapping[str, str] | None = None,
-) -> tuple[SearchBackend, ResolvedProvider]:
-    """Resolve and build a search backend by provider id."""
-    resolved = resolve_provider(provider_id, records, environ)
-    if resolved.spec.capability != "search":
-        raise ProviderConfigError(f"provider '{provider_id}' is not a search provider")
-    if resolved.spec.kind == "mock":
-        return MockSearch(), resolved
-    if resolved.spec.id == "tavily":
-        return TavilySearch(api_key=resolved.api_key, base_url=resolved.base_url), resolved
-    raise ProviderConfigError(f"provider '{provider_id}' has no search adapter")
-
-
-def build_images_for(
-    provider_id: str,
-    records: list[ProviderRecord],
-    environ: Mapping[str, str] | None = None,
-) -> tuple[ImageTransport, ResolvedProvider]:
-    """Resolve and build an image backend by provider id."""
-    resolved = resolve_provider(provider_id, records, environ)
-    if resolved.spec.capability != "image":
-        raise ProviderConfigError(f"provider '{provider_id}' is not an image provider")
-    if resolved.spec.kind == "mock":
-        return MockImages(), resolved
-    if resolved.spec.id == "openai-images":
-        return OpenAIImages(api_key=resolved.api_key, base_url=resolved.base_url), resolved
-    if resolved.spec.id == "local-sd":
-        return LocalSDImages(base_url=resolved.base_url), resolved
-    raise ProviderConfigError(f"provider '{provider_id}' has no image adapter")

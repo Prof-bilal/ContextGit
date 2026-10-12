@@ -41,7 +41,6 @@
     "desktop/build",
     "desktop/extensions",
     "desktop/dist",
-    "desktop/dist-electron",
     "desktop/release"
   ]
 }

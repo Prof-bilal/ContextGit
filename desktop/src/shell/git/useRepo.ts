@@ -3,17 +3,17 @@ import { useCallback, useState } from "react";
 import { api, type RepoSnapshot } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 
-/** In a plain browser there is no Electron bridge and no local API to read. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no local API to read. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The real repository snapshot (`GET /api/v1/repo`) — the Git tab's data. */
 export function useRepo() {
   const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
-  const [loading, setLoading] = useState(HAS_BRIDGE);
+  const [loading, setLoading] = useState(hasBridge);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE) {
+    if (!hasBridge()) {
       setLoading(false);
       return;
     }
