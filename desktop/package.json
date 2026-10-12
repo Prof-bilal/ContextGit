@@ -1,7 +1,7 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0-beta.10",
+  "version": "0.2.0-beta.1",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
@@ -25,6 +25,7 @@
     "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
     "checksums": "bun scripts/checksums.mjs",
     "collect:tauri": "bun scripts/collect-tauri-release.mjs",
+    "check:tauri-artifacts": "node scripts/check-tauri-artifacts.mjs",
     "clean:release": "bun scripts/clean-release-dir.mjs",
     "smoke:packaged": "bun scripts/smoke-packaged.mjs",
     "test:lifecycle": "node scripts/test-lifecycle.mjs",

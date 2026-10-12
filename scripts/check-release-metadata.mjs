@@ -13,6 +13,7 @@ const checks = [
   ["beta notes", read("BETA.md").includes(`ContextGit \`${beta}\``)],
   ["website release tag", read("website/app/download/page.tsx").includes(`releases/tag/v${beta}`)],
   ["website release assets", read("website/app/download/page.tsx").includes(`releases/download/v${beta}`)],
+  ["windows Tauri asset version", read("website/app/download/page.tsx").includes(`contextgit-windows-x64-ContextGit_${beta}_x64-setup.exe`)],
 ];
 
 const failures = checks.filter(([, passed]) => !passed).map(([name]) => name);
