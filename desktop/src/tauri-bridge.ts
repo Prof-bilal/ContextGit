@@ -11,11 +11,12 @@ function globals(): TauriGlobals | undefined {
 }
 
 /** Install the compatibility bridge only when the renderer is hosted by Tauri. */
-export function installTauriBridge(): void {
+export async function installTauriBridge(): Promise<void> {
   const tauri = globals();
   if (!tauri?.core?.invoke || window.contextgit) return;
 
-  const apiBase = "http://127.0.0.1:8756";
+  let apiBase = "http://127.0.0.1:8756";
+  const apiToken = String(await tauri.core.invoke("backend_token"));
   let status: BackendStatus = { state: "ready", apiBase };
   const unsupported = (name: string) => Promise.reject(new Error(`Tauri command not migrated yet: ${name}`));
   const noEvents = () => () => { };
@@ -24,6 +25,10 @@ export function installTauriBridge(): void {
     const poll = async () => {
       try {
         status = await tauri.core!.invoke("backend_status") as typeof status;
+        if ("apiBase" in status && typeof status.apiBase === "string") {
+          apiBase = status.apiBase;
+          (baseBridge as { apiBase: string }).apiBase = apiBase;
+        }
         callback(status);
       } catch {
         // The renderer will keep its last known status until the next poll.
@@ -35,11 +40,15 @@ export function installTauriBridge(): void {
   };
   const baseBridge = {
     apiBase,
-    apiToken: "tauri-local-token",
+    apiToken,
     getStatus: () => ({ status, apiBase }),
     restartBackend: async () => {
       const next = await tauri.core!.invoke("restart_backend");
       status = next as typeof status;
+      if ("apiBase" in status && typeof status.apiBase === "string") {
+        apiBase = status.apiBase;
+        (baseBridge as { apiBase: string }).apiBase = apiBase;
+      }
       return { status, apiBase };
     },
     runtimeInfo: () => tauri.core!.invoke("runtime_info") as Promise<import("../shared/runtime").RuntimeInfo>,
@@ -50,6 +59,13 @@ export function installTauriBridge(): void {
     installUpdate: () => unsupported("install_update"),
     openUpdateRelease: () => unsupported("open_update_release"),
     onUpdateStatus: noEvents,
+    filesList: (project: string, relative?: string) => tauri.core!.invoke("files_list", { project, relative }),
+    fileRead: (project: string, relative: string) => tauri.core!.invoke("file_read", { project, relative }),
+    fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) =>
+      tauri.core!.invoke("file_write", { project, relative, content, expectedVersion }),
+    editorStart: (project: string) => tauri.core!.invoke("editor_start", { project }),
+    editorStatus: () => tauri.core!.invoke("editor_status"),
+    editorStop: () => tauri.core!.invoke("editor_stop"),
   } as unknown as ContextGitBridge;
   // Keep the renderer stable while individual Tauri services are ported. A
   // missing operation becomes an actionable rejected promise instead of an
@@ -69,6 +85,10 @@ export function installTauriBridge(): void {
 
   void tauri.core.invoke("backend_status").then(value => {
     status = value as typeof status;
+    if ("apiBase" in status && typeof status.apiBase === "string") {
+      apiBase = status.apiBase;
+      (baseBridge as { apiBase: string }).apiBase = apiBase;
+    }
   }).catch(() => {
     status = { state: "error", message: "Tauri backend status command failed." };
   });

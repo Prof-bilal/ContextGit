@@ -43,6 +43,12 @@ export interface ContextGitBridge {
   chooseWorkspace: () => Promise<import("../shared/workspace").Workspace | null>;
   pickWorkspaceLocation: () => Promise<string | null>;
   createWorkspace: (parent: string, name: string) => Promise<import("../shared/workspace").Workspace>;
+  filesList: (project: string, relative?: string) => Promise<import("../shared/workspaceFiles").FileNode[]>;
+  fileRead: (project: string, relative: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
+  fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
+  editorStart: (project: string) => Promise<{ state: string; url?: string; message?: string }>;
+  editorStatus: () => Promise<{ state: string; url?: string; message?: string }>;
+  editorStop: () => Promise<void>;
   /** Native Save dialog; returns the written path or null when cancelled. */
   saveFile: (options: { defaultName: string; data: ArrayBuffer }) => Promise<string | null>;
   /** Assets tab: the app-level asset library (files live under the app's userData). */

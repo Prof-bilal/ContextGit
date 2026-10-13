@@ -89,10 +89,16 @@ class TestRunner:
         assert "gate-ran" in result.output
 
     def test_failure_is_data_not_an_exception(self, tmp_path: Path) -> None:
-        result = run_command("echo broken && exit 3", tmp_path)
+        result = run_command("python -c 'print(\"broken\"); raise SystemExit(3)'", tmp_path)
         assert result.ok is False
         assert result.exit_code == 3
         assert "broken" in result.output
+
+    def test_shell_operators_are_rejected(self, tmp_path: Path) -> None:
+        result = run_command("echo unsafe && exit 3", tmp_path)
+        assert result.ok is False
+        assert result.exit_code == 126
+        assert "shell operators" in result.output
 
     def test_missing_binary_is_reported(self, tmp_path: Path) -> None:
         result = run_command("definitely-not-a-command-xyz", tmp_path)
@@ -125,7 +131,11 @@ class TestGateFlow:
         assert done.gate_ran_at is not None
 
     def test_failing_gate_sends_it_back_to_work(self, repo: Repo, team) -> None:  # noqa: ANN001
-        task = repo.create_task(team.id, title="api", gate_command="echo nope && exit 2")
+        task = repo.create_task(
+            team.id,
+            title="api",
+            gate_command="python -c 'print(\"nope\"); raise SystemExit(2)'",
+        )
         repo.launch_team()
 
         gated = repo.complete_task(task.id)

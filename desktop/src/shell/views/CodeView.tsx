@@ -6,6 +6,7 @@ import type { Workspace } from "../../../shared/workspace";
 import { Chip } from "../primitives";
 import { openSessions } from "../terminal/PaneCanvas";
 import DiagnosticsDialog from "../DiagnosticsDialog";
+import WorkspaceWorkbench from "../workspace/WorkspaceWorkbench";
 
 /**
  * Single mode's header: the runs rail drives the shared pane canvas that Shell
@@ -68,6 +69,7 @@ export default function CodeView({
         </button>
       </div>
       {diagnosticsOpen && <DiagnosticsDialog backendAvailable={backendAvailable} onClose={() => setDiagnosticsOpen(false)} />}
+      <WorkspaceWorkbench workspace={workspace} />
       {open.length === 0 && (
         <div className="cg-pane-empty">
           <strong>No terminals open</strong>

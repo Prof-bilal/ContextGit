@@ -94,6 +94,11 @@ def test_missing_url_is_rejected() -> None:
         send_request(HttpRequestSpec())
 
 
+def test_local_destinations_are_blocked() -> None:
+    with pytest.raises(HttpRequestError, match="local or private"):
+        send_request(HttpRequestSpec(url="http://127.0.0.1:8756/health"))
+
+
 def test_transport_failure_becomes_a_domain_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

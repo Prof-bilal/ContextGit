@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from contextgit.core.models import RunCommand, ServerStatus, utcnow
+from contextgit.verify.runner import command_argv
 
 _LOG_LINES = 400
 _SHOWN_LINES = 80
@@ -383,17 +384,18 @@ class ServerSupervisor:
                     "API_BASE_URL": f"http://127.0.0.1:{self._port}",
                 }
                 try:
+                    argv = command_argv(chosen)
                     self._process = subprocess.Popen(
-                        chosen,
+                        argv,
                         cwd=run_cwd,
-                        shell=True,
+                        shell=False,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
                         env=env,
                         start_new_session=True,
                     )
-                except OSError as exc:
+                except (OSError, ValueError) as exc:
                     self._process = None
                     self._error = str(exc)
                 else:

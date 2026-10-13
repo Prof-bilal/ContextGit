@@ -9,6 +9,6 @@ Two pieces, both small and pure enough to test in isolation:
 """
 
 from contextgit.verify.detect import detect_gate
-from contextgit.verify.runner import CommandResult, run_command
+from contextgit.verify.runner import CommandResult, command_argv, run_command
 
-__all__ = ["CommandResult", "detect_gate", "run_command"]
+__all__ = ["CommandResult", "command_argv", "detect_gate", "run_command"]

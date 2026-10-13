@@ -9,6 +9,7 @@ never disturb files another run is editing.
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 from dataclasses import dataclass
@@ -18,6 +19,48 @@ MAX_OUTPUT = 8000
 DEFAULT_TIMEOUT = 900.0
 TIMEOUT_EXIT_CODE = 124
 UNAVAILABLE_EXIT_CODE = 127
+REJECTED_EXIT_CODE = 126
+
+# These are the executable families produced by ContextGit's detectors.  A
+# caller may still use a project-local executable through an absolute path only
+# when it is explicitly allowed by the caller; arbitrary shell text is never
+# accepted.
+ALLOWED_EXECUTABLES = frozenset(
+    {
+        "bun",
+        "cargo",
+        "deno",
+        "go",
+        "make",
+        "node",
+        "npm",
+        "pnpm",
+        "python",
+        "python3",
+        "pytest",
+        "ruby",
+        "rustc",
+        "sleep",
+        "uv",
+        "yarn",
+    }
+)
+
+
+def command_argv(command: str) -> list[str]:
+    """Parse a command into argv while rejecting shell syntax."""
+    if any(token in command for token in (";", "|", "&", ">", "<", "`", "$(", "${")):
+        raise ValueError("shell operators are not allowed; provide an argv command")
+    try:
+        argv = shlex.split(command, posix=os.name != "nt")
+    except ValueError as exc:
+        raise ValueError(f"invalid command quoting: {exc}") from exc
+    if not argv:
+        raise ValueError("command is empty")
+    executable = os.path.basename(argv[0]).lower()
+    if executable not in ALLOWED_EXECUTABLES and not executable.startswith("python"):
+        raise ValueError(f"executable is not allowlisted: {executable}")
+    return argv
 
 
 @dataclass(frozen=True)
@@ -41,15 +84,19 @@ def run_command(
     env: dict[str, str] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> CommandResult:
-    """Run `command` (one shell line) in `cwd` and capture bounded output.
+    """Run an allowlisted argv command in `cwd` and capture bounded output.
 
     A missing binary, a non-zero exit and a timeout all come back as a
     `CommandResult` — the API layer never sees an exception from a gate.
     """
     try:
+        argv = command_argv(command)
+    except ValueError as exc:
+        return CommandResult(command=command, exit_code=REJECTED_EXIT_CODE, output=str(exc))
+    try:
         proc = subprocess.Popen(
-            command,
-            shell=True,
+            argv,
+            shell=False,
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

@@ -1480,6 +1480,102 @@ button.cg-chip[aria-pressed="true"] {
   overflow: auto;
 }
 
+/* ------------------------------------------------------ project workbench --- */
+.cg-workbench {
+  position: relative;
+  display: grid;
+  grid-template-columns: 13rem minmax(20rem, 1fr) minmax(18rem, 34%);
+  min-height: 19rem;
+  height: 48%;
+  margin: 0.6rem 0.6rem 0;
+  overflow: hidden;
+  border: 1px solid var(--cg-line);
+  border-radius: 10px;
+  background: var(--cg-bg);
+}
+.cg-workbench-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  justify-content: center;
+  align-items: center;
+  min-height: 12rem;
+  color: var(--cg-ink-2);
+  border-bottom: 1px solid var(--cg-line);
+}
+.cg-workbench-empty span { color: var(--cg-ink-3); font-size: 0.78rem; }
+.cg-workbench-explorer,
+.cg-workbench-editor,
+.cg-workbench-preview {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--cg-surface);
+}
+.cg-workbench-explorer { border-right: 1px solid var(--cg-line); }
+.cg-workbench-editor { border-right: 1px solid var(--cg-line); }
+.cg-workbench-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid var(--cg-line);
+  background: var(--cg-surface-2);
+  color: var(--cg-ink-2);
+  font: 600 0.68rem/1 "Martian Mono", monospace;
+}
+.cg-workbench-head > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-workbench-head .cg-icon-btn { margin-left: auto; }
+.cg-workbench-head .cg-editor-status,
+.cg-workbench-head .cg-preview-status { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cg-ink-3); font-size: 0.58rem; font-weight: 400; }
+.cg-workbench-head .cg-editor-status + .cg-btn { margin-left: 0.2rem; }
+.cg-file-tree { overflow: auto; padding: 0.3rem 0; }
+.cg-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+  border: 0;
+  background: transparent;
+  color: var(--cg-ink-2);
+  cursor: pointer;
+  text-align: left;
+  font: 400 0.68rem/1.2 "Martian Mono", monospace;
+}
+.cg-file-row:hover, .cg-file-row[data-selected="true"] { background: color-mix(in srgb, var(--cg-signal) 12%, transparent); color: var(--cg-ink); }
+.cg-file-row svg { flex: none; width: 0.82rem; height: 0.82rem; color: var(--cg-ink-3); }
+.cg-file-indent { width: 0.82rem; flex: none; }
+.cg-code-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 0.8rem;
+  border: 0;
+  outline: none;
+  background: var(--cg-bg);
+  color: var(--cg-ink);
+  tab-size: 2;
+  font: 400 0.74rem/1.55 "Martian Mono", ui-monospace, monospace;
+}
+.cg-editor-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; color: var(--cg-ink-3); font-size: 0.72rem; }
+.cg-editor-empty svg { width: 1.4rem; height: 1.4rem; }
+.cg-preview-controls { display: flex; gap: 0.35rem; padding: 0.35rem; border-bottom: 1px solid var(--cg-line); }
+.cg-preview-controls input { min-width: 0; flex: 1; padding: 0.32rem 0.45rem; border: 1px solid var(--cg-line); border-radius: 5px; background: var(--cg-bg); color: var(--cg-ink); font: 400 0.62rem/1 "Martian Mono", monospace; }
+.cg-preview-viewport { position: relative; flex: 1; min-height: 0; background: #fff; }
+.cg-preview-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.cg-preview-empty, .cg-preview-error { display: flex; align-items: center; justify-content: center; gap: 0.35rem; height: 100%; padding: 1rem; color: #6c6258; text-align: center; font: 400 0.72rem/1.4 "Martian Mono", monospace; }
+.cg-preview-error { color: #9f3d32; }
+.cg-workbench-toggle { position: absolute; right: 0.35rem; bottom: 0.35rem; z-index: 2; display: none; }
+
+@media (max-width: 1100px) {
+  .cg-workbench { grid-template-columns: 11rem minmax(18rem, 1fr) minmax(15rem, 31%); }
+}
+
 /* --------------------------------------------------------- code: panes ---- */
 
 .cg-pane-canvas {
