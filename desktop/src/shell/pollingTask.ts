@@ -8,6 +8,7 @@ export class PollingTask {
   constructor(private readonly task: (current: () => boolean) => Promise<void>) {}
 
   setAvailable(available: boolean): void {
+    if (this.available === available) return;
     this.generation++;
     this.available = available;
     this.again = false;

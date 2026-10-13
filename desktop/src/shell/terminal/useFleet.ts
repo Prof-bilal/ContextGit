@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { api, type FleetEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
+import { useProjectState } from "../useProjectState";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
@@ -13,7 +14,7 @@ const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextg
  * endpoint reads git once per run, so it polls less often than sessions.
  */
 export function useFleet() {
-  const [fleet, setFleet] = useState<FleetEntry[]>([]);
+  const [fleet, setFleet] = useProjectState<FleetEntry[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
@@ -27,7 +28,7 @@ export function useFleet() {
       if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load run state");
     }
-  }, [reportSuccess, reportFailure]);
+  }, [reportSuccess, reportFailure, setFleet]);
 
   const refresh = useBackendPolling(load, 6000);
 
