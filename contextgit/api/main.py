@@ -10,6 +10,10 @@ if not os.getenv("CONTEXTGIT_API_TOKEN"):
     os.environ["CONTEXTGIT_API_TOKEN"] = token
     print(f"ContextGit API token: {token}", flush=True)
 
-from contextgit.api.app import app
+if os.getenv("CONTEXTGIT_DESKTOP_PROJECTS") == "1":
+    from contextgit.api.projects import create_desktop_app
+    app = create_desktop_app(os.environ["CONTEXTGIT_API_TOKEN"])
+else:
+    from contextgit.api.app import app
 
 __all__ = ["app"]

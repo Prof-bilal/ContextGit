@@ -28,8 +28,27 @@ struct RuntimeInfo {
 #[serde(tag = "state", rename_all = "camelCase")]
 enum BackendStatus {
     Starting { message: String },
-    Ready { api_base: String },
+    Ready {
+        #[serde(rename = "apiBase")]
+        api_base: String,
+    },
     Error { message: String },
+}
+
+#[cfg(test)]
+mod backend_status_tests {
+    use super::BackendStatus;
+
+    #[test]
+    fn ready_status_exposes_renderer_api_base() {
+        let status = BackendStatus::Ready {
+            api_base: "http://127.0.0.1:42929".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(status).unwrap(),
+            serde_json::json!({ "state": "ready", "apiBase": "http://127.0.0.1:42929" })
+        );
+    }
 }
 
 struct BackendSupervisor {
@@ -44,13 +63,18 @@ struct Workspace {
     path: String,
     name: String,
     parent: String,
+    revision: u64,
 }
 
 #[derive(Deserialize, Serialize, Default)]
 struct ProjectStore {
     active: Option<String>,
     paths: Vec<String>,
+    #[serde(default)]
+    revision: u64,
 }
+
+struct ProjectSelection(Mutex<()>);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,11 +190,22 @@ fn backend_command(api_base: &str, resource_dir: &Path, data_dir: &Path) -> (Com
     let mut command = if !cfg!(debug_assertions) && bundled.is_some() {
         Command::new(bundled.expect("bundled backend checked"))
     } else {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let python = env::var("CONTEXTGIT_PYTHON").unwrap_or_else(|_| {
             if cfg!(windows) {
-                "python.exe".to_string()
+                let venv = root.join(".venv").join("Scripts").join("python.exe");
+                if venv.is_file() {
+                    venv.display().to_string()
+                } else {
+                    "python.exe".to_string()
+                }
             } else {
-                "python3".to_string()
+                let venv = root.join(".venv").join("bin").join("python");
+                if venv.is_file() {
+                    venv.display().to_string()
+                } else {
+                    "python3".to_string()
+                }
             }
         });
         let mut fallback = Command::new(python);
@@ -184,7 +219,6 @@ fn backend_command(api_base: &str, resource_dir: &Path, data_dir: &Path) -> (Com
             port,
         ]);
         if cfg!(debug_assertions) {
-            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
             fallback.current_dir(&root);
             let python_path = env::var("PYTHONPATH").unwrap_or_default();
             let root_text = root.display().to_string();
@@ -206,6 +240,7 @@ fn backend_command(api_base: &str, resource_dir: &Path, data_dir: &Path) -> (Com
     command.env("CONTEXTGIT_PORT", port);
     command.env("CONTEXTGIT_REPO", &repo);
     command.env("CONTEXTGIT_ROOT", data_dir);
+    command.env("CONTEXTGIT_DESKTOP_PROJECTS", "1");
     command.env(
         "CONTEXTGIT_API_TOKEN",
         env::var("CONTEXTGIT_API_TOKEN").unwrap_or_else(|_| "tauri-local-token".to_string()),
@@ -415,13 +450,11 @@ fn backend_status(supervisor: tauri::State<'_, BackendSupervisor>) -> BackendSta
     }
 }
 
-#[tauri::command]
-fn restart_backend(
+fn restart_backend_blocking(
     app: tauri::AppHandle,
     supervisor: tauri::State<'_, BackendSupervisor>,
 ) -> Result<BackendStatus, String> {
     stop_backend(&supervisor);
-    set_backend_repo(&app);
     let resource_dir = app
         .path()
         .resource_dir()
@@ -445,6 +478,16 @@ fn restart_backend(
     let status = BackendStatus::Ready { api_base };
     let _ = app.emit("backend-status", status.clone());
     Ok(status)
+}
+
+#[tauri::command]
+async fn restart_backend(app: tauri::AppHandle) -> Result<BackendStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let supervisor = app.state::<BackendSupervisor>();
+        restart_backend_blocking(app.clone(), supervisor)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -479,6 +522,7 @@ fn workspace_from_path(path: &Path) -> Workspace {
             .to_string(),
         parent: resolved.parent().unwrap_or(&resolved).display().to_string(),
         path: resolved.display().to_string(),
+        revision: 0,
     }
 }
 
@@ -513,16 +557,6 @@ fn write_projects(app: &tauri::AppHandle, state: &ProjectStore) -> Result<(), St
     .map_err(|error| error.to_string())
 }
 
-fn set_backend_repo(app: &tauri::AppHandle) {
-    let repo = read_projects(app)
-        .active
-        .map(|path| PathBuf::from(path).join(".contextgit"));
-    match repo {
-        Some(path) => env::set_var("CONTEXTGIT_REPO", path),
-        None => env::remove_var("CONTEXTGIT_REPO"),
-    }
-}
-
 fn project_list(app: &tauri::AppHandle) -> Vec<Workspace> {
     read_projects(app)
         .paths
@@ -532,26 +566,32 @@ fn project_list(app: &tauri::AppHandle) -> Vec<Workspace> {
 }
 
 fn activate_project(app: &tauri::AppHandle, path: &Path) -> Result<Workspace, String> {
+    let selection = app.state::<ProjectSelection>();
+    let _guard = selection.0.lock().map_err(|_| "Project selection is unavailable".to_string())?;
     if !path.is_dir() {
         return Err("Choose an existing folder".to_string());
     }
-    let workspace = workspace_from_path(path);
+    let mut workspace = workspace_from_path(path);
     let mut state = read_projects(app);
     if !state.paths.iter().any(|entry| entry == &workspace.path) {
         state.paths.push(workspace.path.clone());
     }
     state.active = Some(workspace.path.clone());
+    state.revision += 1;
+    workspace.revision = state.revision;
     write_projects(app, &state)?;
-    set_backend_repo(app);
     let _ = app.emit("project-changed", workspace.clone());
     Ok(workspace)
 }
 
 #[tauri::command]
 fn get_workspace(app: tauri::AppHandle) -> Option<Workspace> {
-    read_projects(&app)
-        .active
-        .map(|path| workspace_from_path(Path::new(&path)))
+    let state = read_projects(&app);
+    state.active.map(|path| {
+        let mut workspace = workspace_from_path(Path::new(&path));
+        workspace.revision = state.revision;
+        workspace
+    })
 }
 
 #[tauri::command]
@@ -566,14 +606,17 @@ fn use_project(app: tauri::AppHandle, path: String) -> Result<Workspace, String>
 
 #[tauri::command]
 fn forget_project(app: tauri::AppHandle, path: String) -> Result<Vec<Workspace>, String> {
+    let selection = app.state::<ProjectSelection>();
+    let _guard = selection.0.lock().map_err(|_| "Project selection is unavailable".to_string())?;
     let resolved = workspace_from_path(Path::new(&path)).path;
     let mut state = read_projects(&app);
     state.paths.retain(|entry| entry != &resolved);
     if state.active.as_deref() == Some(&resolved) {
         state.active = state.paths.first().cloned();
     }
+    state.revision += 1;
     write_projects(&app, &state)?;
-    set_backend_repo(&app);
+    let _ = app.emit("project-changed", get_workspace(app.clone()));
     Ok(project_list(&app))
 }
 
@@ -623,6 +666,8 @@ fn shell_command() -> String {
 
 fn harness_command(id: &str) -> (String, Vec<String>) {
     match id {
+        "antigravity" => ("agy".to_string(), Vec::new()),
+        "commandcode" => ("command-code".to_string(), Vec::new()),
         "ollama" => ("ollama".to_string(), vec!["run".to_string()]),
         "shell" | "" => (shell_command(), Vec::new()),
         other => (other.to_string(), Vec::new()),
@@ -652,7 +697,7 @@ fn find_harness(id: &str) -> HarnessCheck {
     }
     let resolver = if cfg!(windows) { "where" } else { "which" };
     let output = Command::new(resolver).arg(&command).output().ok();
-    let path = output.and_then(|value| {
+    let mut path = output.and_then(|value| {
         if value.status.success() {
             String::from_utf8_lossy(&value.stdout)
                 .lines()
@@ -664,6 +709,22 @@ fn find_harness(id: &str) -> HarnessCheck {
             None
         }
     });
+    // Some desktop installations put a mise installer wrapper on PATH. Its
+    // global setup check runs on every launch; use the already installed CLI.
+    if let Some(wrapper) = path.as_deref() {
+        if fs::metadata(wrapper).is_ok_and(|metadata| metadata.len() < 4096) {
+            if let Ok(source) = fs::read_to_string(wrapper) {
+                if source.contains("mise use -g") && source.contains("exec mise x") {
+                    if let Ok(resolved) = Command::new("mise").args(["which", &command]).output() {
+                        let executable = String::from_utf8_lossy(&resolved.stdout).trim().to_string();
+                        if resolved.status.success() && Path::new(&executable).is_file() {
+                            path = Some(executable);
+                        }
+                    }
+                }
+            }
+        }
+    }
     HarnessCheck {
         id: id.to_string(),
         command,
@@ -760,8 +821,13 @@ fn pty_start(
         })
         .map_err(|error| format!("Could not open terminal: {error}"))?;
     let (program, args) = harness_command(&options.command);
-    let mut command = CommandBuilder::new(program);
+    let executable = find_harness(&options.command).path.unwrap_or(program);
+    let mut command = CommandBuilder::new(executable);
     command.args(args);
+    // Give shells and full-screen CLIs a predictable terminal even when the
+    // desktop app was launched from a graphical session without TERM set.
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
     if let Some(cwd) = options.cwd.as_deref() {
         command.cwd(cwd);
     }
@@ -912,7 +978,7 @@ fn pty_kill(supervisor: tauri::State<'_, PtySupervisor>, id: String) {
 #[tauri::command]
 fn pty_presets() -> Vec<String> {
     [
-        "claude", "codex", "opencode", "gemini", "aider", "ollama", "shell",
+        "claude", "codex", "opencode", "antigravity", "aider", "ollama", "shell",
     ]
     .into_iter()
     .map(str::to_string)
@@ -941,6 +1007,7 @@ async fn save_file(
 fn main() {
     let app = tauri::Builder::default()
         .manage(BackendSupervisor::new())
+        .manage(ProjectSelection(Mutex::new(())))
         .manage(PtySupervisor::new())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {

@@ -1,4 +1,5 @@
 import type { BackendStatus } from "../shared/status";
+import { projectRuntime, invalidateProjects } from "../shared/projectRuntime";
 
 type TauriGlobals = {
   core?: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -19,36 +20,77 @@ export function installTauriBridge(): void {
   let status: BackendStatus = { state: "starting", message: "Starting the local ContextGit backend…" };
   const unsupported = (name: string) => Promise.reject(new Error(`Tauri command not migrated yet: ${name}`));
   const noEvents = () => () => { };
-  const onStatus = (callback: (next: BackendStatus) => void) => {
-    let active = true;
-    let stopEvent: (() => void) | undefined;
-    void tauri.event?.listen("backend-status", event => {
-      if (!active) return;
-      status = event.payload as BackendStatus;
-      if (status.state === "ready") apiBase = status.apiBase;
-      callback(status);
-    }).then(unlisten => { stopEvent = unlisten; });
-    const poll = async () => {
-      try {
-        status = await tauri.core!.invoke("backend_status") as typeof status;
-        if (status.state === "ready") apiBase = status.apiBase;
-        callback(status);
-      } catch {
-        // The renderer will keep its last known status until the next poll.
+  const dataListeners = new Set<(id: string, data: string) => void>();
+  const exitListeners = new Set<(id: string, code: number | undefined) => void>();
+  const ptyEventsReady = tauri.event ? Promise.all([
+    tauri.event.listen("pty-data", event => {
+      const payload = event.payload as { id?: unknown; data?: unknown };
+      if (typeof payload.id === "string" && typeof payload.data === "string") {
+        for (const callback of dataListeners) callback(payload.id, payload.data);
       }
-      if (active) window.setTimeout(() => void poll(), 1000);
-    };
-    void poll();
-    return () => { active = false; stopEvent?.(); };
+    }),
+    tauri.event.listen("pty-exit", event => {
+      const payload = event.payload as { id?: unknown; code?: unknown };
+      if (typeof payload.id === "string") {
+        for (const callback of exitListeners) callback(payload.id, typeof payload.code === "number" ? payload.code : undefined);
+      }
+    }),
+  ]) : Promise.reject(new Error("Tauri terminal events are unavailable."));
+  // The launch awaits this promise and reports any subscription failure.
+  void ptyEventsReady.catch(() => {});
+  const statusListeners = new Set<(next: BackendStatus) => void>();
+  const publishStatus = (next: BackendStatus) => {
+    const changed = next.state === "ready" && next.apiBase !== apiBase;
+    status = next;
+    if (status.state === "ready") apiBase = status.apiBase;
+    if (changed) invalidateProjects();
+    statusListeners.forEach(callback => callback(status));
   };
+  let statusTimer: number | undefined;
+  const pollStatus = async () => {
+    try { publishStatus(await tauri.core!.invoke("backend_status") as BackendStatus); } catch { }
+    if (statusListeners.size) statusTimer = window.setTimeout(() => void pollStatus(), 5000);
+  };
+  const onStatus = (callback: (next: BackendStatus) => void) => {
+    const first = statusListeners.size === 0;
+    statusListeners.add(callback);
+    callback(status);
+    if (first) void pollStatus();
+    return () => {
+      statusListeners.delete(callback);
+      if (!statusListeners.size && statusTimer !== undefined) window.clearTimeout(statusTimer);
+    };
+  };
+  void tauri.event?.listen("backend-status", event => publishStatus(event.payload as BackendStatus));
+  let projectRevision = -1;
+  let selectionSequence = 0;
+  let pendingSelection = false;
+  let observedWorkspace: import("../shared/workspace").Workspace | null = null;
+  const adoptWorkspace = (workspace: import("../shared/workspace").Workspace | null) => {
+    if (workspace && (workspace.revision ?? 0) >= (observedWorkspace?.revision ?? -1)) observedWorkspace = workspace;
+    if (pendingSelection) return;
+    if (workspace && (workspace.revision ?? 0) < projectRevision) return;
+    projectRevision = workspace?.revision ?? projectRevision + 1;
+    if (projectRuntime.read().path !== (workspace?.path ?? null)) projectRuntime.select(workspace?.path ?? null);
+  };
+  void tauri.event?.listen("project-changed", event => adoptWorkspace(event.payload as import("../shared/workspace").Workspace | null));
   const baseBridge = {
-    apiBase,
+    // Keep this property live. A backend restart may select a different free
+    // port, so consumers must never retain the bootstrap port (8756).
+    get apiBase() { return apiBase; },
     apiToken: "tauri-local-token",
     getStatus: () => ({ status, apiBase }),
+    refreshBackendStatus: async () => {
+      const next = await tauri.core!.invoke("backend_status") as typeof status;
+      status = next;
+      if (status.state === "ready") apiBase = status.apiBase;
+      return { status, apiBase };
+    },
     restartBackend: async () => {
       const next = await tauri.core!.invoke("restart_backend");
       status = next as typeof status;
       if (status.state === "ready") apiBase = status.apiBase;
+      invalidateProjects();
       return { status, apiBase };
     },
     newWindow: () => tauri.core!.invoke("new_window") as Promise<void>,
@@ -62,31 +104,51 @@ export function installTauriBridge(): void {
     onUpdateStatus: noEvents,
   } as unknown as ContextGitBridge;
   const migrated = {
-    getWorkspace: () => tauri.core!.invoke("get_workspace"),
+    getWorkspace: async () => {
+      const next = await tauri.core!.invoke("get_workspace") as import("../shared/workspace").Workspace | null;
+      adoptWorkspace(next);
+      return next;
+    },
     listProjects: () => tauri.core!.invoke("list_projects"),
     useProject: async (path: string) => {
-      const next = await tauri.core!.invoke("use_project", { path });
-      await tauri.core!.invoke("restart_backend");
-      return next;
+      const ticket = ++selectionSequence;
+      pendingSelection = true;
+      const previous = projectRuntime.read().path;
+      projectRuntime.select(path);
+      try {
+        const next = await tauri.core!.invoke("use_project", { path }) as import("../shared/workspace").Workspace;
+        if (ticket === selectionSequence) {
+          pendingSelection = false;
+          adoptWorkspace((observedWorkspace?.revision ?? -1) > (next.revision ?? 0) ? observedWorkspace : next);
+        }
+        return next;
+      } catch (cause) {
+        if (ticket === selectionSequence) {
+          pendingSelection = false;
+          if (projectRuntime.read().path === path) projectRuntime.select(previous);
+        }
+        throw cause;
+      }
     },
     forgetProject: async (path: string) => {
       const next = await tauri.core!.invoke("forget_project", { path });
-      await tauri.core!.invoke("restart_backend");
+      adoptWorkspace(await tauri.core!.invoke("get_workspace") as import("../shared/workspace").Workspace | null);
       return next;
     },
     chooseWorkspace: async () => {
       const next = await tauri.core!.invoke("choose_workspace");
-      if (next) await tauri.core!.invoke("restart_backend");
+      if (next) adoptWorkspace(next as import("../shared/workspace").Workspace);
       return next;
     },
     pickWorkspaceLocation: () => tauri.core!.invoke("pick_workspace_location"),
     createWorkspace: async (parent: string, name: string) => {
       const next = await tauri.core!.invoke("create_workspace", { parent, name });
-      await tauri.core!.invoke("restart_backend");
+      adoptWorkspace(next as import("../shared/workspace").Workspace);
       return next;
     },
-    ptyStart: (options: Parameters<ContextGitBridge["ptyStart"]>[0]) => {
-      void tauri.core!.invoke("pty_start", { options });
+    ptyStart: async (options: Parameters<ContextGitBridge["ptyStart"]>[0]) => {
+      await ptyEventsReady;
+      await tauri.core!.invoke("pty_start", { options });
     },
     ptyWrite: (id: string, data: string) => { void tauri.core!.invoke("pty_write", { id, data }); },
     ptyResize: (id: string, cols: number, rows: number) => { void tauri.core!.invoke("pty_resize", { id, cols, rows }); },
@@ -102,22 +164,12 @@ export function installTauriBridge(): void {
       return () => { active = false; };
     },
     onPtyData: (callback: (id: string, data: string) => void) => {
-      let active = true;
-      void tauri.event?.listen("pty-data", event => {
-        if (!active) return;
-        const payload = event.payload as { id?: unknown; data?: unknown };
-        if (typeof payload.id === "string" && typeof payload.data === "string") callback(payload.id, payload.data);
-      });
-      return () => { active = false; };
+      dataListeners.add(callback);
+      return () => { dataListeners.delete(callback); };
     },
     onPtyExit: (callback: (id: string, code: number | undefined) => void) => {
-      let active = true;
-      void tauri.event?.listen("pty-exit", event => {
-        if (!active) return;
-        const payload = event.payload as { id?: unknown; code?: unknown };
-        if (typeof payload.id === "string") callback(payload.id, typeof payload.code === "number" ? payload.code : undefined);
-      });
-      return () => { active = false; };
+      exitListeners.add(callback);
+      return () => { exitListeners.delete(callback); };
     },
     saveFile: async (options: { defaultName: string; data: ArrayBuffer }) => tauri.core!.invoke("save_file", {
       defaultName: options.defaultName,
@@ -138,6 +190,11 @@ export function installTauriBridge(): void {
       if (property.startsWith("on")) return noEvents;
       return (..._args: unknown[]) => unsupported(property);
     },
+  });
+  Object.defineProperty(bridge, "apiBase", {
+    enumerable: true,
+    configurable: false,
+    get: () => apiBase,
   });
 
   void tauri.core.invoke("backend_status").then(value => {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useProjectState } from "../useProjectState";
 import { api, type Session } from "@/shared/api";
 import BranchDialog from "../git/BranchDialog";
 import { commitsOnBranch } from "../git/branchCommits";
@@ -6,6 +7,7 @@ import DiffSheet from "../git/DiffSheet";
 import DeleteBranchDialog from "../git/DeleteBranchDialog";
 import MergeDialog from "../git/MergeDialog";
 import CommitConversationDialog from "../git/CommitConversationDialog";
+import Modal from "../Modal";
 import StorageFeature from "./StorageFeature";
 import { Chip, Field } from "../primitives";
 import GitRail from "../rail/GitRail";
@@ -16,15 +18,15 @@ import { FeaturePorts } from "../FeaturePorts";
 
 
 export default function GitFeature() {
-  const { snapshot, refreshRepo, repoLoading, refreshTrash, repoError, sessions, projects, activePath, refresh: refreshSessions } = useWorkbench();
+  const { snapshot, refreshRepo, repoLoading, refreshTrash, repoError, sessions, projects, activePath, refresh: refreshSessions, remove } = useWorkbench();
   const branches = snapshot?.branches ?? [];
   const commits = [...(snapshot?.commits ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-  const [barError, setBarError] = useState<string | null>(null);
+  const [barError, setBarError] = useProjectState<string | null>(null);
 
-  const [commitId, setCommitId] = useState<string | null>(null);
+  const [commitId, setCommitId] = useProjectState<string | null>(null);
 
-  const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useProjectState("");
 
   const [selectedProject, setSelectedProject] = useState(activePath ?? "");
 
@@ -41,6 +43,8 @@ export default function GitFeature() {
   const [surface, setSurface] = useState<"history" | "storage" | "session">("history");
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [conversationOpen, setConversationOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
+  const [sessionDeleteBusy, setSessionDeleteBusy] = useState(false);
 
   // The project list and repository resource initialize independently. When
   // the active project arrives (or changes), refresh the snapshot for that
@@ -126,17 +130,27 @@ export default function GitFeature() {
   };
 
   const deleteSession = async (session: Session) => {
-    if (!window.confirm(`Move session "${session.name}" and its history to Storage? You can restore it later.`)) return;
+    setSessionDeleteBusy(true);
     try {
-      await api.deleteSession(session.id);
+      // Use the shared session resource so the rail updates immediately after
+      // the server accepts the move-to-storage request. A refresh alone can
+      // briefly rehydrate the stale project-scoped list.
+      await remove(session.id);
       if (selectedBranch === session.branch) {
         setSelectedBranch("");
         setCommitId(null);
+      }
+      if (selectedSession?.id === session.id) {
+        setSelectedSession(null);
+        setSurface("history");
       }
       setBarError(null);
       await Promise.all([refreshSessions(), refreshRepo(), refreshTrash()]);
     } catch (cause) {
       setBarError(cause instanceof Error ? cause.message : "Could not delete session");
+    } finally {
+      setSessionDeleteBusy(false);
+      setSessionToDelete(null);
     }
   };
 
@@ -173,7 +187,7 @@ export default function GitFeature() {
         selectedBranch={selectedBranch}
         onSelectProject={chooseProject}
         onSelectSession={chooseSession}
-        onDeleteSession={(session) => void deleteSession(session)}
+        onDeleteSession={(session) => setSessionToDelete(session)}
         onCheckout={(name) => void checkoutBranch(name)}
         onDelete={(name) => setBranchToDelete(name)}
       />
@@ -280,7 +294,27 @@ export default function GitFeature() {
     );
   };
 
-  const dialogs = () => <>{diffOpen && activeCommit && (
+  const dialogs = () => <>{sessionToDelete && (
+    <Modal
+      title="Move session to Storage"
+      subtitle={sessionToDelete.name}
+      onClose={() => { if (!sessionDeleteBusy) setSessionToDelete(null); }}
+      footer={
+        <>
+          <button type="button" className="cg-btn" disabled={sessionDeleteBusy} onClick={() => setSessionToDelete(null)}>
+            Cancel
+          </button>
+          <button type="button" className="cg-btn" data-variant="danger" disabled={sessionDeleteBusy} onClick={() => void deleteSession(sessionToDelete)}>
+            {sessionDeleteBusy ? "Moving…" : "Move to Storage"}
+          </button>
+        </>
+      }
+    >
+      <p className="cg-empty-note">
+        Move <strong>{sessionToDelete.name}</strong> and its branch history to Storage? You can restore it later.
+      </p>
+    </Modal>
+  )}{diffOpen && activeCommit && (
     <DiffSheet
       commit={activeCommit}
       parentId={activeCommit.parent_ids[0] ?? null}
@@ -328,7 +362,7 @@ export default function GitFeature() {
     dock={dock}
     footer={footer}
     dialogs={dialogs}
-    onDismissDialogs={() => { setDiffOpen(false); setBranchOpen(false); setBranchToDelete(null); setMergeOpen(false); setConversationOpen(false); }}
-    hasModal={diffOpen || branchOpen || branchToDelete !== null || mergeOpen || conversationOpen}
+    onDismissDialogs={() => { if (!sessionDeleteBusy) setSessionToDelete(null); setDiffOpen(false); setBranchOpen(false); setBranchToDelete(null); setMergeOpen(false); setConversationOpen(false); }}
+    hasModal={sessionToDelete !== null || diffOpen || branchOpen || branchToDelete !== null || mergeOpen || conversationOpen}
     notice={barError ?? repoError} />;
 }

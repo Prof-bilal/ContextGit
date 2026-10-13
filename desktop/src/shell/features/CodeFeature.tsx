@@ -6,13 +6,13 @@ import { api, ApiError, type Message, type Session, type Task } from "@/shared/a
 import { ROLE_BY_ID, roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel } from "../agents";
 import { Chip, Field, StatusIcon } from "../primitives";
-import ProjectsRail from "../rail/ProjectsRail";
 import { useFleet } from "../terminal/useFleet";
 import { useMergeQueue } from "../terminal/useMergeQueue";
 import HarnessLimitsPanel from "../terminal/HarnessLimitsPanel";
 import { useLimits } from "../terminal/useLimits";
 import TaskDetail from "../team/TaskDetail";
 import TaskForm from "../team/TaskForm";
+import NewRunDialog from "../NewRunDialog";
 import TeamMessages from "../team/TeamMessages";
 import TeamRail from "../team/TeamRail";
 import CodeView from "../views/CodeView";
@@ -20,25 +20,28 @@ import TeamView from "../views/TeamView";
 import { useWorkbench } from "../WorkbenchContext";
 import { useFeatureAction } from "../useFeatureAction";
 import { FeaturePorts } from "../FeaturePorts";
+import { useProjectState } from "../useProjectState";
 
 
 export default function CodeFeature() {
+  const { tabSessions, closeAgentTab } = useWorkbench();
   const { error: actionError, run: runAction } = useFeatureAction();
-  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError } = useWorkbench();
+  const { backendAvailable, sessions, activeId, workspace, tab, setActiveId, refresh, revision, setProjectOpen, create, setKickoff, openSession, closeTerminal, teamBoard, mode, setOpenIds, teamAct, remove, refreshTrash, setRevision, refreshRepo, openIds, projects, activePath, useProject, forgetProject, refreshTeam, setAutoCommit, sessionsError, teamError } = useWorkbench();
   const { fleet, error: fleetError } = useFleet();
 
   const mergeQueue = useMergeQueue();
 
-  const [staged, setStaged] = useState<Message[]>([]);
+  const [staged, setStaged] = useProjectState<Message[]>([]);
 
-  const [summary, setSummary] = useState("");
+  const [summary, setSummary] = useProjectState("");
   useEffect(() => { setSummary(""); }, [activeId]);
 
-  const [barError, setBarError] = useState<string | null>(null);
+  const [barError, setBarError] = useProjectState<string | null>(null);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const [taskForm, setTaskForm] = useState<{ task: Task | null } | null>(null);
+  const [runFormOpen, setRunFormOpen] = useState(false);
 
   const [teamBusy, setTeamBusy] = useState(false);
 
@@ -57,7 +60,7 @@ export default function CodeFeature() {
 
   useBackendPolling(updateUsageActivity, 5000);
 
-  const { limits, loading: limitsLoading, refresh: refreshLimits } = useLimits(tab === "code", activeSession);
+  const { limits, loading: limitsLoading, error: limitsError, refresh: refreshLimits } = useLimits(tab === "code", activeSession);
 
   const limitsByHarness = new Map(limits.map((entry) => [entry.harness, entry]));
 
@@ -353,26 +356,7 @@ export default function CodeFeature() {
         onSelect={selectTask}
         onNew={() => setTaskForm({ task: null })}
       />
-    ) : (
-      <ProjectsRail
-        onMergeAgent={() => setMergeAgentOpen(value => !value)}
-        sessions={sessions.filter((session) => session.kind === "terminal")}
-        fleet={fleet}
-        openIds={openIds}
-        activeId={activeId}
-        limits={Object.fromEntries(limitsByHarness)}
-        projects={projects}
-        activePath={activePath}
-        onSelect={openSession}
-        onNew={startRun}
-        onNewTerminal={(projectPath) => void newTerminal(projectPath)}
-        backendAvailable={backendAvailable}
-        onDelete={(session) => void deleteRun(session)}
-        onUseProject={(path) => void runAction(() => useProject(path))}
-        onForgetProject={(path) => void runAction(() => forgetProject(path))}
-        onChooseProject={() => setProjectOpen(true)}
-      />
-    );
+    ) : null;
   };
 
   const view = () => <>
@@ -395,11 +379,15 @@ export default function CodeFeature() {
       />
     ) : (
       <CodeView
-        sessions={sessions}
+        sessions={tabSessions.filter(session => session.project_path === workspace?.path)}
         fleet={fleet}
         openIds={openIds}
+        activeId={activeId}
         workspace={workspace}
         onNewTerminal={() => void newTerminal()}
+        onSelect={openSession}
+        onClose={closeAgentTab}
+        onNewAgent={() => setRunFormOpen(true)}
         backendAvailable={backendAvailable}
         onChooseProject={() => setProjectOpen(true)}
       />
@@ -466,6 +454,11 @@ export default function CodeFeature() {
             Auto-checkpoint
           </label>
         </div>
+        <div className="cg-dock-group">
+          <HarnessLimitsPanel harness={runHarness} limits={limitsByHarness.get(runHarness)} loading={limitsLoading} onRefresh={refreshLimits} error={limitsError} />
+        </div>
+        <details className="cg-run-actions">
+          <summary>Merge & checkpoints</summary>
         <div className="cg-dock-group">
           <span className="cg-kicker">Merge queue</span>
           {mergeQueue.queue.length === 0 ? (
@@ -549,12 +542,7 @@ export default function CodeFeature() {
             Delete run
           </button>
         </div>
-        <HarnessLimitsPanel
-          harness={runHarness}
-          limits={limitsByHarness.get(runHarness)}
-          loading={limitsLoading}
-          onRefresh={refreshLimits}
-        />
+        </details>
       </>
     ) : (
       <p className="cg-empty-note">Select a run to inspect it.</p>
@@ -635,14 +623,17 @@ export default function CodeFeature() {
     );
   };
 
-  const dialogs = () => <>{taskForm && (
-    <TaskForm
-      task={taskForm.task}
-      tasks={teamTasks}
-      onSaved={() => void refreshTeam()}
-      onClose={() => setTaskForm(null)}
-    />
-  )}</>;
+  const dialogs = () => <>
+    {taskForm && (
+      <TaskForm
+        task={taskForm.task}
+        tasks={teamTasks}
+        onSaved={() => void refreshTeam()}
+        onClose={() => setTaskForm(null)}
+      />
+    )}
+    {runFormOpen && <NewRunDialog onStart={startRun} onClose={() => setRunFormOpen(false)} />}
+  </>;
   return <FeaturePorts id="code"
     title={mode === "team" ? "Task" : "Run"}
     rail={rail}
@@ -650,7 +641,7 @@ export default function CodeFeature() {
     dock={dock}
     footer={footer}
     dialogs={dialogs}
-    onDismissDialogs={() => { setTaskForm(null); }}
-    hasModal={taskForm !== null}
+    onDismissDialogs={() => { setTaskForm(null); setRunFormOpen(false); }}
+    hasModal={taskForm !== null || runFormOpen}
     notice={actionError ?? barError ?? sessionsError ?? fleetError ?? teamError ?? mergeQueue.error} />;
 }
