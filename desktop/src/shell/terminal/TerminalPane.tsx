@@ -6,12 +6,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { LuX } from "react-icons/lu";
 
-import { api, type Session } from "@/shared/api";
+import { projectApi, type Session } from "@/shared/api";
 import { harnessFor } from "../../../shared/harnesses";
 import { roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, StatusIcon } from "../primitives";
 import HarnessInstall from "./HarnessInstall";
+import { readableTerminalOutput } from "./readableOutput";
 
 /** ANSI palette shared by both themes so full-screen TUIs render intentional colours. */
 const ANSI = {
@@ -62,14 +63,6 @@ function newPtyId(sessionId: string): string {
   return `pty-${sessionId}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Store readable text rather than terminal escape sequences in the history view. */
-function readableTerminalOutput(value: string): string {
-  return value
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_]/g, "");
-}
-
 /**
  * One xterm.js view bound to a node-pty process in the main process. The pane
  * owns its PTY and stays mounted (hidden) while the session is open, so the
@@ -100,6 +93,7 @@ export default function TerminalPane({
   onClose: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const api = projectApi(session.project_path ?? undefined);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   // Markers move when scrollback is trimmed; a raw row number stops advancing
@@ -238,24 +232,6 @@ export default function TerminalPane({
         // hidden on first render; the visibility effect refits when shown
       }
 
-      bridge?.ptyStart({
-        id: ptyId,
-        sessionId: session.id,
-        command,
-        cols: term.cols,
-        rows: term.rows,
-        // The run's own worktree when it has one, else the workspace folder.
-        cwd: session.worktree_path ?? session.project_path ?? undefined,
-        // Team mode hands the agent its task as the first line it sees.
-        input: roleBriefing,
-        // Isolation + identity: its own port, and the task the MCP tools default to.
-        env: {
-          ...(session.port ? { PORT: String(session.port) } : {}),
-          CONTEXTGIT_RUN: session.name,
-          ...(taskId ? { CONTEXTGIT_TASK: taskId } : {}),
-        },
-      });
-
       let transcriptTimer: number | null = null;
       let transcriptBusy = false;
       function scheduleTranscriptFlush(): void {
@@ -284,14 +260,6 @@ export default function TerminalPane({
           if (transcriptPendingRef.current) scheduleTranscriptFlush();
         }
       }
-
-      // A live process means a running run: keep the rail's status dot honest.
-      void api
-        .updateSession(sessionRef.current.id, { status: "running" })
-        .then(() => onStatus?.())
-        .catch(() => {
-          // status is best-effort; the terminal still works
-        });
 
       /** Persist the outcome, and checkpoint staged output when asked to. */
       const finishRun = async (code: number | undefined) => {
@@ -340,8 +308,10 @@ export default function TerminalPane({
         pending += data;
         if (!frame) frame = requestAnimationFrame(flush);
       });
+      let processExited = false;
       const offExit = bridge?.onPtyExit((id, code) => {
         if (id !== ptyId) return;
+        processExited = true;
         setExited(true);
         void flushTranscript();
         void finishRun(code);
@@ -373,6 +343,40 @@ export default function TerminalPane({
         termRef.current = null;
         fitRef.current = null;
       };
+      // Install listeners and disposal before launching: a CLI can print its
+      // whole startup screen (or exit) before the invoke promise resolves.
+      try {
+        if (!bridge) throw new Error("The desktop terminal bridge is unavailable.");
+        await bridge.ptyStart({
+          id: ptyId,
+          sessionId: session.id,
+          command,
+          cols: term.cols,
+          rows: term.rows,
+          cwd: session.worktree_path ?? session.project_path ?? undefined,
+          input: roleBriefing,
+          env: {
+            ...(session.port ? { PORT: String(session.port) } : {}),
+            CONTEXTGIT_RUN: session.name,
+            ...(taskId ? { CONTEXTGIT_TASK: taskId } : {}),
+          },
+        });
+        if (cancelled) {
+          bridge.ptyKill(ptyId);
+          return;
+        }
+        term.focus();
+        if (!processExited) {
+          void api.updateSession(sessionRef.current.id, { status: "running" })
+            .then(() => onStatus?.()).catch(() => {});
+        }
+      } catch (cause) {
+        if (cancelled) return;
+        setExited(true);
+        setError(cause instanceof Error ? cause.message : String(cause));
+        void api.updateSession(sessionRef.current.id, { status: "error" })
+          .then(() => onStatus?.()).catch(() => {});
+      }
     };
     void setup();
 

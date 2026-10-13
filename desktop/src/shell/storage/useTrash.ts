@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { api, type Branch, type Session } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
+import { useProjectState } from "../useProjectState";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
@@ -12,8 +13,8 @@ const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextg
  * runs and branches appear and disappear as they are moved around.
  */
 export function useTrash() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [sessions, setSessions] = useProjectState<Session[]>([]);
+  const [branches, setBranches] = useProjectState<Branch[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
@@ -28,9 +29,20 @@ export function useTrash() {
       if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load Storage");
     }
-  }, [reportSuccess, reportFailure]);
+  }, [reportSuccess, reportFailure, setSessions, setBranches]);
 
   const refresh = useBackendPolling(load, 4000);
 
-  return { sessions, branches, error, refresh };
+  const removeSession = useCallback((id: string) => {
+    setSessions((current) => current.filter((session) => session.id !== id));
+  }, [setSessions]);
+  const removeBranch = useCallback((name: string) => {
+    setBranches((current) => current.filter((branch) => branch.name !== name));
+  }, [setBranches]);
+  const clearStored = useCallback(() => {
+    setSessions([]);
+    setBranches([]);
+  }, [setSessions, setBranches]);
+
+  return { sessions, branches, error, refresh, removeSession, removeBranch, clearStored };
 }

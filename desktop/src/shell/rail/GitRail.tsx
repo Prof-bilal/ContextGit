@@ -105,14 +105,17 @@ export default function GitRail({
 
   return (
     <nav className="cg-rail cg-git-rail" aria-label="Projects and sessions">
-      <div className="cg-rail-head">
-        <h2>Projects</h2>
+      <div className="cg-rail-head cg-git-rail-head">
+        <div>
+          <span className="cg-kicker">Git workspace</span>
+          <h2>Repository</h2>
+        </div>
         <span className="cg-count">{projects.length}</span>
       </div>
       <div className="cg-rail-search">
         <input
           type="search"
-          placeholder="Filter projects or sessions"
+          placeholder="Find a project or session"
           aria-label="Filter projects or sessions"
           value={query}
           onChange={(event) => setQuery(event.target.value)}

@@ -109,36 +109,43 @@ export default function GitView({
 
   return (
     <>
-      <div className="cg-view-toolbar">
-        <h1>History</h1>
-        <Chip>{projectName}</Chip>
-        {branch && <Chip>{branch}</Chip>}
-        <span className="cg-view-sub">
-          {sessionCount} session{sessionCount === 1 ? "" : "s"} · {visible.length} commit{visible.length === 1 ? "" : "s"}
-        </span>
-        {tags.length > 0 && <Chip>{tags.length} tag{tags.length === 1 ? "" : "s"}</Chip>}
-        <span className="cg-toolbar-spacer" />
-        <div className="cg-tags" role="group" aria-label="Commit kind filter">
-          {FILTERS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className="cg-chip"
-              aria-pressed={filter === option.value}
-              data-tone={filter === option.value ? "signal" : undefined}
-              onClick={() => onFilter(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+      <div className="cg-git-toolbar">
+        <div className="cg-git-toolbar-head">
+          <div className="cg-git-heading">
+            <span className="cg-kicker">Repository</span>
+            <h1>History</h1>
+            <span className="cg-view-sub">{projectName}</span>
+          </div>
+          <div className="cg-git-toolbar-actions">
+            <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>Refresh</button>
+            <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenStorage}>Storage</button>
+          </div>
         </div>
-        <button type="button" className="cg-btn cg-btn-sm" onClick={onRefresh}>
-          Refresh
-        </button>
-        <button type="button" className="cg-btn cg-btn-sm" onClick={onOpenStorage}>
-          Storage
-        </button>
-        <MiniSeg value={view} options={VIEW_OPTIONS} onChange={setView} label="History view" />
+        <div className="cg-git-toolbar-meta">
+          <div className="cg-git-stats" aria-label="History summary">
+            <span><strong>{sessionCount}</strong> session{sessionCount === 1 ? "" : "s"}</span>
+            <span><strong>{visible.length}</strong> commit{visible.length === 1 ? "" : "s"}</span>
+            {tags.length > 0 && <span><strong>{tags.length}</strong> tag{tags.length === 1 ? "" : "s"}</span>}
+            {branch && <Chip>{branch}</Chip>}
+          </div>
+          <div className="cg-git-view-controls">
+            <div className="cg-tags" role="group" aria-label="Commit kind filter">
+              {FILTERS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="cg-chip"
+                  aria-pressed={filter === option.value}
+                  data-tone={filter === option.value ? "signal" : undefined}
+                  onClick={() => onFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <MiniSeg value={view} options={VIEW_OPTIONS} onChange={setView} label="History view" />
+          </div>
+        </div>
       </div>
       <div className="cg-view-body">
         {loading ? (

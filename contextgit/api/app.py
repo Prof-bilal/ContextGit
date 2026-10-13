@@ -752,10 +752,20 @@ def create_app(
         return session.model_dump(mode="json")
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
-    def delete_session(session_id: str, permanent: bool = False, current: Repo = repo_dep) -> None:
-        """Move a run to Storage. Pass `permanent=true` to delete it for good."""
+    def delete_session(
+        session_id: str,
+        permanent: bool = False,
+        remove_worktree: bool = True,
+        force_worktree: bool = False,
+        current: Repo = repo_dep,
+    ) -> None:
+        """Move a run to Storage, or permanently delete it with explicit cleanup flags."""
         if permanent:
-            current.delete_session(session_id)
+            current.delete_session(
+                session_id,
+                remove_worktree=remove_worktree,
+                force_worktree=force_worktree,
+            )
         else:
             current.trash_session(session_id)
 

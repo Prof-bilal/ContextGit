@@ -704,17 +704,23 @@ class Repo:
             self._storage.restore_branch(session.branch)
         return session
 
-    def delete_session(self, session_id: str, *, remove_worktree: bool = True) -> None:
+    def delete_session(
+        self,
+        session_id: str,
+        *,
+        remove_worktree: bool = True,
+        force_worktree: bool = False,
+    ) -> None:
         """Permanently delete a session, its branch, and exclusive commits.
 
         The session's git worktree is removed when clean; a worktree with
-        uncommitted changes is kept so no work is lost. Commits reachable from
+        uncommitted changes is kept unless force_worktree is enabled. Commits reachable from
         another branch, tag, or session are preserved. Callers that want to
         keep the run and its history recoverable should use `trash_session`.
         """
         session = self._storage.get_session(session_id)
         if remove_worktree and session.worktree_path:
-            self._remove_worktree(session.worktree_path)
+            self._remove_worktree(session.worktree_path, force=force_worktree)
         self._purge_session_history(session)
         self._storage.delete_session(session_id)
 
@@ -752,15 +758,21 @@ class Repo:
             + [tag.commit_id for tag in self._storage.list_tags()]
         )
         owned = reachable([target.head_commit_id]) - protected
-        self._storage.delete_branch(session.branch)
+        # A Storage cleanup can race with a separate permanent branch delete
+        # (Empty Storage used to issue both requests together). The session is
+        # already being removed, so a missing paired branch is safe here.
+        try:
+            self._storage.delete_branch(session.branch)
+        except BranchNotFound:
+            pass
         self._storage.delete_commits(sorted(owned))
 
     @staticmethod
-    def _remove_worktree(worktree_path: str) -> None:
-        """Best-effort cleanup; keep the worktree if it holds uncommitted work."""
+    def _remove_worktree(worktree_path: str, *, force: bool = False) -> None:
+        """Best-effort cleanup; preserve dirty worktrees unless forced."""
         try:
-            WorktreeManager.from_worktree(worktree_path).remove(Path(worktree_path).name)
-        except (DirtyWorktree, WorktreeNotFound, NotAGitRepo, GitCommandError, ValueError):
+            WorktreeManager.from_worktree(worktree_path).remove(Path(worktree_path).name, force=force)
+        except (DirtyWorktree, WorktreeNotFound, NotAGitRepo, GitCommandError, ValueError, OSError):
             return
 
     # ---------- fleet (code status of parallel runs) ----------
@@ -1773,6 +1785,7 @@ class Repo:
         messages = self._storage.staged_messages(session_id)
         if not messages:
             raise StagingEmpty(f"session '{session.name}' has no staged messages")
+        self._ensure_session_branch(session)
         commit = self.commit(
             messages,
             model=model or session.agent or "none",
@@ -1804,6 +1817,26 @@ class Repo:
                 branch=session.branch,
             )
         return commit
+
+    def _ensure_session_branch(self, session: Session) -> None:
+        """Repair a stale session pointer before writing a checkpoint.
+
+        Storage can contain sessions created before a branch was permanently
+        removed, or a cleanup can race with a still-mounted terminal. A live
+        run must not fail its next checkpoint just because its metadata points
+        at a missing branch.
+        """
+        if self._branch_exists(session.branch):
+            if self._storage.branch_is_trashed(session.branch):
+                self._storage.restore_branch(session.branch)
+            return
+        from_commit = session.base_commit
+        if session.worktree_path:
+            try:
+                from_commit = Git(session.worktree_path).rev_parse("HEAD")
+            except (GitCommandError, OSError):
+                pass
+        self.branch(session.branch, from_commit=from_commit, project_path=session.project_path)
 
     @staticmethod
     def _estimate_text(text: str) -> int:
