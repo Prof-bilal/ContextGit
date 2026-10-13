@@ -30,6 +30,11 @@ const args = [
   "--hidden-import", "uvicorn.protocols.http.h11_impl",
   "--hidden-import", "uvicorn.protocols.websockets.auto",
   "--hidden-import", "uvicorn.lifespan.on",
+  // The server resolves this ASGI app from a string at runtime, so PyInstaller
+  // cannot discover the desktop project router through normal import analysis.
+  "--hidden-import", "contextgit.api.main",
+  "--hidden-import", "contextgit.api.projects",
+  "--hidden-import", "contextgit.api.app",
   "--collect-data", "contextgit",
   "--distpath", path.join(root, "desktop", "build", "backend"),
   "--workpath", path.join(root, "desktop", "build", "pyinstaller"),
