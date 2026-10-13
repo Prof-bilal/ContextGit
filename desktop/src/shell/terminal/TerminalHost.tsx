@@ -10,11 +10,8 @@ export default function TerminalHost() {
     ...(task.session_id ? [[task.session_id, task.id] as const] : []),
     ...(task.verifier_session_id ? [[task.verifier_session_id, task.id] as const] : []),
   ]));
-  const workingSessionIds = Object.fromEntries(tasks
-    .filter(task => task.status === "working" && task.session_id)
-    .map(task => [task.session_id!, true] as const));
   return <PaneCanvas sessions={sessions} openIds={openIds}
-    theme={theme} kickoff={kickoff} taskIds={taskIds} workingSessionIds={workingSessionIds}
+    theme={theme} kickoff={kickoff} taskIds={taskIds}
     onSelect={openSession} onClose={closeTerminal}
     onStaged={() => setRevision(value => value + 1)} onStatus={() => void refresh()} />;
 }

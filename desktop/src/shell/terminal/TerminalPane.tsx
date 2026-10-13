@@ -76,7 +76,6 @@ export default function TerminalPane({
   theme,
   initialInput,
   taskId,
-  working,
   onStaged,
   onStatus,
   onActivate,
@@ -89,8 +88,6 @@ export default function TerminalPane({
   initialInput?: string;
   /** The team task this run owns, exported so the MCP tools know it. */
   taskId?: string;
-  /** True only while the assigned team task is actively being worked. */
-  working?: boolean;
   onStaged: () => void;
   /** Called when this pane changes the run's status (or checkpoints it). */
   onStatus?: () => void;
@@ -115,6 +112,9 @@ export default function TerminalPane({
   const disposeRef = useRef<(() => void) | null>(null);
   const restartingRef = useRef(false);
   const command = session.agent ?? "shell";
+  // Session status reflects the PTY lifecycle. Glow for an active AI harness,
+  // but not for a regular shell that happens to be left open at a prompt.
+  const working = session.status === "running" && command !== "shell";
   const role = roleFor(session.role);
   const loadedSkills = session.skills.length > 0
     ? session.skills

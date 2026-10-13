@@ -47,7 +47,6 @@ export default function PaneCanvas({
   theme,
   kickoff,
   taskIds,
-  workingSessionIds,
   onSelect,
   onClose,
   onStaged,
@@ -60,8 +59,6 @@ export default function PaneCanvas({
   kickoff?: Record<string, string>;
   /** Session id → the team task it owns, exported as CONTEXTGIT_TASK. */
   taskIds?: Record<string, string>;
-  /** Session id → whether its assigned task is actively in progress. */
-  workingSessionIds?: Record<string, true>;
   onSelect: (session: Session) => void;
   onClose: (session: Session) => void;
   onStaged: () => void;
@@ -93,7 +90,6 @@ export default function PaneCanvas({
               theme={theme}
               initialInput={kickoff?.[session.id]}
               taskId={taskIds?.[session.id]}
-              working={workingSessionIds?.[session.id] === true}
               onActivate={() => onSelect(session)}
               onClose={() => onClose(session)}
               onStaged={onStaged}
