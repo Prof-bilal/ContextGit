@@ -9,7 +9,7 @@ import { useRepo } from "./git/useRepo";
 const unavailable = async (): Promise<never> => { throw new Error("This data source is unavailable. Try again before making changes."); };
 const refreshUnavailable = async () => { };
 const useSessionsSource = createIsolatedResource<ReturnType<typeof useSessions>>("Sessions", useSessions, {
-  sessions: [], loaded: false, removedIds: [], error: null, refresh: refreshUnavailable,
+  sessions: [], loaded: false, loadedProjects: [], removedIds: [], error: null, refresh: refreshUnavailable,
   create: unavailable, remove: unavailable, setAutoCommit: unavailable, stop: unavailable,
 });
 // Team mode is retired. Keep a typed compatibility value for old Code panels,
@@ -25,6 +25,7 @@ const useProjectsSource = createIsolatedResource<ReturnType<typeof useProjects>>
 });
 const useTrashSource = createIsolatedResource<ReturnType<typeof useTrash>>("Storage data", useTrash, {
   sessions: [], branches: [], error: null, refresh: refreshUnavailable,
+  removeSession: () => {}, removeBranch: () => {}, clearStored: () => {},
 });
 const useRepoSource = createIsolatedResource<ReturnType<typeof useRepo>>("Repository", useRepo, {
   snapshot: null, loading: true, error: null, refresh: refreshUnavailable,

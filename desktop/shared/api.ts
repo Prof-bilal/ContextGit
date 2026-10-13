@@ -1,4 +1,5 @@
 import { apiRequest, ApiError, requestTimeout, type RequestOptions } from "./apiRequest";
+import { prepareProject, projectRuntime } from "./projectRuntime";
 export { ApiError } from "./apiRequest";
 
 export type Role = "system" | "user" | "assistant" | "tool";
@@ -436,13 +437,23 @@ function repositoryHeaders(): Record<string, string> {
   return expectedRepository ? { "X-ContextGit-Repo": expectedRepository } : {};
 }
 
-async function request<T>(path: string, init?: RequestOptions): Promise<T> {
-  const repoHeaders = repositoryHeaders();
-  return apiRequest<T>(`${backendBase()}${path}`, {
+const sessionProjects = new Map<string, string>();
+async function sendRequest<T>(path: string, init?: RequestOptions, owner?: string): Promise<T> {
+  const sessionId = /^\/api\/v1\/sessions\/([^/?]+)/.exec(path)?.[1];
+  const projectPath = owner ?? (sessionId ? sessionProjects.get(sessionId) : undefined) ?? projectRuntime.read().path;
+  const project = projectPath ? await prepareProject(projectPath) : null;
+  const repoHeaders = project ? { "X-ContextGit-Repo": project.repoId, "X-ContextGit-Project": project.projectId } : repositoryHeaders();
+  const result = await apiRequest<T>(`${backendBase()}${path}`, {
     timeoutMs: requestTimeout(path, init?.method),
     ...init,
     headers: { "Content-Type": "application/json", ...launchHeaders(), ...repoHeaders, ...init?.headers },
   });
+  if (projectPath && path === "/api/v1/sessions") {
+    for (const session of Array.isArray(result) ? result : [result]) {
+      if (session && typeof session === "object" && "id" in session && typeof session.id === "string") sessionProjects.set(session.id, projectPath);
+    }
+  }
+  return result;
 }
 
 /** Real context size of a branch, for the inspector. */
@@ -871,7 +882,9 @@ export interface DbQueryResult {
   statement: string;
 }
 
-export const api = {
+export function projectApi(owner?: string) {
+  const request = <T>(path: string, init?: RequestOptions) => sendRequest<T>(path, init, owner);
+  return {
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
   branchBudget: (name: string) =>
     request<BranchBudget>(
@@ -1200,9 +1213,9 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   trash: () => request<TrashSnapshot>("/api/v1/trash"),
-  deleteSession: (id: string, permanent = false) =>
+  deleteSession: (id: string, permanent = false, removeWorktree = true, forceWorktree = false) =>
     request<void>(
-      `/api/v1/sessions/${id}${permanent ? "?permanent=true" : ""}`,
+      `/api/v1/sessions/${id}?permanent=${permanent}&remove_worktree=${removeWorktree}&force_worktree=${forceWorktree}`,
       {
         method: "DELETE",
       },
@@ -1338,7 +1351,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ agent }),
     }),
-};
+  };
+}
+export const api = projectApi();
 
 export interface IntegrationSettings {
   project: string; harness: "codex" | "claude"; target: string; checks: string;
