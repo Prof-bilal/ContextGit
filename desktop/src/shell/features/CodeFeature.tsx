@@ -41,7 +41,7 @@ export default function CodeFeature() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const [taskForm, setTaskForm] = useState<{ task: Task | null } | null>(null);
-  const [runFormOpen, setRunFormOpen] = useState(false);
+  const [runForm, setRunForm] = useState<{ initialAgent?: string; title?: string } | null>(null);
 
   const [teamBusy, setTeamBusy] = useState(false);
 
@@ -92,7 +92,7 @@ export default function CodeFeature() {
   }, [activeSession, revision, refresh]);
 
   const startRun = useCallback(
-    async (name: string, agent: string, scope: string[], roleId: string) => {
+    async (name: string, agent: string, scope: string[], roleId: string, worktree: boolean) => {
       if (!workspace) {
         setProjectOpen(true);
         throw new Error("Choose a project folder first");
@@ -105,6 +105,7 @@ export default function CodeFeature() {
         scope,
         role?.label,
         role ? roleSkills(role).map((skill) => skill.label) : [],
+        worktree,
       );
       if (role) {
         // Auto-load the role's skills as this run's opening instruction.
@@ -120,25 +121,6 @@ export default function CodeFeature() {
     },
     [create, openSession, workspace],
   );
-
-  const newTerminal = useCallback(async (projectPath?: string) => {
-    const targetPath = projectPath ?? workspace?.path;
-    if (!targetPath) {
-      setProjectOpen(true);
-      setBarError("Choose a project folder first");
-      return;
-    }
-    try {
-      const shellCount = sessions.filter(
-        (session) =>
-          (session.agent ?? "shell") === "shell" && session.project_path === targetPath,
-      ).length;
-      const created = await create(`shell ${shellCount + 1}`, "shell", targetPath);
-      openSession(created);
-    } catch (cause) {
-      setBarError(cause instanceof Error ? cause.message : "Could not open a terminal");
-    }
-  }, [create, openSession, sessions, workspace]);
 
   const teamTasks = teamBoard?.tasks ?? [];
 
@@ -384,10 +366,10 @@ export default function CodeFeature() {
         openIds={openIds}
         activeId={activeId}
         workspace={workspace}
-        onNewTerminal={() => void newTerminal()}
+        onNewTerminal={() => setRunForm({ initialAgent: "shell", title: "New terminal" })}
         onSelect={openSession}
         onClose={closeAgentTab}
-        onNewAgent={() => setRunFormOpen(true)}
+        onNewAgent={() => setRunForm({})}
         backendAvailable={backendAvailable}
         onChooseProject={() => setProjectOpen(true)}
       />
@@ -632,7 +614,14 @@ export default function CodeFeature() {
         onClose={() => setTaskForm(null)}
       />
     )}
-    {runFormOpen && <NewRunDialog onStart={startRun} onClose={() => setRunFormOpen(false)} />}
+    {runForm && (
+      <NewRunDialog
+        onStart={startRun}
+        initialAgent={runForm.initialAgent}
+        title={runForm.title}
+        onClose={() => setRunForm(null)}
+      />
+    )}
   </>;
   return <FeaturePorts id="code"
     title={mode === "team" ? "Task" : "Run"}
@@ -641,7 +630,7 @@ export default function CodeFeature() {
     dock={dock}
     footer={footer}
     dialogs={dialogs}
-    onDismissDialogs={() => { setTaskForm(null); setRunFormOpen(false); }}
-    hasModal={taskForm !== null || runFormOpen}
+    onDismissDialogs={() => { setTaskForm(null); setRunForm(null); }}
+    hasModal={taskForm !== null || runForm !== null}
     notice={actionError ?? barError ?? sessionsError ?? fleetError ?? teamError ?? mergeQueue.error} />;
 }

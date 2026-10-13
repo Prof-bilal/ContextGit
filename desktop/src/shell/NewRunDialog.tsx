@@ -6,15 +6,24 @@ import Modal from "./Modal";
 import { LuChevronDown } from "react-icons/lu";
 
 type NewRunDialogProps = {
-  onStart: (name: string, agent: string, scope: string[], roleId: string) => Promise<void>;
+  onStart: (
+    name: string,
+    agent: string,
+    scope: string[],
+    roleId: string,
+    worktree: boolean,
+  ) => Promise<void>;
+  initialAgent?: string;
+  title?: string;
   onClose: () => void;
 };
 
-export default function NewRunDialog({ onStart, onClose }: NewRunDialogProps) {
+export default function NewRunDialog({ onStart, initialAgent, title = "New agent", onClose }: NewRunDialogProps) {
   const [name, setName] = useState("");
-  const [agent, setAgent] = useState(DEFAULT_AGENT);
+  const [agent, setAgent] = useState(initialAgent ?? DEFAULT_AGENT);
   const [roleId, setRoleId] = useState("");
   const [scope, setScope] = useState("");
+  const [worktree, setWorktree] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const role = roleId ? ROLE_BY_ID[roleId] : undefined;
@@ -26,7 +35,13 @@ export default function NewRunDialog({ onStart, onClose }: NewRunDialogProps) {
     setBusy(true);
     setError(null);
     try {
-      await onStart(trimmed, agent, scope.split(",").map((part) => part.trim()).filter(Boolean), roleId);
+      await onStart(
+        trimmed,
+        agent,
+        scope.split(",").map((part) => part.trim()).filter(Boolean),
+        roleId,
+        worktree,
+      );
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start the agent");
@@ -36,7 +51,7 @@ export default function NewRunDialog({ onStart, onClose }: NewRunDialogProps) {
   };
 
   return (
-    <Modal title="New agent" onClose={onClose} size="sm">
+    <Modal title={title} onClose={onClose} size="sm">
       <form className="cg-form cg-new-agent-form" onSubmit={(event) => void submit(event)}>
         <label htmlFor="cg-new-agent-name">Run name</label>
         <input id="cg-new-agent-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. fix auth bug" autoFocus />
@@ -44,6 +59,29 @@ export default function NewRunDialog({ onStart, onClose }: NewRunDialogProps) {
         <div className="cg-select-control"><select id="cg-new-agent-cli" value={agent} onChange={(event) => setAgent(event.target.value)}>
           {AGENTS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
         </select><LuChevronDown aria-hidden="true" /></div>
+        <fieldset className="cg-agent-advanced-fields">
+          <legend>Working folder</legend>
+          <label>
+            <input
+              type="radio"
+              name="cg-run-location"
+              checked={worktree}
+              onChange={() => setWorktree(true)}
+            />
+            <span> Create an isolated worktree</span>
+            <small> Recommended for edits. The run gets its own branch and checkout.</small>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="cg-run-location"
+              checked={!worktree}
+              onChange={() => setWorktree(false)}
+            />
+            <span> Start in the project root</span>
+            <small> Shares the selected folder and its uncommitted changes with other tools.</small>
+          </label>
+        </fieldset>
         <details className="cg-agent-advanced"><summary>Advanced</summary><div className="cg-agent-advanced-fields">
         <label htmlFor="cg-new-agent-role">Role</label>
         <div className="cg-select-control"><select id="cg-new-agent-role" value={roleId} onChange={(event) => setRoleId(event.target.value)}>

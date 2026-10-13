@@ -146,6 +146,15 @@ class TestPreflight:
 
 
 class TestSessionWorktreePairing:
+    def test_project_root_session_skips_worktree_creation(self, repo: Repo, project: Path) -> None:
+        session = repo.create_session(
+            "inspect root", project_path=str(project), worktree=False
+        )
+
+        assert session.project_path == str(project.resolve())
+        assert session.worktree_path is None
+        assert session.git_branch is None
+
     def test_create_session_pairs_branch_with_worktree(self, repo: Repo, project: Path) -> None:
         session = repo.create_session(
             "feature a", kind="terminal", project_path=str(project), worktree=True, task="draw a"

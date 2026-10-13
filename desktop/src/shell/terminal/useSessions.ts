@@ -68,6 +68,7 @@ export function useSessions() {
       scope?: string[],
       role?: string,
       skills?: string[],
+      worktree = true,
     ) => {
       if (!connected() || !projectRuntime.read().ready) throw new Error("This project is still loading. Please wait or retry opening it.");
       if (creating.current) throw new Error("A run is already starting. Please wait.");
@@ -78,9 +79,9 @@ export function useSessions() {
           kind: "terminal",
           agent,
           projectPath,
-          // One git worktree per run when the project is a git repo (backend falls
-          // back to the shared workspace otherwise).
-          worktree: Boolean(projectPath),
+          // A shared project-root run is useful for quick investigation; an
+          // isolated worktree remains the safe default for edits.
+          worktree: Boolean(projectPath) && worktree,
           scope: scope ?? [],
           role,
           skills,
