@@ -35,7 +35,7 @@ def _validate_destination(url: str, *, resolve: bool) -> None:
         if resolve:
             try:
                 addresses = [
-                    info[4][0]
+                    str(info[4][0])
                     for info in socket.getaddrinfo(
                         host, parsed.port or 80, type=socket.SOCK_STREAM
                     )

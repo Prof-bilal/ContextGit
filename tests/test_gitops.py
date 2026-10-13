@@ -178,6 +178,16 @@ class TestSessionWorktreePairing:
 
 
 class TestFleetStatus:
+    def test_fleet_cache_is_invalidated_by_session_updates(self, repo: Repo, project: Path) -> None:
+        session = repo.create_session("alpha", project_path=str(project), worktree=True)
+        assert repo.fleet()[0].status == "idle"
+
+        repo.set_session_status(session.id, "running")
+
+        # A status update is user-visible and must not wait for the short git
+        # status cache to expire.
+        assert repo.fleet()[0].status == "running"
+
     def test_workspace_status_reports_changes(self, repo: Repo, project: Path) -> None:
         session = repo.create_session("alpha", project_path=str(project), worktree=True)
         (Path(str(session.worktree_path)) / "app.py").write_text("changed\n")

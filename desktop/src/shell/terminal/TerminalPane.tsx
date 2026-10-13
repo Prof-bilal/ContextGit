@@ -66,7 +66,9 @@ function newPtyId(sessionId: string): string {
 /**
  * One xterm.js view bound to a node-pty process in the main process. The pane
  * owns its PTY and stays mounted (hidden) while the session is open, so the
- * process and scrollback survive layout and tab switches.
+ * process and scrollback survive layout and tab switches. Keep its local
+ * buffer intentionally modest: transcript persistence retains the durable
+ * history without making every open agent consume a large renderer buffer.
  */
 export default function TerminalPane({
   session,
@@ -198,10 +200,11 @@ export default function TerminalPane({
         minimumContrastRatio: 4.5,
         customGlyphs: true,
         smoothScrollDuration: 0,
-        // Keep the terminal text in the DOM: the WebGL renderer draws to a
-        // canvas, so this is what exposes the content to screen readers and tests.
-        screenReaderMode: true,
-        scrollback: 10000,
+        // screenReaderMode mirrors the complete buffer into the DOM. That is
+        // expensive per pane and xterm remains keyboard-accessible without it;
+        // enable it only when we add an explicit accessibility preference.
+        screenReaderMode: false,
+        scrollback: 2000,
         theme: TERM_THEME[theme],
       });
       const fit = new FitAddon();

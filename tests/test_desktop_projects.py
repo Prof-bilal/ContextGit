@@ -1,5 +1,7 @@
 from pathlib import Path
+
 from fastapi.testclient import TestClient
+
 from contextgit.api.projects import create_desktop_app
 
 

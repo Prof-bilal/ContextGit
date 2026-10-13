@@ -1,4 +1,4 @@
-from contextgit.limits.codex import normalize_limits, fetch_limits
+from contextgit.limits.codex import fetch_limits, normalize_limits
 
 
 def test_codex_windows_use_reported_duration_and_used_percentage():

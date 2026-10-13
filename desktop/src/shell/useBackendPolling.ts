@@ -22,7 +22,11 @@ export function useBackendPolling(task: (current: () => boolean) => Promise<void
     if (!bridge) return () => { mounted.current = false; };
     const initial = bridge.getStatus();
     let backendKey = initial.status.state === "ready" ? initial.apiBase : null;
-    const available = () => backendKey !== null && projectRuntime.read().ready;
+    // Background polling is pure overhead when the window is hidden.  More
+    // importantly, some of these endpoints spawn git processes, so keep the
+    // renderer quiet while the user is working elsewhere.
+    const visible = () => document.visibilityState === "visible";
+    const available = () => backendKey !== null && projectRuntime.read().ready && visible();
     poll.setAvailable(available());
     void poll.tick().catch(report);
     const off = bridge.onStatus(status => {
@@ -37,11 +41,17 @@ export function useBackendPolling(task: (current: () => boolean) => Promise<void
       poll.setAvailable(available());
       if (available()) void refresh();
     });
+    const onVisibilityChange = () => {
+      poll.setAvailable(available());
+      if (available()) void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     const timer = intervalMs > 0 ? setInterval(() => void poll.tick().catch(report), intervalMs) : undefined;
     return () => {
       if (timer !== undefined) clearInterval(timer);
       off();
       offProject();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       poll.setAvailable(false);
       mounted.current = false;
     };

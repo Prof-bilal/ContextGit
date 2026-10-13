@@ -6,6 +6,7 @@ Deleting a branch never deletes commits.
 """
 
 import os
+import time
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -110,6 +111,10 @@ _ROOT_PARENT = "a3f9c21"
 _DEFAULT_MAX_ACTIVE = 5
 # Port the first run gets; each further run takes the next one.
 _DEFAULT_PORT_BASE = 4000
+# Fleet state is requested by a live UI, but each refresh performs several git
+# operations per worktree. A tiny per-repository TTL keeps the UI responsive
+# without repeatedly waking disks and CPUs on low-end machines.
+_FLEET_CACHE_SECONDS = 3.0
 # Verifier preference when the caller does not name one (never the implementer).
 _VERIFIER_AGENTS = (
     "claude",
@@ -173,6 +178,7 @@ class Repo:
         self._storage = storage or SqliteStorage(self._root / _DB_NAME)
         # One-time: fill in project_path for runs recorded before the column.
         self._projects_backfilled = False
+        self._fleet_cache: tuple[float, list[FleetEntry]] | None = None
         self._integration = IntegrationService(self)
         self.transcripts = TranscriptService(self, self._storage, self._root)
 
@@ -597,6 +603,7 @@ class Repo:
                 project_path,
                 self.shared_context(session.id) if session.worktree_path else None,
             )
+        self._fleet_cache = None
         return session
 
     def _attach_worktree(self, session: Session, project_path: str, base_ref: str | None) -> None:
@@ -661,6 +668,7 @@ class Repo:
         session.status = cast("Literal['idle', 'running', 'done', 'error']", status)
         session.updated_at = utcnow()
         self._storage.update_session(session)
+        self._fleet_cache = None
         return session
 
     def rename_session(self, session_id: str, name: str) -> Session:
@@ -668,6 +676,7 @@ class Repo:
         session.name = name
         session.updated_at = utcnow()
         self._storage.update_session(session)
+        self._fleet_cache = None
         return session
 
     def set_session_auto_commit(self, session_id: str, enabled: bool) -> Session:
@@ -675,6 +684,7 @@ class Repo:
         session.auto_commit = enabled
         session.updated_at = utcnow()
         self._storage.update_session(session)
+        self._fleet_cache = None
         return session
 
     def trash_session(self, session_id: str) -> Session:
@@ -689,6 +699,7 @@ class Repo:
         session.status = "idle"
         session.updated_at = now
         self._storage.update_session(session)
+        self._fleet_cache = None
         return session
 
     def restore_session(self, session_id: str) -> Session:
@@ -702,6 +713,7 @@ class Repo:
         self._storage.update_session(session)
         if self._storage.branch_is_trashed(session.branch):
             self._storage.restore_branch(session.branch)
+        self._fleet_cache = None
         return session
 
     def delete_session(
@@ -723,6 +735,7 @@ class Repo:
             self._remove_worktree(session.worktree_path, force=force_worktree)
         self._purge_session_history(session)
         self._storage.delete_session(session_id)
+        self._fleet_cache = None
 
     def _purge_session_history(self, session: Session) -> None:
         """Remove private branch history without harming shared references."""
@@ -771,7 +784,8 @@ class Repo:
     def _remove_worktree(worktree_path: str, *, force: bool = False) -> None:
         """Best-effort cleanup; preserve dirty worktrees unless forced."""
         try:
-            WorktreeManager.from_worktree(worktree_path).remove(Path(worktree_path).name, force=force)
+            manager = WorktreeManager.from_worktree(worktree_path)
+            manager.remove(Path(worktree_path).name, force=force)
         except (DirtyWorktree, WorktreeNotFound, NotAGitRepo, GitCommandError, ValueError, OSError):
             return
 
@@ -793,6 +807,12 @@ class Repo:
 
         Reads git once per run; the UI polls this, so keep the run count small.
         """
+        cached = self._fleet_cache
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < _FLEET_CACHE_SECONDS:
+            # Return copies so callers cannot mutate cached Pydantic models.
+            return [entry.model_copy(deep=True) for entry in cached[1]]
+
         entries: list[FleetEntry] = []
         for session in self._storage.list_sessions():
             workspace = workspace_status(
@@ -826,6 +846,7 @@ class Repo:
                 for other in entries
                 if other.session_id != entry.session_id and changed[other.session_id] & mine
             ]
+        self._fleet_cache = (now, [entry.model_copy(deep=True) for entry in entries])
         return entries
 
     # ---------- claims + context (keep parallel runs off each other's files) ----------
