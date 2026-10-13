@@ -20,7 +20,7 @@ export default function Modal({
   subtitle?: string;
   onClose: () => void;
   footer?: ReactNode;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -54,7 +54,7 @@ export default function Modal({
   return (
     <div className="cg-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <div
-        className={`cg-modal${size === "lg" ? " cg-modal-lg" : ""}`}
+        className={`cg-modal${size === "lg" ? " cg-modal-lg" : size === "sm" ? " cg-modal-sm" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

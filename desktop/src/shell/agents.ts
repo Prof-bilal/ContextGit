@@ -20,6 +20,8 @@ export const AGENTS: AgentInfo[] = HARNESSES.map(({ id, label, monogram }) => ({
 export const AGENT_BY_ID: Record<string, AgentInfo> = Object.fromEntries(
   AGENTS.map((agent) => [agent.id, agent]),
 );
+// Existing Gemini sessions retain their label, but new runs use Antigravity.
+AGENT_BY_ID.gemini = { id: "gemini", label: "Gemini CLI", monogram: "G" };
 
 export const DEFAULT_AGENT = DEFAULT_HARNESS;
 

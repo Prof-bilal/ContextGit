@@ -44,9 +44,12 @@ export default function StorageRail({
   };
 
   return (
-    <nav className="cg-rail" aria-label="Storage">
+    <nav className="cg-rail cg-storage-rail" aria-label="Storage">
       <div className="cg-rail-head">
-        <h2>Storage</h2>
+        <div>
+          <span className="cg-kicker">Workspace archive</span>
+          <h2>Storage</h2>
+        </div>
         <span className="cg-count">{counts.all}</span>
       </div>
       <div className="cg-rail-search">

@@ -30,6 +30,7 @@ const MARKS: Record<string, IconType> = {
   openai: BsOpenai,
   codex: BsOpenai,
   gemini: SiGooglegemini,
+  antigravity: LuSparkles,
   google: SiGooglegemini,
   opencode: SiOpencode,
   ollama: SiOllama,

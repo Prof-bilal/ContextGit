@@ -93,28 +93,27 @@ export default function StorageView({
 
   return (
     <>
-      <div className="cg-view-toolbar">
-        <h1>Storage</h1>
-        <span className="cg-view-sub">
-          {visible.length} item{visible.length === 1 ? "" : "s"}
-        </span>
-        <span className="cg-toolbar-spacer" />
+      <div className="cg-storage-toolbar">
+        <div className="cg-storage-heading">
+          <span className="cg-kicker">Archive</span>
+          <h1>Storage</h1>
+          <span className="cg-view-sub">Recoverable work and recently closed panes</span>
+        </div>
+        <span className="cg-storage-count">{visible.length} item{visible.length === 1 ? "" : "s"}</span>
         {category === "closed" && closed.length > 0 && (
-          <button type="button" className="cg-btn cg-btn-sm" onClick={onClearClosed}>
-            Clear history
-          </button>
+          <button type="button" className="cg-btn cg-btn-sm" onClick={onClearClosed}>Clear history</button>
         )}
       </div>
-      <div className="cg-view-body">
+      <div className="cg-storage-view-body" data-category={category}>
         {visible.length === 0 ? (
-          <div className="cg-doc">
+          <div className="cg-storage-empty">
             <p className="cg-empty-note">
               Nothing here. Deleting a run, conversation or branch moves it to Storage, and panes
               you close show up under Recently closed.
             </p>
           </div>
         ) : (
-          <div className="cg-doc">
+          <div className="cg-storage-list-wrap">
             <ol className="cg-commit-list" aria-label="Storage items">
               {visible.map((row) => {
                 const at =
@@ -130,7 +129,7 @@ export default function StorageView({
                       ? "Reopen in the Code tab"
                       : row.session.branch;
                 return (
-                  <li key={row.key}>
+                  <li key={row.key} className="cg-storage-row" data-kind={row.kind}>
                     <div className="cg-row-wrap">
                       <button
                         type="button"
