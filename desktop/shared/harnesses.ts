@@ -32,7 +32,7 @@ export const HARNESSES: Harness[] = [
   { id: "claude", label: "Claude Code", monogram: "C", command: "claude", args: [], npmPackage: null },
   { id: "codex", label: "Codex", monogram: "X", command: "codex", args: [], npmPackage: null },
   { id: "opencode", label: "OpenCode", monogram: "O", command: "opencode", args: [], npmPackage: null },
-  { id: "gemini", label: "Gemini CLI", monogram: "G", command: "gemini", args: [], npmPackage: null },
+  { id: "antigravity", label: "Antigravity CLI", monogram: "A", command: "agy", args: [], npmPackage: null, docsUrl: "https://antigravity.google/docs/cli/install/" },
   { id: "aider", label: "Aider", monogram: "A", command: "aider", args: [], npmPackage: null },
   { id: "ollama", label: "Ollama", monogram: "L", command: "ollama", args: ["run"], npmPackage: null },
   { id: "shell", label: "Shell", monogram: "$", command: null, args: [], npmPackage: null },

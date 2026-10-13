@@ -60,6 +60,7 @@ jobs:
     - run: npm ci --prefix desktop
     - run: npm run build --prefix website
     - run: npm run typecheck --prefix desktop
+    - run: node --test desktop/scripts/test-backend-bridge.mjs
     - run: npm run build:renderer --prefix desktop
     - uses: actions/upload-artifact@v4
       if: failure()

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useProjectState } from "./useProjectState";
 
 /** Fire-and-forget UI actions report failures locally, including synchronous throws. */
 export function useFeatureAction() {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useProjectState<string | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -15,6 +16,6 @@ export function useFeatureAction() {
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, []);
+  }, [setError]);
   return { error, run };
 }

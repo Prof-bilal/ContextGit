@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useProjectState } from "./useProjectState";
 
 /** Consecutive failed polls before an error is surfaced (≈ two intervals). */
 const FAILURES_BEFORE_ERROR = 2;
@@ -13,17 +14,17 @@ const FAILURES_BEFORE_ERROR = 2;
  */
 export function useTransientError() {
   const failures = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useProjectState<string | null>(null);
 
   const reportSuccess = useCallback(() => {
     failures.current = 0;
     setError((current) => (current === null ? current : null));
-  }, []);
+  }, [setError]);
 
   const reportFailure = useCallback((message: string) => {
     failures.current += 1;
     if (failures.current >= FAILURES_BEFORE_ERROR) setError(message);
-  }, []);
+  }, [setError]);
 
   return { error, reportSuccess, reportFailure };
 }

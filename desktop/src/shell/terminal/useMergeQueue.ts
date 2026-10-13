@@ -3,13 +3,14 @@ import { useCallback, useState } from "react";
 import { api, type MergeQueueEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
+import { useProjectState } from "../useProjectState";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */
 export function useMergeQueue() {
-  const [queue, setQueue] = useState<MergeQueueEntry[]>([]);
+  const [queue, setQueue] = useProjectState<MergeQueueEntry[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
   const load = useCallback(async (current: () => boolean) => {
@@ -23,7 +24,7 @@ export function useMergeQueue() {
       if (!current()) return;
       reportFailure(cause instanceof Error ? cause.message : "Could not load the merge queue");
     }
-  }, [reportSuccess, reportFailure]);
+  }, [reportSuccess, reportFailure, setQueue]);
 
   const refresh = useBackendPolling(load, 4000);
 
