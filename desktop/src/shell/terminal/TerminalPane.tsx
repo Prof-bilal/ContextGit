@@ -76,6 +76,7 @@ export default function TerminalPane({
   theme,
   initialInput,
   taskId,
+  working,
   onStaged,
   onStatus,
   onActivate,
@@ -88,6 +89,8 @@ export default function TerminalPane({
   initialInput?: string;
   /** The team task this run owns, exported so the MCP tools know it. */
   taskId?: string;
+  /** True only while the assigned team task is actively being worked. */
+  working?: boolean;
   onStaged: () => void;
   /** Called when this pane changes the run's status (or checkpoints it). */
   onStatus?: () => void;
@@ -479,7 +482,7 @@ export default function TerminalPane({
   return (
     <section
       className="cg-pane"
-      data-status={session.status}
+      data-working={working ? "true" : undefined}
       data-visible={visible}
       aria-label={`${session.name} terminal`}
       onMouseDown={onActivate}

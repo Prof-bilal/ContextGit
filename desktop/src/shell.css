@@ -1301,29 +1301,6 @@ textarea.cg-text-input {
   border-color: color-mix(in srgb, var(--cg-signal) 45%, transparent);
   color: var(--cg-ink);
 }
-/* A live agent should be recognizable even when its terminal is not selected.
-   Keep this restrained: the pane gets the prominent treatment, while the rail
-   only receives a soft edge light. */
-.cg-row-wrap[data-status="running"] .cg-row {
-  border-color: color-mix(in srgb, var(--cg-signal) 45%, var(--cg-line));
-  background: color-mix(in srgb, var(--cg-signal) 7%, transparent);
-  box-shadow:
-    inset 2px 0 0 color-mix(in srgb, var(--cg-signal) 90%, transparent),
-    0 0 9px color-mix(in srgb, var(--cg-signal) 22%, transparent);
-  animation: cg-running-row-glow 2.4s ease-in-out infinite;
-}
-@keyframes cg-running-row-glow {
-  0%, 100% {
-    box-shadow:
-      inset 2px 0 0 color-mix(in srgb, var(--cg-signal) 70%, transparent),
-      0 0 6px color-mix(in srgb, var(--cg-signal) 15%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 2px 0 0 color-mix(in srgb, var(--cg-signal) 100%, transparent),
-      0 0 13px color-mix(in srgb, var(--cg-signal) 33%, transparent);
-  }
-}
 .cg-row-copy {
   display: grid;
   gap: 0.15rem;
@@ -1884,7 +1861,7 @@ button.cg-chip[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--cg-signal) 55%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--cg-signal) 35%, transparent);
 }
-.cg-pane[data-status="running"] {
+.cg-pane[data-working="true"] {
   border-color: color-mix(in srgb, var(--cg-signal) 72%, var(--cg-line));
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--cg-signal) 42%, transparent),
@@ -5175,8 +5152,7 @@ img.cg-tile-art {
   }
   .cg-thinking-dots i,
   .cg-caret,
-  .cg-pane[data-status="running"],
-  .cg-row-wrap[data-status="running"] .cg-row {
+  .cg-pane[data-working="true"] {
     animation: none !important;
     opacity: 1;
   }

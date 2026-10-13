@@ -483,7 +483,7 @@ export default function ProjectsRail({
                       <div className="cg-group-items">
                         <div>
                           {group.items.map((session) => (
-                            <div key={session.id} className="cg-row-wrap" data-status={session.status}>
+                            <div key={session.id} className="cg-row-wrap">
                               <button
                                 type="button"
                                 className="cg-row"
