@@ -2,18 +2,19 @@ import { useCallback, useState } from "react";
 
 import { api, type RepoSnapshot } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
+import { useProjectState } from "../useProjectState";
 
-/** In a plain browser there is no Electron bridge and no local API to read. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no local API to read. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The real repository snapshot (`GET /api/v1/repo`) — the Git tab's data. */
 export function useRepo() {
-  const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
-  const [loading, setLoading] = useState(HAS_BRIDGE);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot, path] = useProjectState<RepoSnapshot | null>(null);
+  const [loading, setLoading] = useProjectState(hasBridge);
+  const [error, setError] = useProjectState<string | null>(null);
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE) {
+    if (!hasBridge()) {
       setLoading(false);
       return;
     }
@@ -27,7 +28,7 @@ export function useRepo() {
     } finally {
       if (current()) setLoading(false);
     }
-  }, []);
+  }, [path, setSnapshot, setError, setLoading]);
 
   // Event/mutation-driven: do not repeatedly download full history while idle.
   const refresh = useBackendPolling(load, 0);

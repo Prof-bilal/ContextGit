@@ -12,7 +12,7 @@ function readBridge(): { status: BackendStatus; apiBase: string } {
 }
 
 /**
- * Electron shell: health-gate on the local backend, then mount the workspace.
+ * Tauri shell: health-gate on the local backend, then mount the workspace.
  * (In a plain browser there is no bridge, so it renders directly for UI work.)
  */
 export default function App() {

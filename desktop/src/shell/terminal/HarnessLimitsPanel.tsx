@@ -59,11 +59,13 @@ export default function HarnessLimitsPanel({
   limits,
   loading,
   onRefresh,
+  error,
 }: {
   harness: string;
   limits: HarnessLimits | undefined;
   loading: boolean;
   onRefresh: () => void;
+  error?: string | null;
 }) {
   const [, tick] = useState(0);
   useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 1000); return () => clearInterval(timer); }, []);
@@ -85,7 +87,7 @@ export default function HarnessLimitsPanel({
 
       {!limits && (
         <p className="cg-empty-note">
-          {loading ? "Loading limits…" : "No usage limits reported by this harness."}
+          {loading ? "Loading limits…" : error ?? "Usage is unavailable. Refresh to try again."}
         </p>
       )}
 

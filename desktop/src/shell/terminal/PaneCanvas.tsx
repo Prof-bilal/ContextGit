@@ -3,6 +3,8 @@ import { lazy, Suspense, useRef } from "react";
 import { uniqueSessions } from "./sessionState";
 import ErrorBoundary from "../../ErrorBoundary";
 import type { Session } from "@/shared/api";
+import { useSyncExternalStore } from "react";
+import { projectRuntime } from "../../../shared/projectRuntime";
 
 /** xterm is heavy and only needed once a terminal pane exists. */
 const TerminalPane = lazy(() => import("./TerminalPane"));
@@ -62,17 +64,23 @@ export default function PaneCanvas({
   onStaged: () => void;
   onStatus: () => void;
 }) {
+  const selection = useSyncExternalStore(projectRuntime.subscribe, projectRuntime.read);
   const retained = useRef(new Map<string, Session>());
   const ids = new Set(openIds);
   for (const id of retained.current.keys()) if (!ids.has(id)) retained.current.delete(id);
   for (const session of uniqueSessions(sessions)) if (ids.has(session.id)) retained.current.set(session.id, session);
   const open = openSessions([...retained.current.values()], openIds);
   if (open.length === 0) return null;
-  const layout = layoutForCount(open.length);
-  const shownIds = new Set(visibleSessions(open).map((session) => session.id));
+  const visible = open.filter(session => session.project_path === selection.path);
+  const layout = layoutForCount(visible.length);
+  const shownIds = new Set(visible.map(session => session.id));
 
   return (
-    <div className="cg-pane-canvas" data-layout={layout}>
+    <div
+      className="cg-pane-canvas"
+      data-layout={layout}
+      data-empty={visible.length === 0 ? "true" : undefined}
+    >
       {open.map((session) => (
         <ErrorBoundary key={session.id} feature={`${session.name} terminal`}>
           <Suspense fallback={null}>

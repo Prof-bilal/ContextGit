@@ -1,5 +1,6 @@
 /** The project folder the workbench works in (chosen in the Code tab). */
 export interface Workspace {
+  revision?: number;
   /** Absolute path to the folder. */
   path: string;
   /** Folder name shown in the UI. */

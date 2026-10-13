@@ -14,7 +14,7 @@ export default function StorageFeature({
 }: {
   onClose?: () => void;
 }) {
-  const { setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, closedPanes, trashError } = useWorkbench();
+  const { setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, removeStoredSession, removeStoredBranch, clearStored, closedPanes, trashError } = useWorkbench();
   const [barError, setBarError] = useState<string | null>(null);
 
   const [trashCategory, setTrashCategory] = useState<StorageCategory>("all");
@@ -28,6 +28,7 @@ export default function StorageFeature({
     key: string;
     label: string;
   } | null>(null);
+  const [deleteWorktree, setDeleteWorktree] = useState(false);
 
   const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
 
@@ -69,20 +70,46 @@ export default function StorageFeature({
 
   const purgeSelected = useCallback(async () => {
     if (!purgeTarget) return;
-    if (purgeTarget.kind === "session") await api.deleteSession(purgeTarget.key, true);
-    else await api.deleteBranch(purgeTarget.key, true);
-    setTrashSelected(null);
-    await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
-  }, [purgeTarget, refresh, refreshRepo, refreshTrash]);
+    const pairedBranch = purgeTarget.kind === "session"
+      ? trashSessions.find((session) => session.id === purgeTarget.key)?.branch
+      : undefined;
+    try {
+      if (purgeTarget.kind === "session") await api.deleteSession(purgeTarget.key, true, deleteWorktree, deleteWorktree);
+      else await api.deleteBranch(purgeTarget.key, true);
+      if (purgeTarget.kind === "session") removeStoredSession(purgeTarget.key);
+      else removeStoredBranch(purgeTarget.key);
+      if (pairedBranch) removeStoredBranch(pairedBranch);
+      setBarError(null);
+      setTrashSelected(null);
+      setPurgeTarget(null);
+      setDeleteWorktree(false);
+      await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not delete the item permanently");
+    }
+  }, [purgeTarget, deleteWorktree, trashSessions, refresh, refreshRepo, refreshTrash, removeStoredSession, removeStoredBranch]);
 
   const emptyTrash = useCallback(async () => {
-    await Promise.all([
-      ...trashSessions.map((session) => api.deleteSession(session.id, true)),
-      ...trashBranches.map((branch) => api.deleteBranch(branch.name, true)),
-    ]);
-    setTrashSelected(null);
-    await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
-  }, [trashSessions, trashBranches, refresh, refreshRepo, refreshTrash]);
+    try {
+      // Sessions may own the same branch pointers listed below. Delete them
+      // first and sequentially so paired history cleanup cannot race.
+      const sessionBranches = new Set(trashSessions.map((session) => session.branch));
+      for (const session of trashSessions) await api.deleteSession(session.id, true);
+      for (const branch of trashBranches) {
+        // Permanent session cleanup removes its private branch pointer too.
+        // Do not send a second delete for that already-removed branch.
+        if (sessionBranches.has(branch.name)) continue;
+        await api.deleteBranch(branch.name, true);
+      }
+      clearStored();
+      setBarError(null);
+      setTrashSelected(null);
+      setEmptyTrashOpen(false);
+      await Promise.all([refresh(), refreshRepo(), refreshTrash()]);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not empty Storage");
+    }
+  }, [trashSessions, trashBranches, refresh, refreshRepo, refreshTrash, clearStored]);
   const rail = () => {
     return (
       <StorageRail
@@ -109,9 +136,10 @@ export default function StorageFeature({
         onSelect={setTrashSelected}
         onRestoreSession={(session) => void restoreTrashedSession(session)}
         onRestoreBranch={(branch) => void restoreTrashedBranch(branch)}
-        onPurgeSession={(session) =>
-          setPurgeTarget({ kind: "session", key: session.id, label: session.name })
-        }
+        onPurgeSession={(session) => {
+          setDeleteWorktree(false);
+          setPurgeTarget({ kind: "session", key: session.id, label: session.name });
+        }}
         onPurgeBranch={(branch) =>
           setPurgeTarget({ kind: "branch", key: branch.name, label: branch.name })
         }
@@ -249,12 +277,26 @@ export default function StorageFeature({
       body={
         purgeTarget.kind === "branch"
           ? `Permanently drop the "${purgeTarget.label}" branch pointer. Every commit stays in the repository.`
-          : `Permanently delete "${purgeTarget.label}". Its worktree is removed when clean; its commits and branch stay in the repository.`
+          : `Permanently delete "${purgeTarget.label}". Its commits stay in the repository. The worktree is kept unless you select the option below.`
       }
       confirmLabel="Delete forever"
       onConfirm={purgeSelected}
-      onClose={() => setPurgeTarget(null)}
-    />
+      onClose={() => { setPurgeTarget(null); setDeleteWorktree(false); }}
+    >
+      {purgeTarget.kind === "session" && (
+        <label className="cg-danger-toggle">
+          <input
+            type="checkbox"
+            checked={deleteWorktree}
+            onChange={(event) => setDeleteWorktree(event.target.checked)}
+          />
+          <span>
+            <strong>Delete worktree too</strong>
+            <small>Also remove uncommitted files from this run’s worktree.</small>
+          </span>
+        </label>
+      )}
+    </ConfirmDialog>
   )}
     {emptyTrashOpen && (
       <ConfirmDialog

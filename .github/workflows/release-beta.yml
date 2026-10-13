@@ -62,16 +62,10 @@ jobs:
         run: npm ci --prefix desktop
       - name: Install website dependencies
         run: npm ci --prefix website
-      - name: Install Electron runtime
-        run: npm run install:electron --prefix desktop
-      - name: Install E2E dependencies
-        run: npm ci
       - name: Validate repository metadata
         run: |
           npm run check:structure
           npm run check:release
-      - name: Rebuild native Electron dependencies
-        run: npm run rebuild:native --prefix desktop
       - name: Run backend checks
         # The shared suite still contains Unix-only process and path assertions
         # on Windows, plus one timing-sensitive server probe on Intel macOS.
@@ -86,9 +80,6 @@ jobs:
           npm run build --prefix website
           npm run typecheck --prefix desktop
           npm run build:renderer --prefix desktop
-          npm run build:electron --prefix desktop
-          npm run test:lifecycle --prefix desktop
-          npm run test:markdown --prefix desktop
           npm audit --audit-level=high
           npm audit --prefix desktop --audit-level=high
       - name: Install Tauri Linux dependencies
@@ -100,43 +91,13 @@ jobs:
       - name: Build Tauri installer on Windows
         if: runner.os == 'Windows'
         run: bun run --cwd desktop tauri:build -- --config src-tauri/tauri.windows.conf.json
+      - name: Verify Tauri artifacts
+        run: npm run check:tauri-artifacts --prefix desktop
       - name: Collect Tauri release artifacts
         run: bun run --cwd desktop collect:tauri
-      - name: Run beta desktop E2E
-        if: runner.os != 'Linux' && matrix.name != 'windows-x64'
-        run: npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1 --retries=2
-      - name: Run beta desktop E2E on Linux
-        if: runner.os == 'Linux'
-        run: xvfb-run -a npx playwright test e2e/reliability.spec.ts e2e/feature-isolation.spec.ts e2e/beta.spec.ts --workers=1 --retries=2
-      - name: Build unpacked application
-        run: npm run dist:dir --prefix desktop
-      - name: Smoke test packaged application
-        if: runner.os != 'Linux'
-        run: npm run smoke:packaged --prefix desktop
-      - name: Smoke test packaged application on Linux
-        if: runner.os == 'Linux'
-        run: xvfb-run -a npm run smoke:packaged --prefix desktop
       - name: Install Linux packaging tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
-      - name: Close packaged app on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Get-Process ContextGit,contextgit,contextgit-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Sleep -Seconds 3
-      - name: Remove unpacked smoke-test directory
-        continue-on-error: ${{ runner.os == 'Windows' }}
-        run: npm run clean:release --prefix desktop
-      - name: Build installers
-        if: runner.os != 'Windows'
-        run: npx electron-builder --projectDir desktop --publish never
-      - name: Build Windows installer in a fresh output directory
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          npx electron-builder --projectDir desktop --publish never --config.directories.output=release-installer
-          Copy-Item desktop/release-installer/* desktop/release/ -Force
       - name: Generate updater metadata
         run: node desktop/scripts/write-update-metadata.mjs
       - name: Generate checksums
@@ -177,7 +138,7 @@ jobs:
             safe_name="${name// /-}"
             cp "$file" "release/${platform}-${safe_name}"
           done
-          # Keep electron-updater's canonical metadata names. The current beta
+          # Keep updater metadata names stable. The current beta
           # has one native metadata file per platform; package-manager users
           # use the release-page fallback and never get a silent replacement.
           for spec in \

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef, useSyncExternalStore } from "react";
+import { projectRuntime } from "../../../shared/projectRuntime";
 
 import type { Workspace } from "../../../shared/workspace";
 
-/** In a plain browser there is no Electron bridge and no project picker. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no project picker. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * The project folders the Code tab works in, plus which one is active. The main
@@ -11,21 +12,26 @@ const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
  * here updates every new terminal.
  */
 export function useProjects() {
+  const selection = useSyncExternalStore(projectRuntime.subscribe, projectRuntime.read);
   const [projects, setProjects] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const readRevision = useRef(0);
 
   const reload = useCallback(async () => {
-    if (!HAS_BRIDGE) return;
+    if (!hasBridge()) return;
+    const ticket = ++readRevision.current;
     try {
       const [list, active] = await Promise.all([
         window.contextgit!.listProjects(),
         window.contextgit!.getWorkspace(),
       ]);
+      if (ticket !== readRevision.current) return;
       setProjects(list);
       setWorkspace(active);
       setError(null);
     } catch (cause) {
+      if (ticket !== readRevision.current) return;
       setError(cause instanceof Error ? cause.message : "Could not read the project folders");
     }
   }, []);
@@ -33,6 +39,10 @@ export function useProjects() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (selection.ready && selection.path && !projects.some(project => project.path === selection.path)) void reload();
+  }, [selection.path, selection.ready, projects, reload]);
 
   /** Open the native folder picker; adds and activates the choice (null if canceled). */
   const choose = useCallback(async () => {
@@ -66,18 +76,22 @@ export function useProjects() {
   /** Forget a project (its runs and commits stay); returns the remaining list. */
   const forget = useCallback(
     async (path: string) => {
-      const remaining = await window.contextgit!.forgetProject(path);
-      setProjects(remaining);
-      await reload();
+      ++readRevision.current;
+      setProjects(current => current.filter(project => project.path !== path));
+      try {
+        const remaining = await window.contextgit!.forgetProject(path);
+        setProjects(remaining);
+        await reload();
+      } catch (cause) { await reload(); throw cause; }
     },
     [reload],
   );
 
   return {
     projects,
-    workspace,
-    activePath: workspace?.path ?? null,
-    error,
+    workspace: projects.find(project => project.path === selection.path) ?? (workspace?.path === selection.path ? workspace : null),
+    activePath: selection.path,
+    error: selection.error ?? error,
     choose,
     pickLocation,
     create,

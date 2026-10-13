@@ -53,35 +53,6 @@ def test_duplicate_branch_returns_validation_error(tmp_path: Path) -> None:
     assert response.json()["type"] == "InvalidRefName"
 
 
-def test_chat_sse_streams_and_commits(tmp_path: Path) -> None:
-    repo = Repo.init(tmp_path / "repo")
-    provider = FakeProvider(default="A deterministic answer")
-    client = TestClient(create_app(repo=repo, provider=provider))
-    response = client.post(
-        "/api/v1/chat/stream",
-        json={
-            "prompt": "What next?",
-            "branch": "main",
-            "commit_id": repo.log()[0].id,
-            "model": "fake",
-        },
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: token" in response.text
-    chunks = [
-        json.loads(line[6:])["text"]
-        for line in response.text.splitlines()
-        if line.startswith("data: ") and '"text"' in line
-    ]
-    assert "".join(chunks) == "A deterministic answer"
-    assert "event: done" in response.text
-    assert [message.content for message in repo.log()[0].messages] == [
-        "What next?",
-        "A deterministic answer",
-    ]
-
-
 def test_session_routes_stage_and_commit(tmp_path: Path) -> None:
     repo = Repo.init(tmp_path / "repo")
     client = TestClient(create_app(repo=repo, provider=FakeProvider()))
@@ -133,52 +104,6 @@ def test_session_routes_stage_and_commit(tmp_path: Path) -> None:
     assert missing.status_code == 404
 
 
-def test_chat_stream_with_session_stages_when_not_auto_commit(tmp_path: Path) -> None:
-    repo = Repo.init(tmp_path / "repo")
-    provider = FakeProvider(default="parked for review")
-    client = TestClient(create_app(repo=repo, provider=provider))
-    session = client.post(
-        "/api/v1/sessions", json={"name": "careful chat", "auto_commit": False}
-    ).json()
-    response = client.post(
-        "/api/v1/chat/stream",
-        json={"prompt": "think first", "session_id": session["id"], "model": "fake"},
-    )
-    assert response.status_code == 200
-    done_line = next(
-        line
-        for line in response.text.splitlines()
-        if line.startswith("data: ") and "staged" in line
-    )
-    done = json.loads(done_line[6:])
-    assert done["staged"] is True
-    assert done["commit_id"] is None
-    staged = client.get(f"/api/v1/sessions/{session['id']}/staging").json()
-    assert [item["content"] for item in staged] == ["think first", "parked for review"]
-    assert len(repo.log(session["branch"])) == 1  # nothing committed yet
-
-    committed = client.post(f"/api/v1/sessions/{session['id']}/commit", json={})
-    assert committed.status_code == 200
-    assert len(repo.log(session["branch"])) == 2
-
-    failed = client.post(f"/api/v1/sessions/{session['id']}/commit", json={})
-    assert failed.status_code == 409  # staging now empty
-
-
-def test_chat_stream_with_session_auto_commit_commits(tmp_path: Path) -> None:
-    repo = Repo.init(tmp_path / "repo")
-    client = TestClient(create_app(repo=repo, provider=FakeProvider(default="instant")))
-    session = client.post(
-        "/api/v1/sessions", json={"name": "fast chat", "auto_commit": True}
-    ).json()
-    response = client.post(
-        "/api/v1/chat/stream",
-        json={"prompt": "go", "session_id": session["id"], "model": "fake"},
-    )
-    assert '"staged": false' in response.text
-    assert len(repo.log(session["branch"])) == 2  # root + committed turn
-
-
 def test_merge_preview_requires_resolution_then_applies(tmp_path: Path) -> None:
     repo = seeded_repo(tmp_path / "repo")
     provider = FakeProvider(
@@ -219,20 +144,6 @@ def test_merge_preview_requires_resolution_then_applies(tmp_path: Path) -> None:
     )
     assert applied.status_code == 200
     assert len(applied.json()["commit"]["parent_ids"]) == 2
-
-
-def test_compare_and_domain_error_mapping(tmp_path: Path) -> None:
-    repo = seeded_repo(tmp_path / "repo")
-    client = TestClient(create_app(repo=repo, provider=FakeProvider(default="answer")))
-    result = client.post(
-        "/api/v1/compare",
-        json={"prompt": "Which design?", "branch_a": "main", "branch_b": "source", "model": "fake"},
-    )
-    assert result.status_code == 200
-    assert result.json()["answer_a"] == result.json()["answer_b"] == "answer"
-    assert result.json()["diff"]["ancestor_id"]
-    missing = client.get("/api/v1/commits", params={"branch": "missing"})
-    assert missing.status_code == 404
 
 
 def test_branch_budget_and_blame(tmp_path: Path) -> None:

@@ -1,7 +1,7 @@
 # Website
 
 The Next.js package contains ContextGit's marketing site only. It does not
-contain the Electron workbench or the backend API client.
+contain the Tauri workbench or the backend API client.
 
 ## Development
 

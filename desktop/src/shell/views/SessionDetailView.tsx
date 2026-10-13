@@ -92,9 +92,6 @@ export default function SessionDetailView({
             </div>}
             <MessageList messages={[...detail.messages, ...detail.staged_messages]} />
           </Section>
-          {detail.terminal_transcript && <Section title="Terminal transcript">
-            <pre className="cg-session-terminal-transcript">{detail.terminal_transcript}</pre>
-          </Section>}
           {detail.agent_run && <Section title="Execution">
             <div className="cg-session-detail-run-head"><strong>{detail.agent_run.task}</strong><Chip>{detail.agent_run.status}</Chip></div>
             {detail.agent_run.plan?.summary && <p>{detail.agent_run.plan.summary}</p>}

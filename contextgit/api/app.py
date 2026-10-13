@@ -1,58 +1,40 @@
 """FastAPI routes are thin validation and serialization wrappers around Repo."""
 
-import asyncio
 import hashlib
 import importlib
-import json
 import os
 import secrets
 import threading
-import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal, cast
 from uuid import uuid4
 
-import anyio
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 
 from contextgit.agent import approve_plan, commit_run, create_run, create_run_issue, reject_plan
-from contextgit.agents.asset_agent import (
-    SYSTEM_PROMPT as ASSET_AGENT_SYSTEM,
-)
-from contextgit.agents.asset_agent import build_prompt as build_asset_prompt
-from contextgit.agents.asset_agent import parse_actions as parse_asset_actions
 from contextgit.api.cors import LocalAPI
 from contextgit.api.schemas import (
     AgentApprovalRequest,
     AgentCommitRequest,
     AgentRunRequest,
-    AssetAgentRequest,
-    AssetAgentResponse,
     BranchRequest,
-    ChatRequest,
     CheckoutRequest,
     ClaimCheckRequest,
     ClaimCheckResult,
     CommitRequest,
     CommitResponse,
     CommitStagedRequest,
-    CompareRequest,
-    CompareResult,
-    CouncilRequest,
     DbOpenRequest,
     DbQueryRequest,
-    DocumentRequest,
     EndpointBisectRequest,
     EndpointGenerateRequest,
     EndpointGenerateResponse,
     EndpointRunRequest,
     EndpointServeRequest,
     EnqueueMergeRequest,
-    ImageRequest,
     InitRequest,
     IntegrateRequest,
     IssueConfigRequest,
@@ -62,11 +44,7 @@ from contextgit.api.schemas import (
     PreflightRequest,
     ProjectMemoryApprovalRequest,
     ProjectMemorySynthesisRequest,
-    ProviderModelsResult,
-    ProviderTestResult,
-    ProviderUpsertRequest,
     RepoSnapshot,
-    ResearchRequest,
     RunMergeQueueRequest,
     SessionRequest,
     SessionUpdateRequest,
@@ -123,9 +101,6 @@ from contextgit.core.models import (
     HttpHistoryEntry,
     HttpRequestSpec,
     HttpResponseResult,
-    Message,
-    ProviderCapability,
-    ProviderRecord,
     ServerStatus,
     UsageSummary,
     WhyAnswer,
@@ -134,20 +109,6 @@ from contextgit.core.models import (
 )
 from contextgit.core.repo import Repo
 from contextgit.dbclient.store import ConnectionStore, registry
-from contextgit.documents import (
-    DocumentFormat,
-    DocumentInfo,
-    MissingRenderer,
-    RenderedDocument,
-    build_document,
-    document_prompt,
-    filename_for,
-    list_documents,
-    metadata_for,
-    path_for,
-    render,
-    save,
-)
 from contextgit.endpoints.provenance import graph_with_provenance
 from contextgit.endpoints.serve import detect_run_command, fetch_live_openapi, supervisor
 from contextgit.endpoints.staleness import annotate
@@ -161,35 +122,14 @@ from contextgit.issues import install_osv_scanner, run_scan
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
-    BUILTIN_BY_ID,
-    AsyncLLMProvider,
     FakeProvider,
-    ImageResult,
     LLMProvider,
     OpenAICompatibleProvider,
-    ProviderInfo,
-    ProviderSpec,
-    all_provider_infos,
     build_for,
-    build_images_for,
-    build_search_for,
-    effective_spec,
-    provider_info,
-    resolve_provider,
 )
-from contextgit.llm.base import UsageSink
 from contextgit.memory.project import synthesize_project_memory
-from contextgit.research import Fetcher, ResearchStore, extract_claims, run_research
 from contextgit.verify.bisect import bisect_gate, oldest_commit
 from contextgit.verify.detect import detect_gate
-
-# Content types for a rendered document download.
-_DOCUMENT_MEDIA: dict[str, str] = {
-    "md": "text/markdown; charset=utf-8",
-    "pdf": "application/pdf",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-}
 
 
 def create_app(
@@ -230,7 +170,7 @@ def create_app(
             )
         return await call_next(request)
 
-    # Electron supplies a fresh token on each launch. Standalone API deployments
+    # Tauri supplies a fresh token on each launch. Standalone API deployments
     # may opt in with the same environment variable; tests remain injectable.
     launch_token = api_token if api_token is not None else os.getenv("CONTEXTGIT_API_TOKEN")
 
@@ -812,10 +752,20 @@ def create_app(
         return session.model_dump(mode="json")
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
-    def delete_session(session_id: str, permanent: bool = False, current: Repo = repo_dep) -> None:
-        """Move a run to Storage. Pass `permanent=true` to delete it for good."""
+    def delete_session(
+        session_id: str,
+        permanent: bool = False,
+        remove_worktree: bool = True,
+        force_worktree: bool = False,
+        current: Repo = repo_dep,
+    ) -> None:
+        """Move a run to Storage, or permanently delete it with explicit cleanup flags."""
         if permanent:
-            current.delete_session(session_id)
+            current.delete_session(
+                session_id,
+                remove_worktree=remove_worktree,
+                force_worktree=force_worktree,
+            )
         else:
             current.trash_session(session_id)
 
@@ -1132,183 +1082,6 @@ def create_app(
             context_message_count=len(current.build_context(commit.id)),
         )
 
-    # ---------- providers (the add-a-provider flow) ----------
-
-    @app.get("/api/v1/providers", response_model=list[ProviderInfo])
-    def providers(
-        capability: ProviderCapability | None = None,
-        current: Repo = repo_dep,
-    ) -> list[ProviderInfo]:
-        """The catalog, optionally filtered to one capability (chat/search/image)."""
-        return all_provider_infos(current.list_providers(), capability=capability)
-
-    @app.post("/api/v1/providers", status_code=201, response_model=ProviderInfo)
-    def add_provider(body: ProviderUpsertRequest, current: Repo = repo_dep) -> ProviderInfo:
-        """Add or enable a provider: a built-in by id, or a custom endpoint."""
-        provider_id = body.id or _slug(body.label or "")
-        if not provider_id:
-            raise ProviderConfigError("a provider needs an id or a label")
-        existing = current.get_provider(provider_id)
-        saved = current.save_provider(_provider_record(body, provider_id, existing))
-        return provider_info(effective_spec(saved), saved, is_builtin=saved.id in BUILTIN_BY_ID)
-
-    @app.delete("/api/v1/providers/{provider_id}", status_code=204)
-    def remove_provider(provider_id: str, current: Repo = repo_dep) -> None:
-        """Forget a stored provider; a built-in reverts to unconfigured."""
-        current.delete_provider(provider_id)
-
-    @app.post("/api/v1/providers/{provider_id}/test", response_model=ProviderTestResult)
-    def test_provider(provider_id: str, current: Repo = repo_dep) -> ProviderTestResult:
-        """A tiny capability-appropriate call — a bad URL/key fails here, not mid-task."""
-        records = current.list_providers()
-        resolved = resolve_provider(provider_id, records)
-        started = time.perf_counter()
-        try:
-            if resolved.spec.capability == "search":
-                search, _ = build_search_for(provider_id, records)
-                hits = search.search("ping", max_results=1)
-                if not hits:
-                    raise ProviderConfigError("search returned no results")
-            elif resolved.spec.capability == "image":
-                if resolved.spec.kind != "mock" and not resolved.api_key:
-                    raise ProviderConfigError("image provider needs a key")
-            else:
-                adapter, _ = build_for(provider_id, records)
-                adapter.complete(
-                    [Message(role="user", content="ping")],
-                    model=resolved.model or "default",
-                    max_tokens=1,
-                )
-        except Exception as exc:
-            latency = int((time.perf_counter() - started) * 1000)
-            return ProviderTestResult(
-                ok=False,
-                latency_ms=latency,
-                model=resolved.model,
-                error=_redact(str(exc), resolved.api_key),
-            )
-        latency = int((time.perf_counter() - started) * 1000)
-        return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
-
-    @app.post("/api/v1/providers/{provider_id}/models", response_model=ProviderModelsResult)
-    def fetch_provider_models(provider_id: str, current: Repo = repo_dep) -> ProviderModelsResult:
-        """`GET {base}/models` when supported, else the static list; persists it."""
-        adapter, resolved = build_for(provider_id, current.list_providers())
-        models = resolved.spec.models
-        source: Literal["live", "static"] = "static"
-        lister = getattr(adapter, "list_models", None)
-        if resolved.spec.models_endpoint and callable(lister):
-            try:
-                models = list(lister())
-                source = "live"
-            except Exception:
-                models = resolved.spec.models
-                source = "static"
-        record = current.get_provider(provider_id) or _record_from_spec(resolved.spec)
-        record.models = models
-        record.updated_at = utcnow()
-        current.save_provider(record)
-        return ProviderModelsResult(models=models, source=source)
-
-    # ---------- agent providers (the asset agent's isolated credential store) ----------
-
-    @app.get("/api/v1/agent-providers", response_model=list[ProviderInfo])
-    def agent_providers(
-        capability: ProviderCapability | None = None, current: Repo = repo_dep
-    ) -> list[ProviderInfo]:
-        """The asset agent's own provider catalog, separate from Chat's."""
-        return all_provider_infos(current.list_agent_providers(), capability=capability)
-
-    @app.post("/api/v1/agent-providers", status_code=201, response_model=ProviderInfo)
-    def add_agent_provider(body: ProviderUpsertRequest, current: Repo = repo_dep) -> ProviderInfo:
-        """Add or enable an asset-agent provider; stored apart from Chat's."""
-        provider_id = body.id or _slug(body.label or "")
-        if not provider_id:
-            raise ProviderConfigError("a provider needs an id or a label")
-        existing = current.get_agent_provider(provider_id)
-        saved = current.save_agent_provider(_provider_record(body, provider_id, existing))
-        return provider_info(effective_spec(saved), saved, is_builtin=saved.id in BUILTIN_BY_ID)
-
-    @app.delete("/api/v1/agent-providers/{provider_id}", status_code=204)
-    def remove_agent_provider(provider_id: str, current: Repo = repo_dep) -> None:
-        """Forget a stored agent provider; a built-in reverts to unconfigured."""
-        current.delete_agent_provider(provider_id)
-
-    @app.post("/api/v1/agent-providers/{provider_id}/test", response_model=ProviderTestResult)
-    def test_agent_provider(provider_id: str, current: Repo = repo_dep) -> ProviderTestResult:
-        """A tiny completion against the agent's provider — a bad key fails here."""
-        records = current.list_agent_providers()
-        resolved = resolve_provider(provider_id, records)
-        started = time.perf_counter()
-        try:
-            adapter, _ = build_for(provider_id, records)
-            adapter.complete(
-                [Message(role="user", content="ping")],
-                model=resolved.model or "default",
-                max_tokens=1,
-            )
-        except Exception as exc:
-            latency = int((time.perf_counter() - started) * 1000)
-            return ProviderTestResult(
-                ok=False,
-                latency_ms=latency,
-                model=resolved.model,
-                error=_redact(str(exc), resolved.api_key),
-            )
-        latency = int((time.perf_counter() - started) * 1000)
-        return ProviderTestResult(ok=True, latency_ms=latency, model=resolved.model)
-
-    @app.post("/api/v1/agent-providers/{provider_id}/models", response_model=ProviderModelsResult)
-    def fetch_agent_provider_models(
-        provider_id: str, current: Repo = repo_dep
-    ) -> ProviderModelsResult:
-        """`GET {base}/models` when supported, else the static list; persists it."""
-        adapter, resolved = build_for(provider_id, current.list_agent_providers())
-        models = resolved.spec.models
-        source: Literal["live", "static"] = "static"
-        lister = getattr(adapter, "list_models", None)
-        if resolved.spec.models_endpoint and callable(lister):
-            try:
-                models = list(lister())
-                source = "live"
-            except Exception:
-                models = resolved.spec.models
-                source = "static"
-        record = current.get_agent_provider(provider_id) or _record_from_spec(resolved.spec)
-        record.models = models
-        record.updated_at = utcnow()
-        current.save_agent_provider(record)
-        return ProviderModelsResult(models=models, source=source)
-
-    # ---------- assets agent (plan actions over the asset library) ----------
-
-    @app.post("/api/v1/assets/agent", response_model=AssetAgentResponse)
-    def assets_agent(body: AssetAgentRequest, current: Repo = repo_dep) -> AssetAgentResponse:
-        """Plan asset actions from an instruction, using the agent's own provider."""
-        records = current.list_agent_providers()
-        adapter, resolved = build_for(body.provider_id, records)
-        model = body.model or resolved.model or "gpt-4o-mini"
-        messages = [
-            Message(role="system", content=ASSET_AGENT_SYSTEM),
-            Message(
-                role="user",
-                content=build_asset_prompt(
-                    [asset.model_dump() for asset in body.catalog.assets],
-                    body.catalog.folders,
-                    body.instruction,
-                ),
-            ),
-        ]
-        try:
-            text = adapter.complete(messages, model=model, temperature=0)
-        except Exception as exc:
-            raise ProviderConfigError(_redact(str(exc), resolved.api_key)) from exc
-        try:
-            actions = parse_asset_actions(text)
-        except ValueError as exc:
-            raise ProviderConfigError(str(exc)) from exc
-        return AssetAgentResponse(actions=actions)
-
     # ---------- endpoint graph (the Endpoints tab) ----------
 
     @app.get("/api/v1/endpoints", response_model=EndpointGraph)
@@ -1597,512 +1370,6 @@ def create_app(
             all_limits(refresh=refresh, harness=harness) if harness else all_limits(refresh=refresh)
         )
 
-    # ---------- documents (Chat "Document" mode: generate a file) ----------
-
-    @app.post("/api/v1/documents/stream")
-    def documents_stream(body: DocumentRequest, current: Repo = repo_dep) -> StreamingResponse:
-        """Generate a document on a topic, render it, and stream progress."""
-        session = current.get_session(body.session_id) if body.session_id else None
-        branch = body.branch or (session.branch if session else current.current_branch())
-        auto_commit = (
-            body.auto_commit
-            if body.auto_commit is not None
-            else (session.auto_commit if session else True)
-        )
-        secret: str | None = None
-        if body.provider:
-            active_llm, resolved = build_for(body.provider, current.list_providers())
-            secret = resolved.api_key
-            model = body.model or resolved.model or "gpt-4o-mini"
-        else:
-            active_llm = llm
-            model = body.model or "gpt-4o-mini"
-        messages = document_prompt(body.prompt, body.format, body.template)
-        usage_box, usage_sink = _usage_collector()
-
-        async def events() -> AsyncIterator[str]:
-            parts: list[str] = []
-            try:
-                yield _sse("step", {"label": "Generating", "detail": f"{body.format} document"})
-                async for chunk in _stream_tokens(
-                    active_llm, messages, model=model, usage_sink=usage_sink
-                ):
-                    parts.append(chunk)
-                    yield _sse("token", {"text": chunk})
-                markdown = "".join(parts).strip() or "(empty document)"
-                yield _sse("step", {"label": "Rendering", "detail": body.format})
-                document = build_document(markdown, body.format, body.template)
-                try:
-                    data = render(document, body.format)
-                except MissingRenderer as exc:
-                    yield _sse("error", {"error": str(exc)})
-                    return
-                document_id = uuid4().hex[:12]
-                filename = filename_for(document.title, document_id, body.format)
-                save(current.root, document_id, body.format, filename, document.title, data)
-                rendered = RenderedDocument(
-                    id=document_id,
-                    filename=filename,
-                    format=body.format,
-                    size=len(data),
-                    title=document.title,
-                    markdown=markdown,
-                )
-                if usage_box:
-                    prompt_tokens, completion_tokens = usage_box[-1]
-                    usage_source: Literal["provider", "estimate"] = "provider"
-                else:
-                    prompt_tokens = sum(_estimate_text(m.content) for m in messages)
-                    completion_tokens = _estimate_text(markdown)
-                    usage_source = "estimate"
-                current.record_usage(
-                    body.provider or "default",
-                    model,
-                    "chat",
-                    source=usage_source,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    session_id=session.id if session else None,
-                    branch=branch,
-                )
-                turn = [
-                    Message(role="user", content=body.prompt),
-                    Message(role="assistant", content=markdown),
-                ]
-                if session is not None and not auto_commit:
-                    staged = current.stage(session.id, turn)
-                    yield _sse("document", rendered.model_dump(mode="json"))
-                    yield _sse(
-                        "done",
-                        {
-                            "commit_id": None,
-                            "branch": branch,
-                            "staged": True,
-                            "staged_count": len(staged),
-                        },
-                    )
-                    return
-                commit = current.commit(
-                    turn,
-                    model=model,
-                    summary=f"document: {document.title[:100]}",
-                    branch=branch,
-                )
-                if session is not None:
-                    current.set_session_status(session.id, "done")
-                yield _sse("document", rendered.model_dump(mode="json"))
-                yield _sse("done", {"commit_id": commit.id, "branch": branch, "staged": False})
-            except Exception as exc:
-                yield _sse("error", {"error": _redact(str(exc), secret)})
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    @app.get("/api/v1/documents", response_model=list[DocumentInfo])
-    def list_generated_documents(current: Repo = repo_dep) -> list[DocumentInfo]:
-        """Every document generated in this repository, newest first."""
-        return list_documents(current.root)
-
-    @app.get("/api/v1/documents/{document_id}")
-    def download_document(
-        document_id: str, format: str = "pdf", current: Repo = repo_dep
-    ) -> FileResponse:
-        """Download a previously generated document."""
-        if format not in _DOCUMENT_MEDIA:
-            raise HTTPException(status_code=422, detail=f"unknown format: {format}")
-        path = path_for(current.root, document_id, cast("DocumentFormat", format))
-        if path is None:
-            raise HTTPException(status_code=404, detail="document not found")
-        meta = metadata_for(current.root, document_id) or {}
-        filename = meta.get("filename", path.name)
-        return FileResponse(path, filename=filename, media_type=_DOCUMENT_MEDIA[format])
-
-    # ---------- council (same prompt, several providers) ----------
-
-    @app.post("/api/v1/council/stream")
-    def council_stream(body: CouncilRequest, current: Repo = repo_dep) -> StreamingResponse:
-        """Fan the same prompt out to N members in parallel; stream each reply."""
-        session = current.get_session(body.session_id) if body.session_id else None
-        branch = body.branch or (session.branch if session else current.current_branch())
-        head = body.commit_id or current.log(branch)[0].id
-        request_messages = [
-            *current.build_context(head),
-            Message(role="user", content=body.prompt),
-        ]
-        records = current.list_providers()
-        members: list[tuple[int, str, str, str, LLMProvider, str | None]] = []
-        for index, member in enumerate(body.members):
-            adapter, resolved = build_for(member.provider, records)
-            model = member.model or resolved.model or "gpt-4o-mini"
-            members.append(
-                (index, member.provider, model, resolved.spec.label, adapter, resolved.api_key)
-            )
-
-        async def events() -> AsyncIterator[str]:
-            queue: asyncio.Queue[tuple[str, dict[str, object]]] = asyncio.Queue()
-
-            async def run_member(
-                index: int,
-                provider_id: str,
-                model: str,
-                label: str,
-                adapter: LLMProvider,
-                secret: str | None,
-            ) -> None:
-                await queue.put(
-                    (
-                        "member",
-                        {"index": index, "provider": provider_id, "model": model, "label": label},
-                    )
-                )
-                parts: list[str] = []
-                usage_box, usage_sink = _usage_collector()
-                try:
-                    async for chunk in _stream_tokens(
-                        adapter, request_messages, model=model, usage_sink=usage_sink
-                    ):
-                        parts.append(chunk)
-                        await queue.put(("token", {"index": index, "text": chunk}))
-                    await queue.put(("member_done", {"index": index, "answer": "".join(parts)}))
-                except Exception as exc:
-                    await queue.put(("error", {"index": index, "error": _redact(str(exc), secret)}))
-                # One usage row per council member (real when reported).
-                if usage_box:
-                    member_prompt, member_completion = usage_box[-1]
-                    member_source: Literal["provider", "estimate"] = "provider"
-                else:
-                    member_prompt = sum(_estimate_text(m.content) for m in request_messages)
-                    member_completion = _estimate_text("".join(parts))
-                    member_source = "estimate"
-                current.record_usage(
-                    provider_id,
-                    model,
-                    "council",
-                    source=member_source,
-                    prompt_tokens=member_prompt,
-                    completion_tokens=member_completion,
-                    branch=branch,
-                )
-
-            tasks = [asyncio.create_task(run_member(*entry)) for entry in members]
-            try:
-                finished = 0
-                while finished < len(tasks):
-                    event, data = await queue.get()
-                    if event in ("member_done", "error"):
-                        finished += 1
-                    yield _sse(event, data)
-                yield _sse("done", {"commit_id": None, "branch": branch, "staged": False})
-            finally:
-                for task in tasks:
-                    task.cancel()
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    # ---------- images (prompt -> rendered tiles) ----------
-
-    @app.post("/api/v1/images/stream")
-    def images_stream(body: ImageRequest, current: Repo = repo_dep) -> StreamingResponse:
-        """Render a prompt and commit (or stage) the prompt as the versioned artifact."""
-        session = current.get_session(body.session_id) if body.session_id else None
-        branch = body.branch or (session.branch if session else current.current_branch())
-        auto_commit = (
-            body.auto_commit
-            if body.auto_commit is not None
-            else (session.auto_commit if session else True)
-        )
-        transport, resolved = build_images_for(body.provider, current.list_providers())
-        model = body.model or resolved.model or "image"
-        secret = resolved.api_key
-
-        async def events() -> AsyncIterator[str]:
-            try:
-                yield _sse(
-                    "step",
-                    {
-                        "label": "Rendering",
-                        "detail": f"{resolved.spec.label} · {model} · {body.aspect}",
-                    },
-                )
-
-                def render() -> list[ImageResult]:
-                    return transport.generate(
-                        body.prompt, model=model, aspect=body.aspect, count=body.count
-                    )
-
-                tiles = await anyio.to_thread.run_sync(render)
-                for tile in tiles:
-                    yield _sse("image", tile.model_dump(mode="json"))
-                turn = [
-                    Message(role="user", content=body.prompt),
-                    Message(
-                        role="assistant",
-                        content=f"[image] {model} · {body.aspect} · {len(tiles)} tile(s)",
-                    ),
-                ]
-                if session is not None and not auto_commit:
-                    staged = current.stage(session.id, turn)
-                    yield _sse(
-                        "done",
-                        {
-                            "commit_id": None,
-                            "branch": branch,
-                            "tiles": len(tiles),
-                            "staged": True,
-                            "staged_count": len(staged),
-                        },
-                    )
-                    return
-                commit = current.commit(
-                    turn,
-                    model=model,
-                    summary=f"image: {body.prompt[:100]}",
-                    branch=branch,
-                    kind="note",
-                )
-                yield _sse(
-                    "done",
-                    {
-                        "commit_id": commit.id,
-                        "branch": branch,
-                        "tiles": len(tiles),
-                        "staged": False,
-                    },
-                )
-            except Exception as exc:
-                yield _sse("error", {"error": _redact(str(exc), secret)})
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    # ---------- research (deep / competitive / lead / verify) ----------
-
-    @app.post("/api/v1/research/stream")
-    def research_stream(body: ResearchRequest, current: Repo = repo_dep) -> StreamingResponse:
-        """Run the loop, stream its steps, then commit the report as context."""
-        session = current.get_session(body.session_id) if body.session_id else None
-        branch = body.branch or (session.branch if session else current.current_branch())
-        head = body.commit_id or current.log(branch)[0].id
-        auto_commit = (
-            body.auto_commit
-            if body.auto_commit is not None
-            else (session.auto_commit if session else True)
-        )
-        records = current.list_providers()
-        secret: str | None = None
-        if body.provider:
-            active_llm, resolved = build_for(body.provider, records)
-            secret = resolved.api_key
-            model = body.model or resolved.model or "gpt-4o-mini"
-        else:
-            active_llm = llm
-            model = body.model or "gpt-4o-mini"
-        search_backend, _ = build_search_for(body.search_provider, records)
-        fetcher = Fetcher()
-        store = ResearchStore(current.root)
-        run_id = uuid4().hex[:12]
-
-        async def events() -> AsyncIterator[str]:
-            try:
-                claims: list[str] | None = None
-                if body.mode == "verify":
-                    verify_context = current.build_context(head)
-                    if session is not None and not auto_commit:
-                        verify_context = [*verify_context, *current.staged(session.id)]
-                    context = "\n".join(m.content for m in verify_context)
-                    if context.strip():
-                        claims = await extract_claims(active_llm, context[-6000:])
-                artifact = ""
-                sources: list[dict[str, object]] = []
-                async for name, data in run_research(
-                    body.mode,
-                    body.prompt,
-                    provider=active_llm,
-                    search=search_backend,
-                    fetcher=fetcher,
-                    breadth=body.breadth,
-                    depth=body.depth,
-                    max_pages=body.max_pages,
-                    claims=claims,
-                    store=store,
-                    run_id=run_id,
-                ):
-                    if name == "done":
-                        artifact = str(data.get("artifact", ""))
-                        continue
-                    if name == "source":
-                        sources.append(data)
-                    yield _sse(name, data)
-                turn = [
-                    Message(role="user", content=body.prompt),
-                    Message(role="assistant", content=artifact or "(no artifact produced)"),
-                ]
-                # The research engine calls the provider internally, so record a
-                # single estimate for the whole run.
-                current.record_usage(
-                    body.provider or "default",
-                    model,
-                    "research",
-                    source="estimate",
-                    prompt_tokens=_estimate_text(body.prompt),
-                    completion_tokens=_estimate_text(turn[1].content),
-                    session_id=session.id if session else None,
-                    branch=branch,
-                )
-                if session is not None and not auto_commit:
-                    staged = current.stage(session.id, turn)
-                    yield _sse(
-                        "done",
-                        {
-                            "commit_id": None,
-                            "branch": branch,
-                            "sources": sources,
-                            "run_id": run_id,
-                            "staged": True,
-                            "staged_count": len(staged),
-                        },
-                    )
-                    return
-                commit = current.commit(
-                    turn,
-                    model=model,
-                    summary=f"{body.mode} research: {body.prompt[:100]}",
-                    branch=branch,
-                )
-                yield _sse(
-                    "done",
-                    {
-                        "commit_id": commit.id,
-                        "branch": branch,
-                        "sources": sources,
-                        "run_id": run_id,
-                        "staged": False,
-                    },
-                )
-            except Exception as exc:
-                yield _sse("error", {"error": _redact(str(exc), secret)})
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    # ---------- chat ----------
-
-    @app.post("/api/v1/chat/stream")
-    def chat_stream(body: ChatRequest, current: Repo = repo_dep) -> StreamingResponse:
-        session = current.get_session(body.session_id) if body.session_id else None
-        branch = body.branch or (session.branch if session else current.current_branch())
-        head = body.commit_id or current.log(branch)[0].id
-        context_messages = current.build_context(head)
-        auto_commit = (
-            body.auto_commit
-            if body.auto_commit is not None
-            else (session.auto_commit if session else True)
-        )
-        # Uncommitted (staged) turns are part of the conversation too: a user who
-        # commits on demand still expects the next turn to see the previous one.
-        if session is not None and not auto_commit:
-            context_messages = [*context_messages, *current.staged(session.id)]
-        request_messages = [*context_messages, Message(role="user", content=body.prompt)]
-        secret: str | None = None
-        if body.provider:
-            active_llm, resolved = build_for(body.provider, current.list_providers())
-            secret = resolved.api_key
-            model = body.model or resolved.model or "gpt-4o-mini"
-        else:
-            active_llm = llm
-            model = body.model or "gpt-4o-mini"
-
-        usage_box, usage_sink = _usage_collector()
-
-        async def events() -> AsyncIterator[str]:
-            parts: list[str] = []
-            try:
-                async for chunk in _stream_tokens(
-                    active_llm, request_messages, model=model, usage_sink=usage_sink
-                ):
-                    parts.append(chunk)
-                    yield _sse("token", {"text": chunk})
-                turn = [
-                    Message(role="user", content=body.prompt),
-                    Message(role="assistant", content="".join(parts)),
-                ]
-                # Record the call's token usage: real when the provider reported
-                # it, otherwise the ~4-chars estimate.
-                if usage_box:
-                    prompt_tokens, completion_tokens = usage_box[-1]
-                    usage_source: Literal["provider", "estimate"] = "provider"
-                else:
-                    prompt_tokens = sum(_estimate_text(m.content) for m in request_messages)
-                    completion_tokens = _estimate_text(turn[1].content)
-                    usage_source = "estimate"
-                current.record_usage(
-                    body.provider or "default",
-                    model,
-                    "chat",
-                    source=usage_source,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    session_id=session.id if session else None,
-                    branch=branch,
-                )
-                if session is not None and not auto_commit:
-                    staged = current.stage(session.id, turn)
-                    yield _sse(
-                        "done",
-                        {
-                            "commit_id": None,
-                            "branch": branch,
-                            "staged": True,
-                            "staged_count": len(staged),
-                        },
-                    )
-                    return
-                commit = current.commit(
-                    turn,
-                    model=model,
-                    summary=body.prompt[:120],
-                    branch=branch,
-                )
-                if session is not None:
-                    current.set_session_status(session.id, "done")
-                yield _sse("done", {"commit_id": commit.id, "branch": branch, "staged": False})
-            except Exception as exc:
-                yield _sse("error", {"error": _redact(str(exc), secret)})
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    @app.post("/api/v1/compare", response_model=CompareResult)
-    def compare(body: CompareRequest, current: Repo = repo_dep) -> CompareResult:
-        a_context = current.build_context(current.log(body.branch_a)[0].id)
-        b_context = current.build_context(current.log(body.branch_b)[0].id)
-        a_messages = [*a_context, Message(role="user", content=body.prompt)]
-        b_messages = [*b_context, Message(role="user", content=body.prompt)]
-        return CompareResult(
-            branch_a=body.branch_a,
-            branch_b=body.branch_b,
-            answer_a=llm.complete(a_messages, model=body.model),
-            answer_b=llm.complete(b_messages, model=body.model),
-            model=body.model,
-            diff=current.diff(body.branch_a, body.branch_b),
-        )
-
     return app
 
 
@@ -2113,101 +1380,6 @@ def snapshot(repo: Repo) -> RepoSnapshot:
         branches=repo.list_branches(),
         commits=repo.all_commits(),
         tags=repo.list_tags(),
-    )
-
-
-def _sse(event: str, data: object) -> str:
-    """Serialize one server-sent event safely."""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-async def _stream_tokens(
-    provider: LLMProvider,
-    messages: list[Message],
-    *,
-    model: str,
-    usage_sink: UsageSink | None = None,
-) -> AsyncIterator[str]:
-    """Prefer a provider's async stream; fall back to its synchronous one."""
-    if isinstance(provider, AsyncLLMProvider):
-        async for chunk in provider.astream(messages, model=model, usage_sink=usage_sink):
-            yield chunk
-        return
-    for chunk in provider.stream(messages, model=model, usage_sink=usage_sink):
-        yield chunk
-
-
-def _estimate_text(text: str) -> int:
-    """The repository's ~4-chars-per-token heuristic for one string."""
-    return (len(text) + 3) // 4 if text else 0
-
-
-def _usage_collector() -> tuple[list[tuple[int, int]], UsageSink]:
-    """A mutable box plus the sink adapters report real usage into."""
-    box: list[tuple[int, int]] = []
-
-    def sink(prompt_tokens: int, completion_tokens: int) -> None:
-        box.append((prompt_tokens, completion_tokens))
-
-    return box, sink
-
-
-def _slug(text: str) -> str:
-    """A stable provider id from a display name."""
-    return "-".join("".join(c.lower() if c.isalnum() else " " for c in text).split())
-
-
-def _provider_record(
-    body: ProviderUpsertRequest, provider_id: str, existing: ProviderRecord | None
-) -> ProviderRecord:
-    """Merge a request onto the built-in (when the id matches) and the stored row."""
-    base = BUILTIN_BY_ID.get(provider_id)
-    base_url = body.base_url or (base.base_url if base else "")
-    if not base_url:
-        raise ProviderConfigError("a custom provider needs a base URL")
-    now = utcnow()
-    auth_style = (
-        base.auth
-        if provider_id == "agnes" and base
-        else body.auth_style or (base.auth if base else "bearer")
-    )
-    capability = (
-        body.capability
-        or (base.capability if base else None)
-        or (existing.capability if existing else "chat")
-    )
-    return ProviderRecord(
-        id=provider_id,
-        label=body.label or (base.label if base else provider_id),
-        vendor=body.vendor or (base.vendor if base else ""),
-        kind=body.kind or (base.kind if base else "cloud"),
-        capability=capability,
-        base_url=base_url,
-        # Agnes has a fixed Bearer contract. Do not persist a UI/custom auth
-        # selection that the Agnes API will ignore.
-        auth_style=auth_style,
-        api_key=(
-            body.api_key if body.api_key is not None else (existing.api_key if existing else None)
-        ),
-        default_model=body.default_model or (base.default_model if base else None),
-        models=body.models or (base.models if base else []),
-        created_at=existing.created_at if existing else now,
-        updated_at=now,
-    )
-
-
-def _record_from_spec(spec: ProviderSpec) -> ProviderRecord:
-    """A stored row for a built-in, so a fetched model list can be persisted."""
-    return ProviderRecord(
-        id=spec.id,
-        label=spec.label,
-        vendor=spec.vendor,
-        kind=spec.kind,
-        capability=spec.capability,
-        base_url=spec.base_url,
-        auth_style=spec.auth,
-        default_model=spec.default_model,
-        models=spec.models,
     )
 
 

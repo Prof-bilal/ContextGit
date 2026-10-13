@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { HARNESSES, type HarnessCheck } from "../../shared/harnesses";
 import Modal from "./Modal";
+import { Field } from "./primitives";
+import { LuCircleCheck, LuCircleMinus } from "react-icons/lu";
 
 export default function DiagnosticsDialog({
   backendAvailable,
@@ -16,38 +18,38 @@ export default function DiagnosticsDialog({
     let alive = true;
     void Promise.all([
       window.contextgit?.runtimeInfo(),
-      Promise.all(HARNESSES.map((harness) => window.contextgit?.harnessCheck(harness.id))),
+      Promise.all(HARNESSES.map((harness) => window.contextgit?.harnessCheck(harness.id).catch(() => ({ id: harness.id, command: harness.command ?? "shell", installed: false, path: null })))),
     ]).then(([info, values]) => {
       if (!alive) return;
       setRuntime(info ?? null);
       setChecks(values.filter((value): value is HarnessCheck => Boolean(value)));
-    });
+    }).catch(() => { if (alive) setChecks([]); });
     return () => {
       alive = false;
     };
   }, []);
 
   return (
-    <Modal title="Beta diagnostics" subtitle="Safe to attach to a bug report" onClose={onClose} size="lg">
-      <dl className="cg-fields">
-        <dt>Platform</dt><dd>{runtime?.platform ?? "…"} · {runtime?.arch ?? "…"}</dd>
-        <dt>Shell</dt><dd className="cg-mono">{runtime?.shell ?? "…"}</dd>
-        <dt>Backend</dt><dd>{backendAvailable ? "Ready" : "Unavailable"}</dd>
-      </dl>
+    <Modal title="Diagnostics" onClose={onClose}>
+      <div className="cg-fields cg-diagnostics-system">
+        <Field label="Platform">{runtime?.platform ?? "…"} · {runtime?.arch ?? "…"}</Field>
+        <Field label="Shell"><span className="cg-mono">{runtime?.shell ?? "…"}</span></Field>
+        <Field label="Backend">{(window.contextgit ? window.contextgit.getStatus().status.state === "ready" : backendAvailable) ? "Ready" : "Unavailable"}</Field>
+      </div>
       <div className="cg-dock-group">
         <span className="cg-kicker">Terminal agents</span>
-        <ul className="cg-plain-list">
+        <ul className="cg-diagnostics-agents">
           {checks.map((check) => (
             <li key={check.id} className="cg-inline cg-diagnostics-row">
-              <span>{check.id}</span>
+              <span>{HARNESSES.find(agent => agent.id === check.id)?.label ?? check.id}</span>
               <span className={check.installed ? "cg-status-text-ok" : "cg-status-text-muted"}>
-                {check.installed ? "installed" : "not found"}
+                {check.installed ? <LuCircleCheck aria-hidden="true" /> : <LuCircleMinus aria-hidden="true" />}
+                {check.installed ? "Installed" : "Not found"}
               </span>
             </li>
           ))}
         </ul>
       </div>
-      <p className="cg-empty-note">Transcript capture is verified per agent; terminal launch alone does not guarantee native capture.</p>
     </Modal>
   );
 }

@@ -1,4 +1,5 @@
 import type { SessionKind } from "@/shared/api";
+import { projectRuntime } from "../../../shared/projectRuntime";
 
 /** One pane the user closed, kept so it can be reopened from Storage. */
 export interface ClosedPane {
@@ -10,6 +11,18 @@ export interface ClosedPane {
 
 const KEY = "cg-closed-panes";
 const LIMIT = 25;
+
+export function loadDismissedAgentTabs(path: string | null = projectRuntime.read().path): string[] {
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(`cg-dismissed-agent-tabs:${path}`) ?? window.localStorage.getItem("cg-dismissed-agent-tabs") ?? "[]");
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  } catch { return []; }
+}
+
+export function saveDismissedAgentTabs(ids: string[], path: string | null): void {
+  try { window.localStorage.setItem(`cg-dismissed-agent-tabs:${path}`, JSON.stringify(ids)); }
+  catch { /* Storage may be unavailable. */ }
+}
 
 /** Recently closed panes, newest first. Never throws (storage may be unavailable). */
 export function loadClosed(): ClosedPane[] {
@@ -56,16 +69,14 @@ export function clearClosed(): ClosedPane[] {
 }
 
 let verifiedRepoId: string | undefined;
-function openKey(): string {
-  const status = window.contextgit?.getStatus().status;
-  if (status?.state === "ready" && status.repoId) verifiedRepoId = status.repoId;
-  return `cg-open-panes:${verifiedRepoId ?? "unverified"}`;
+function openKey(path: string | null = projectRuntime.read().path): string {
+  return `cg-open-panes:project:${path ?? "none"}`;
 }
 
 /** The run ids that were open when the app last unloaded. */
-export function loadOpenPanes(): string[] {
+export function loadOpenPanes(path?: string): string[] {
   try {
-    const raw = window.localStorage.getItem(openKey());
+    const raw = window.localStorage.getItem(openKey(path)) ?? window.localStorage.getItem("cg-open-panes:unverified");
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? [...new Set(parsed.filter((id): id is string => typeof id === "string"))] : [];
@@ -75,9 +86,9 @@ export function loadOpenPanes(): string[] {
 }
 
 /** Remember the open run ids so they can be restored after a reload. */
-export function saveOpenPanes(ids: string[]): void {
+export function saveOpenPanes(ids: string[], path?: string): void {
   try {
-    window.localStorage.setItem(openKey(), JSON.stringify([...new Set(ids)]));
+    window.localStorage.setItem(openKey(path), JSON.stringify([...new Set(ids)]));
   } catch {
     // ignore storage failures
   }

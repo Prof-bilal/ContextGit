@@ -1,4 +1,4 @@
-/** In-app browser types shared by the Electron main process and the renderer. */
+/** Reserved browser integration types for future Tauri support. */
 
 /** Bounds of a native `WebContentsView`, in CSS px relative to the window. */
 export interface ViewBounds {

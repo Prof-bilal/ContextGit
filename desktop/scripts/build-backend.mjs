@@ -1,5 +1,5 @@
 /** Build the packaged ContextGit backend on every desktop platform. */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,12 +19,6 @@ if (python === venvPython && !fs.existsSync(python)) {
 
 execFileSync(python, ["-m", "pip", "install", "--quiet", "pyinstaller"], { cwd: root, stdio: "inherit" });
 
-const extras = [];
-for (const packageName of ["docx", "pptx", "reportlab", "weasyprint"]) {
-  const probe = spawnSync(python, ["-c", `import ${packageName}`], { cwd: root, stdio: "ignore" });
-  if (probe.status === 0) extras.push("--collect-all", packageName);
-}
-
 const args = [
   "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
   "--name", "contextgit-api",
@@ -36,8 +30,12 @@ const args = [
   "--hidden-import", "uvicorn.protocols.http.h11_impl",
   "--hidden-import", "uvicorn.protocols.websockets.auto",
   "--hidden-import", "uvicorn.lifespan.on",
-  "--collect-all", "contextgit",
-  ...extras,
+  // The server resolves this ASGI app from a string at runtime, so PyInstaller
+  // cannot discover the desktop project router through normal import analysis.
+  "--hidden-import", "contextgit.api.main",
+  "--hidden-import", "contextgit.api.projects",
+  "--hidden-import", "contextgit.api.app",
+  "--collect-data", "contextgit",
   "--distpath", path.join(root, "desktop", "build", "backend"),
   "--workpath", path.join(root, "desktop", "build", "pyinstaller"),
   "--specpath", path.join(root, "desktop", "build", "pyinstaller"),

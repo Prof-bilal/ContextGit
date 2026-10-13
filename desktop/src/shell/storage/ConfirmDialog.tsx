@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import Modal from "../Modal";
 
@@ -10,6 +10,7 @@ export default function ConfirmDialog({
   confirmLabel,
   onConfirm,
   onClose,
+  children,
 }: {
   title: string;
   subtitle?: string;
@@ -17,6 +18,7 @@ export default function ConfirmDialog({
   confirmLabel: string;
   onConfirm: () => Promise<void>;
   onClose: () => void;
+  children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export default function ConfirmDialog({
       }
     >
       <p className="cg-empty-note">{body}</p>
+      {children}
       {error && <p className="cg-pane-error">{error}</p>}
     </Modal>
   );

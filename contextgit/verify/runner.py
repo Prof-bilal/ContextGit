@@ -30,6 +30,7 @@ ALLOWED_EXECUTABLES = frozenset(
         "bun",
         "cargo",
         "deno",
+        "echo",
         "go",
         "make",
         "node",
@@ -49,14 +50,15 @@ ALLOWED_EXECUTABLES = frozenset(
 
 def command_argv(command: str) -> list[str]:
     """Parse a command into argv while rejecting shell syntax."""
-    if any(token in command for token in (";", "|", "&", ">", "<", "`", "$(", "${")):
-        raise ValueError("shell operators are not allowed; provide an argv command")
     try:
         argv = shlex.split(command, posix=os.name != "nt")
     except ValueError as exc:
         raise ValueError(f"invalid command quoting: {exc}") from exc
     if not argv:
         raise ValueError("command is empty")
+    shell_tokens = {";", "&&", "||", "|", "&", ">", ">>", "<", "<<"}
+    if any(token in shell_tokens or token.startswith(("$(`", "$(", "`")) for token in argv[1:]):
+        raise ValueError("shell operators are not allowed; provide an argv command")
     executable = os.path.basename(argv[0]).lower()
     if executable not in ALLOWED_EXECUTABLES and not executable.startswith("python"):
         raise ValueError(f"executable is not allowlisted: {executable}")

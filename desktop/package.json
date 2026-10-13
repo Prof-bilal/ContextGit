@@ -1,43 +1,31 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.1.0-beta.10",
+  "version": "0.2.0-beta.2",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
   "desktopName": "dev.contextgit.desktop",
   "description": "ContextGit desktop workbench — version control for LLM conversations",
-  "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "bun scripts/dev.mjs",
+    "dev": "bun run tauri:dev",
     "dev:mock": "vite",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit",
     "build:renderer": "vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --external:electron --external:electron-updater --external:node-pty --outfile=dist-electron/main.cjs --log-level=warning && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --external:node-pty --outfile=dist-electron/preload.cjs --log-level=warning && esbuild electron/usage-statusline.ts --bundle --platform=node --format=cjs --outfile=dist-electron/usage-statusline.cjs --log-level=warning && esbuild electron/usage-pi.ts --bundle --platform=node --format=esm --outfile=dist-electron/usage-pi.mjs --log-level=warning",
-    "rebuild:native": "electron-builder install-app-deps",
-    "build": "bun run typecheck && bun run build:renderer && bun run build:electron",
+    "build": "bun run typecheck && bun run build:renderer && bun run build:backend",
     "build:backend": "bun scripts/build-backend.mjs",
-    "install:electron": "install-electron",
-    "dist": "npm run build && npm run build:backend && electron-builder",
-    "dist:dir": "npm run build && npm run build:backend && electron-builder --dir",
     "checksums": "bun scripts/checksums.mjs",
     "collect:tauri": "bun scripts/collect-tauri-release.mjs",
-    "clean:release": "bun scripts/clean-release-dir.mjs",
-    "smoke:packaged": "bun scripts/smoke-packaged.mjs",
-    "test:lifecycle": "node scripts/test-lifecycle.mjs",
-    "test:opencode:live": "bun scripts/verify-opencode-capture.mjs",
-    "test:markdown": "node scripts/test-markdown.mjs"
+    "check:tauri-artifacts": "node scripts/check-tauri-artifacts.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.12.0",
-    "electron-updater": "^6.8.9",
-    "node-pty": "^1.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.7.0"
@@ -48,81 +36,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "electron": "^44.7.0",
-    "electron-builder": "^26.15.3",
-    "esbuild": "^0.25.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.7"
   },
-  "build": {
-    "appId": "dev.contextgit.desktop",
-    "productName": "ContextGit",
-    "icon": "assets/icons/contextgit-icon.png",
-    "files": [
-      "dist/**",
-      "dist-electron/**",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/backend",
-        "to": "backend"
-      }
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm",
-        "pacman",
-        "tar.gz"
-      ],
-      "category": "Development",
-      "desktop": {
-        "entry": {
-          "Name": "ContextGit",
-          "Comment": "Run AI coding agents and keep the work",
-          "Categories": "Development;",
-          "Terminal": false,
-          "Type": "Application"
-        }
-      }
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.developer-tools"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Prof-bilal",
-        "repo": "ContextGit",
-        "releaseType": "prerelease"
-      }
-    ],
-    "nsis": {
-      "createDesktopShortcut": "always",
-      "createStartMenuShortcut": true,
-      "shortcutName": "ContextGit",
-      "menuCategory": "Development"
-    }
-  },
-  "allowScripts": {
-    "esbuild@0.25.12": true,
-    "esbuild@0.28.2": true,
-    "electron@44.7.0": true,
-    "electron-winstaller@5.4.0": true,
-    "node-pty@1.1.0": true
-  }
+  "allowScripts": {}
 }

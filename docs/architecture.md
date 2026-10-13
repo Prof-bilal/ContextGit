@@ -2,7 +2,7 @@
 
 ## Layers
 ```
-  Electron Desktop     CLI (typer)       Next.js Website
+  Tauri Desktop        CLI (typer)       Next.js Website
           \              /                    |
            FastAPI (HTTP/SSE)                 |
                     |                         |
@@ -24,10 +24,9 @@ contextgit/
   health/        # contradiction / staleness checks (later phase)
   api/           # FastAPI app, routes, schemas
   cli/           # typer commands
-desktop/         # Electron workbench and desktop-owned API client
+desktop/         # Tauri workbench and desktop-owned API client
 website/         # Next.js marketing site
 tests/            # Python unit and integration tests
-e2e/              # Playwright desktop acceptance tests
 docs/             # Architecture, contributor, product, and engineering docs
 ```
 
@@ -37,7 +36,7 @@ docs/             # Architecture, contributor, product, and engineering docs
 - **Merges produce a summary commit**, not a concatenation of the branch.
 - **Provider-agnostic**: swapping LLM providers requires only a new adapter.
 - **Local-first**: everything works offline except LLM calls.
-- **Streaming** via Server-Sent Events for chat responses.
+- **Streaming** via Server-Sent Events for backend and terminal events.
 
 ## Out of scope (for now)
 Multi-user auth, cloud sync, real-time collaboration.

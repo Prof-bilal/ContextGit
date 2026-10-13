@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 
-import { api, ApiError, type Session } from "@/shared/api";
+import { api, projectApi, ApiError, type Session } from "@/shared/api";
+import { projectRuntime } from "../../../shared/projectRuntime";
 import { SessionRevision, uniqueSessions } from "./sessionState";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 
-/** In a plain browser there is no Electron bridge and no local API to poll. */
-const HAS_BRIDGE = typeof window !== "undefined" && Boolean(window.contextgit);
+/** In a plain browser there is no Tauri bridge and no local API to poll. */
+const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**
  * Live terminal sessions from the backend (`GET /api/v1/sessions`), polled so
@@ -20,21 +21,24 @@ export function useSessions() {
   sessionsRef.current = sessions;
   const creating = useRef(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadedProjects, setLoadedProjects] = useState<string[]>([]);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
-  const connected = () => !HAS_BRIDGE || window.contextgit?.getStatus().status.state === "ready";
+  const connected = () => !hasBridge() || window.contextgit?.getStatus().status.state === "ready";
 
   const load = useCallback(async (current: () => boolean) => {
-    if (!HAS_BRIDGE || !connected() || !current()) return;
+    if (!hasBridge() || !connected() || !current()) return;
     const ticket = revision.current.begin();
+    const owner = projectRuntime.read().path;
+    const scoped = projectApi(owner ?? undefined);
     try {
-      const next = uniqueSessions(await api.sessions());
+      const next = uniqueSessions(await scoped.sessions());
       if (!current() || !revision.current.accepts(ticket)) return;
       const ids = new Set(next.map((session) => session.id));
       const removed: string[] = [];
       // A list omission is not evidence that a live process should die.
-      await Promise.all(sessionsRef.current.filter((session) => !ids.has(session.id)).map(async (previous) => {
+      await Promise.all(sessionsRef.current.filter((session) => session.project_path === owner && !ids.has(session.id)).map(async (previous) => {
         try {
-          const current = await api.session(previous.id);
+          const current = await scoped.session(previous.id);
           if (current.deleted_at) removed.push(previous.id);
           else next.push(current);
         } catch (cause) {
@@ -43,9 +47,10 @@ export function useSessions() {
         }
       }));
       if (!current() || !revision.current.accepts(ticket)) return;
-      setSessions(uniqueSessions(next));
+      setSessions(previous => uniqueSessions([...previous.filter(session => session.project_path !== owner), ...next]));
       setRemovedIds(removed);
       setLoaded(true);
+      if (owner) setLoadedProjects(previous => [...new Set([...previous, owner])]);
       reportSuccess();
     } catch (cause) {
       if (!current()) return;
@@ -64,7 +69,7 @@ export function useSessions() {
       role?: string,
       skills?: string[],
     ) => {
-      if (!connected()) throw new Error("The backend is unavailable. Reconnect before starting a run.");
+      if (!connected() || !projectRuntime.read().ready) throw new Error("This project is still loading. Please wait or retry opening it.");
       if (creating.current) throw new Error("A run is already starting. Please wait.");
       creating.current = true;
       try {
@@ -88,6 +93,14 @@ export function useSessions() {
         );
         setLoaded(true);
         return created;
+      } catch (cause) {
+        if (cause instanceof ApiError && ["network", "timeout"].includes(cause.kind ?? "") && projectPath) {
+          try {
+            const next = await projectApi(projectPath).sessions();
+            setSessions(previous => uniqueSessions([...previous.filter(session => session.project_path !== projectPath), ...next]));
+          } catch { /* Keep the uncertainty visible; never repeat the POST. */ }
+        }
+        throw cause;
       } finally { creating.current = false; }
     },
     [],
@@ -114,5 +127,5 @@ export function useSessions() {
     return updated;
   }, []);
 
-  return { sessions, loaded, removedIds, error, refresh, create, remove, setAutoCommit, stop };
+  return { sessions, loaded, loadedProjects, removedIds, error, refresh, create, remove, setAutoCommit, stop };
 }

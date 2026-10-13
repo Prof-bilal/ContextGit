@@ -62,10 +62,6 @@ def send_request(
     url = spec.url.strip()
     if not url:
         raise HttpRequestError("a request needs a URL")
-    # Mock transports are deliberately exempt from DNS checks: they never open
-    # a socket and are used by deterministic unit tests.
-    _validate_destination(url, resolve=transport is None)
-
     headers = {kv.name: kv.value for kv in spec.headers if kv.enabled and kv.name}
     if spec.auth_value:
         if spec.auth_kind == "bearer":
@@ -91,6 +87,10 @@ def send_request(
         raw_body = spec.body.encode()
     elif spec.body_kind == "text" and spec.body:
         raw_body = spec.body.encode()
+
+    # Mock transports are deliberately exempt from DNS checks: they never open
+    # a socket and are used by deterministic unit tests.
+    _validate_destination(url, resolve=transport is None)
 
     started = time.perf_counter()
     try:

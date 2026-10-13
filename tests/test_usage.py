@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 from contextgit.api.app import create_app
 from contextgit.core.models import Message, utcnow
 from contextgit.core.repo import Repo, _streak_from_dates
-from contextgit.llm import FakeProvider
 from contextgit.llm.openai_compatible import OpenAICompatibleProvider
 
 
@@ -225,20 +224,6 @@ def test_streak_is_empty_with_no_events() -> None:
         0,
         None,
     )
-
-
-def test_chat_turn_records_an_estimate(tmp_path: Path) -> None:
-    repo = Repo.init(tmp_path / "repo")
-    client = TestClient(create_app(repo=repo, provider=FakeProvider(default="hello world")))
-    client.post(
-        "/api/v1/chat/stream",
-        json={"prompt": "hi", "branch": "main", "commit_id": repo.log()[0].id, "model": "fake"},
-    )
-    payload = client.get("/api/v1/usage").json()
-    assert payload["totals"]["calls"] == 1
-    assert payload["by_surface"][0]["surface"] == "chat"
-    # FakeProvider never reports usage, so the row is an estimate.
-    assert payload["totals"]["estimated_tokens"] == payload["totals"]["total_tokens"]
 
 
 def test_terminal_commit_records_code_usage(tmp_path: Path) -> None:

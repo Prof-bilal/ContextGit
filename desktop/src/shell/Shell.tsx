@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ComponentType, type SetStateAction } from "react";
-import { LuCommand, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
+import { LuCommand, LuExternalLink, LuMoon, LuPanelRight, LuSun } from "react-icons/lu";
 import TopNav, { type PrimaryTabId, type TabDef, type TabId } from "./TopNav";
 import { IconButton } from "./primitives";
 import { Dock } from "./Dock";
@@ -12,6 +12,9 @@ import TerminalHost from "./terminal/TerminalHost";
 import CodeFeature from "./features/CodeFeature";
 import GitFeature from "./features/GitFeature";
 import { UpdateCheckButton } from "../UpdateBanner";
+import ProjectTabs from "./ProjectTabs";
+import { useSyncExternalStore } from "react";
+import { projectRuntime } from "../../shared/projectRuntime";
 
 const FEATURES: Array<TabDef & { title: string; Controller: ComponentType }> = [
   { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
@@ -38,6 +41,7 @@ export default function Shell(props: { backendAvailable?: boolean }) {
 
 /** Only stable layout and coordination live here. Feature hooks run in sibling controllers. */
 function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolean }) {
+  const project = useSyncExternalStore(projectRuntime.subscribe, projectRuntime.read);
   const [tab, setActiveTab] = useState<PrimaryTabId>(initialTab);
   const setTab = useCallback((next: SetStateAction<PrimaryTabId>) => {
     setActiveTab(current => {
@@ -52,7 +56,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
   const setFeatureOverlay = useCallback((id: TabId, open: boolean) => {
     setOverlays(current => current[id] === open ? current : { ...current, [id]: open });
   }, []);
-  const overlayOpen = Object.values(overlays).some(Boolean) || shared.pickerOpen || shared.providerDialog !== null || shared.projectOpen;
+  const overlayOpen = Object.values(overlays).some(Boolean) || shared.projectOpen;
   const [slots, setSlots] = useState<WorkbenchSlots>({ rail: null, dock: null, footer: null, dialogs: null, views: {} });
   // Stable ref callbacks prevent portals from being torn down on ordinary state updates.
   const hosts = useMemo(() => {
@@ -69,21 +73,35 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
   const selected = FEATURES.find(feature => feature.id === tab) ?? FEATURES[0];
   const dockTitle = selected.title;
 
-  return <WorkbenchContext.Provider value={{ ...shared, tab, setTab, theme, dockOpen, backendAvailable, overlayOpen, setFeatureOverlay, slots }}>
+  return <WorkbenchContext.Provider value={{ ...shared, tab, setTab, theme, dockOpen, backendAvailable: backendAvailable && project.ready, overlayOpen, setFeatureOverlay, slots }}>
     <div className="cg-shell" data-cg-theme={theme} data-active-tab={tab}>
       <header className="cg-titlebar">
         <span className="cg-brand">Context<b>Git</b><small>WORKSPACE</small></span>
-        <TopNav tabs={TABS} active={tab} onChange={setTab} />
+        <div className="cg-titlebar-center">
+          <TopNav tabs={TABS} active={tab} onChange={setTab} />
+        </div>
         <span className="cg-titlebar-spacer" />
         <button type="button" className="cg-command-hint"><LuCommand aria-hidden="true" />K</button>
         <UpdateCheckButton />
-        <button type="button" className="cg-theme-btn" aria-pressed={theme === "dark"} onClick={() => setTheme(value => value === "dark" ? "light" : "dark")}>
+        <button type="button" className="cg-theme-btn" onClick={() => void window.contextgit?.newWindow()} title="Open another ContextGit window">
+          <LuExternalLink aria-hidden="true" /> New window
+        </button>
+      <button type="button" className="cg-theme-btn" aria-pressed={theme === "dark"} onClick={() => setTheme(value => value === "dark" ? "light" : "dark")}>
           <span aria-hidden="true">{theme === "dark" ? <LuSun /> : <LuMoon />}</span>{theme === "dark" ? "Light" : "Dark"}
         </button>
         <IconButton label={dockOpen ? "Hide inspector" : "Show inspector"} pressed={dockOpen} onClick={() => setDockOpen(value => !value)}>
           <LuPanelRight aria-hidden="true" />
         </IconButton>
       </header>
+      <ProjectTabs
+        projects={shared.projects}
+        activePath={shared.activePath}
+        sessions={shared.tabSessions}
+        openIds={shared.openIds}
+        onUseProject={shared.useProject}
+        onForgetProject={shared.forgetProject}
+        onChooseProject={() => shared.setProjectOpen(true)}
+      />
       <div className="cg-body" data-tab={tab} data-dock={dockOpen && !NO_DOCK.includes(tab) ? "open" : "closed"}>
         <div className="cg-slot" ref={hosts.rail} />
         <main className="cg-main" id={`cg-panel-${tab}`} role="tabpanel" aria-labelledby={`cg-tab-${tab}`}>

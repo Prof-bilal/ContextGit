@@ -1,34 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ProviderCapability, type Session } from "@/shared/api";
-import { type ModelSelection } from "./providers";
-import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, type ClosedPane } from "./storage/recentlyClosed";
-import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource, useProviderResource } from "./WorkbenchResources";
-
-const MODEL_KEY = "cg-chat-model";
-function readStoredModel(): ModelSelection | null {
-  try {
-    const raw = window.localStorage.getItem(MODEL_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ModelSelection>;
-    if (
-      typeof parsed.providerId === "string" &&
-      parsed.providerId &&
-      typeof parsed.modelId === "string"
-    ) {
-      return { providerId: parsed.providerId, modelId: parsed.modelId };
-    }
-  } catch {
-    // ignore malformed storage
-  }
-  return null;
-}
+import { type Session } from "@/shared/api";
+import { loadClosed, loadOpenPanes, pushClosed, saveOpenPanes, loadDismissedAgentTabs, saveDismissedAgentTabs, type ClosedPane } from "./storage/recentlyClosed";
+import { useSessionResource, useTeamResource, useProjectResource, useTrashResource, useRepoResource } from "./WorkbenchResources";
+import { useProjectState } from "./useProjectState";
 
 export function useWorkbenchState() {
   // Team mode was removed from the primary desktop UI. Keep the value stable
   // for older consumers while ensuring stale localStorage cannot reopen it.
   const mode = "single" as "single" | "team";
 
-  const { sessions, loaded: sessionsLoaded, removedIds, error: sessionsError, refresh, create, remove, setAutoCommit, stop } = useSessionResource();
+  const { sessions, loaded: sessionsLoaded, loadedProjects, removedIds, error: sessionsError, refresh, create, remove, setAutoCommit, stop } = useSessionResource();
 
   const { board: teamBoard, error: teamError, refresh: refreshTeam, act: teamAct } = useTeamResource();
 
@@ -47,8 +28,11 @@ export function useWorkbenchState() {
   const [projectOpen, setProjectOpen] = useState(false);
 
   const [openIds, setOpenIds] = useState<string[]>([]);
+  const [dismissedTabIds, setDismissedTabIds, dismissedPath] = useProjectState(() => loadDismissedAgentTabs());
+  const tabSessions = sessions.filter(session => session.kind === "terminal" && !(session.project_path === dismissedPath ? dismissedTabIds : loadDismissedAgentTabs(session.project_path)).includes(session.id));
+  useEffect(() => saveDismissedAgentTabs(dismissedTabIds, dismissedPath), [dismissedTabIds, dismissedPath]);
 
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useProjectState<string | null>(null);
 
   const [revision, setRevision] = useState(0);
 
@@ -67,52 +51,21 @@ export function useWorkbenchState() {
     branches: trashBranches,
     error: trashError,
     refresh: refreshTrash,
+    removeSession: removeStoredSession,
+    removeBranch: removeStoredBranch,
+    clearStored,
   } = useTrashResource();
 
   const [closedPanes, setClosedPanes] = useState<ClosedPane[]>(() => loadClosed());
 
   const { snapshot, loading: repoLoading, error: repoError, refresh: refreshRepo } = useRepoResource();
 
-  const {
-    providers,
-    error: providersError,
-    add: addProvider,
-    remove: removeProvider,
-    test: testProvider,
-    fetchModels: fetchProviderModels,
-  } = useProviderResource();
-
-  const [model, setModel] = useState<ModelSelection>(
-    () => readStoredModel() ?? { providerId: "", modelId: "" },
-  );
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const [providerDialog, setProviderDialog] = useState<{
-    capability?: ProviderCapability;
-    initialId?: string;
-  } | null>(null);
-
-  const openProviderDialog = useCallback(
-    (capability?: ProviderCapability, initialId?: string) =>
-      setProviderDialog({ capability, initialId }),
-    [],
-  );
-
-  useEffect(() => {
-    if (!model.providerId) return;
-    try {
-      window.localStorage.setItem(MODEL_KEY, JSON.stringify(model));
-    } catch {
-      // storage can be unavailable; the selection still applies this session
-    }
-  }, [model]);
-
   const openSession = useCallback((session: Session) => {
+    setDismissedTabIds(current => current.filter(id => id !== session.id));
     setOpenIds((current) => (current.includes(session.id) ? current : [...current, session.id]));
     setActiveId(session.id);
 
-  }, []);
+  }, [setActiveId, setDismissedTabIds]);
 
   const closeTerminal = useCallback(async (session: Session) => {
     // The pane owns its PTY and kills it on unmount; just drop it from the layout.
@@ -134,23 +87,30 @@ export function useWorkbenchState() {
     } catch {
       // The pane is already closed; polling will reconcile a transient backend error.
     }
-  }, [stop]);
+  }, [stop, setActiveId]);
+
+  const closeAgentTab = useCallback((session: Session) => {
+    setDismissedTabIds(current => [...new Set([...current, session.id])]);
+    void closeTerminal(session);
+  }, [closeTerminal, setDismissedTabIds]);
 
   const restoredPanes = useRef(false);
+  const restoredProjects = useRef(new Set<string>());
 
   useEffect(() => {
-    if (restoredPanes.current || !sessionsLoaded) return;
+    if (!activePath || restoredProjects.current.has(activePath) || !loadedProjects.includes(activePath)) return;
+    restoredProjects.current.add(activePath);
     restoredPanes.current = true;
-    const valid = loadOpenPanes().filter((id) => sessions.some((session) => session.id === id));
+    const valid = loadOpenPanes(activePath).filter((id) => sessions.some((session) => session.id === id && session.project_path === activePath));
     if (valid.length > 0) {
       setOpenIds((current) => [...new Set([...current, ...valid])]);
       setActiveId((current) => current ?? valid[valid.length - 1]);
     }
-  }, [sessions, sessionsLoaded]);
+  }, [sessions, loadedProjects, activePath, setActiveId]);
 
   useEffect(() => {
-    if (!restoredPanes.current) return;
-    saveOpenPanes(openIds);
-  }, [openIds]);
-  return { mode, sessions, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, providers, providersError, addProvider, removeProvider, testProvider, fetchProviderModels, model, setModel, pickerOpen, setPickerOpen, providerDialog, setProviderDialog, openProviderDialog, openSession, closeTerminal, restoredPanes };
+    if (!activePath || !restoredProjects.current.has(activePath)) return;
+    saveOpenPanes(openIds.filter(id => sessions.some(session => session.id === id && session.project_path === activePath)), activePath);
+  }, [openIds, activePath, sessions]);
+  return { mode, sessions, tabSessions, closeAgentTab, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, removeStoredSession, removeStoredBranch, clearStored, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
 }

@@ -1,5 +1,5 @@
 /**
- * Canonical CLI harness registry, shared by the Electron main process (which
+ * Canonical CLI harness registry, shared by the Tauri host process (which
  * spawns the process) and the renderer (which draws the picker and brands it).
  *
  * `id` is triple-duty: the `Session.agent` value stored by the backend, the
@@ -32,7 +32,7 @@ export const HARNESSES: Harness[] = [
   { id: "claude", label: "Claude Code", monogram: "C", command: "claude", args: [], npmPackage: null },
   { id: "codex", label: "Codex", monogram: "X", command: "codex", args: [], npmPackage: null },
   { id: "opencode", label: "OpenCode", monogram: "O", command: "opencode", args: [], npmPackage: null },
-  { id: "gemini", label: "Gemini CLI", monogram: "G", command: "gemini", args: [], npmPackage: null },
+  { id: "antigravity", label: "Antigravity CLI", monogram: "A", command: "agy", args: [], npmPackage: null, docsUrl: "https://antigravity.google/docs/cli/install/" },
   { id: "aider", label: "Aider", monogram: "A", command: "aider", args: [], npmPackage: null },
   { id: "ollama", label: "Ollama", monogram: "L", command: "ollama", args: ["run"], npmPackage: null },
   { id: "shell", label: "Shell", monogram: "$", command: null, args: [], npmPackage: null },

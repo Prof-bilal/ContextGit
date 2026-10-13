@@ -11,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 
 from contextgit.limits.cline import fetch_limits as fetch_cline
+from contextgit.limits.codex import fetch_limits as fetch_codex
 from contextgit.limits.commandcode import fetch_limits as fetch_commandcode
 from contextgit.limits.freebuff import fetch_limits as fetch_freebuff
 from contextgit.limits.models import HarnessLimits
@@ -20,6 +21,7 @@ TTL_SECONDS = 300.0
 Adapter = Callable[..., HarnessLimits]
 
 ADAPTERS: list[tuple[str, str, Adapter]] = [
+    ("codex", "Codex", fetch_codex),
     ("commandcode", "Command Code", fetch_commandcode),
     ("cline", "Cline", fetch_cline),
     ("freebuff", "Freebuff", fetch_freebuff),
@@ -42,9 +44,8 @@ def all_limits(*, refresh: bool = False, harness: str | None = None) -> list[Har
     # Desktop collectors supplement these explicit capability states.
     for name, label in [
         ("claude", "Claude Code"),
-        ("codex", "Codex"),
         ("opencode", "OpenCode"),
-        ("gemini", "Gemini CLI"),
+        ("antigravity", "Antigravity CLI"),
         ("aider", "Aider"),
         ("ollama", "Ollama"),
         ("shell", "Shell"),
@@ -59,7 +60,7 @@ def all_limits(*, refresh: bool = False, harness: str | None = None) -> list[Har
                 label=label,
                 supported=False,
                 state="unsupported",
-                message="Desktop usage is available through the CLI collector."
+                message="This CLI does not expose account usage to ContextGit yet."
                 if name != "shell"
                 else "Usage tracking does not apply to a plain shell.",
             )

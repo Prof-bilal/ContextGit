@@ -58,16 +58,10 @@ jobs:
     - run: npm run check:release
     - run: npm ci --prefix website
     - run: npm ci --prefix desktop
-    - name: Install desktop system dependencies
-      run: npx playwright install --with-deps chromium
     - run: npm run build --prefix website
     - run: npm run typecheck --prefix desktop
+    - run: node --test desktop/scripts/test-backend-bridge.mjs
     - run: npm run build:renderer --prefix desktop
-    - run: npm run build:electron --prefix desktop
-    - run: npm run test:lifecycle --prefix desktop
-    - run: npm run test:markdown --prefix desktop
-    - name: Retained MVP desktop workflows
-      run: xvfb-run -a npx playwright test e2e/reliability.spec.ts --workers=1
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
