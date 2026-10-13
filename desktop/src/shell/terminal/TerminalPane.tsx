@@ -479,6 +479,7 @@ export default function TerminalPane({
   return (
     <section
       className="cg-pane"
+      data-status={session.status}
       data-visible={visible}
       aria-label={`${session.name} terminal`}
       onMouseDown={onActivate}
