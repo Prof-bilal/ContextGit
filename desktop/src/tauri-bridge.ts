@@ -97,7 +97,7 @@ export async function installTauriBridge(): Promise<void> {
     newWindow: () => tauri.core!.invoke("new_window") as Promise<void>,
     runtimeInfo: () => tauri.core!.invoke("runtime_info") as Promise<import("../shared/runtime").RuntimeInfo>,
     onStatus,
-    getUpdateStatus: () => ({ state: "idle", currentVersion: "0.2.0-beta.2", supported: false } as import("../shared/update").UpdateStatus),
+    getUpdateStatus: () => ({ state: "idle", currentVersion: "0.2.0-beta.3", supported: false } as import("../shared/update").UpdateStatus),
     checkForUpdates: () => unsupported("check_for_updates"),
     downloadUpdate: () => unsupported("download_update"),
     installUpdate: () => unsupported("install_update"),

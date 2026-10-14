@@ -14,6 +14,14 @@ const candidates = process.platform === "win32"
     : fs.readdirSync(release).filter(name => name.endsWith(".AppImage"));
 
 if (candidates.length === 0) {
+  // Tauri produces a DMG for the current macOS beta, but not the ZIP archive
+  // required by the legacy updater manifest. The desktop bridge opens the
+  // GitHub release page as its macOS fallback, so do not fail the entire
+  // cross-platform release for an artifact that cannot be consumed there.
+  if (process.platform === "darwin") {
+    console.warn("No compatible macOS updater archive found; publishing download-only macOS artifacts.");
+    process.exit(0);
+  }
   console.error("No updater artifact found in", release);
   process.exit(1);
 }
