@@ -11,6 +11,7 @@
     "desktop:tauri:check": "bun run --cwd desktop tauri:check",
     "check:structure": "node scripts/check-structure.mjs",
     "check:release": "node scripts/check-release-metadata.mjs",
+    "test:release": "node --test scripts/test-release-metadata.mjs",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"
   },

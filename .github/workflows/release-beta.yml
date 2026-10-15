@@ -66,6 +66,7 @@ jobs:
         run: |
           npm run check:structure
           npm run check:release
+          npm run test:release
       - name: Run backend checks
         # The shared suite still contains Unix-only process and path assertions
         # on Windows, plus one timing-sensitive server probe on Intel macOS.

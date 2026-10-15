@@ -1,6 +1,6 @@
 [package]
 name = "contextgit-desktop"
-version = "0.2.0-beta.4"
+version = "0.2.0-beta.5"
 description = "ContextGit desktop workbench"
 authors = ["ContextGit"]
 edition = "2021"

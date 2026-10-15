@@ -1,6 +1,8 @@
 import fs from "node:fs";
 
-const read = (file) => fs.readFileSync(file, "utf8");
+// Git may check text files out with CRLF on Windows. Release metadata is
+// independent of checkout line endings, including adjacent Cargo.lock fields.
+const read = (file) => fs.readFileSync(file, "utf8").replace(/\r\n?/g, "\n");
 const desktop = JSON.parse(read("desktop/package.json"));
 const desktopLock = JSON.parse(read("desktop/package-lock.json"));
 const beta = desktop.version;

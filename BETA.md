@@ -1,4 +1,7 @@
-# ContextGit `0.2.0-beta.4`
+# ContextGit `0.2.0-beta.5`
+
+This revision fixes Windows release validation with CRLF checkouts and adds
+cross-platform regression checks for release metadata.
 
 This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
