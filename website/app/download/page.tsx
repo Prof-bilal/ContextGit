@@ -60,7 +60,7 @@ const INSTALLERS: Array<[string, string, string]> = [
   ["Linux x86_64 AppImage", "AMD/Intel 64-bit · any distro · recommended", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.2.0-beta.5_amd64.AppImage`],
   ["Linux x86_64 .deb", "Debian/Ubuntu · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.2.0-beta.5_amd64.deb`],
   ["Linux x86_64 .rpm", "Fedora/RHEL/SUSE · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.2.0-beta.5-1.x86_64.rpm`],
-  ["Linux ARM64 AppImage", "ARM64/aarch64 · any distro", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit_0.2.0-beta.5-arm64.AppImage`],
+  ["Linux ARM64 AppImage", "ARM64/aarch64 · any distro", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit_0.2.0-beta.5_aarch64.AppImage`],
   ["Linux ARM64 .deb", "Debian/Ubuntu · ARM64/aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit_0.2.0-beta.5_arm64.deb`],
   ["Linux ARM64 .rpm", "Fedora/RHEL/SUSE · ARM64/aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.2.0-beta.5-1.aarch64.rpm`],
 ];
