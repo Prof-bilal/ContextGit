@@ -42,6 +42,8 @@ export default function CodeFeature() {
 
   const [taskForm, setTaskForm] = useState<{ task: Task | null } | null>(null);
   const [runForm, setRunForm] = useState<{ initialAgent?: string; title?: string } | null>(null);
+  const [terminalStarting, setTerminalStarting] = useState(false);
+  const terminalPending = useRef(false);
 
   const [teamBusy, setTeamBusy] = useState(false);
 
@@ -58,7 +60,7 @@ export default function CodeFeature() {
     if (current()) window.contextgit?.usageActivity?.(tab === "code", active);
   }, [tab, workspace]);
 
-  useBackendPolling(updateUsageActivity, 5000);
+  useBackendPolling(updateUsageActivity, 5000, { active: tab === "code" });
 
   const { limits, loading: limitsLoading, error: limitsError, refresh: refreshLimits } = useLimits(tab === "code", activeSession);
 
@@ -121,6 +123,25 @@ export default function CodeFeature() {
     },
     [create, openSession, workspace],
   );
+
+  const openProjectTerminal = useCallback(async () => {
+    if (terminalPending.current) return;
+    if (!workspace) { setProjectOpen(true); return; }
+    terminalPending.current = true;
+    setTerminalStarting(true);
+    try {
+      await runAction(async () => {
+        const names = new Set(sessions.filter(session => session.project_path === workspace.path).map(session => session.name));
+        let number = 1;
+        while (names.has(`Terminal ${number}`)) number++;
+        const session = await create(`Terminal ${number}`, "shell", workspace.path, [], undefined, [], false);
+        openSession(session);
+      });
+    } finally {
+      terminalPending.current = false;
+      setTerminalStarting(false);
+    }
+  }, [workspace, sessions, create, openSession, runAction, setProjectOpen]);
 
   const teamTasks = teamBoard?.tasks ?? [];
 
@@ -366,7 +387,8 @@ export default function CodeFeature() {
         openIds={openIds}
         activeId={activeId}
         workspace={workspace}
-        onNewTerminal={() => setRunForm({ initialAgent: "shell", title: "New terminal" })}
+        onNewTerminal={() => void openProjectTerminal()}
+        terminalStarting={terminalStarting}
         onSelect={openSession}
         onClose={closeAgentTab}
         onNewAgent={() => setRunForm({})}

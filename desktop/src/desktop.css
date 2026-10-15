@@ -38,7 +38,7 @@
   justify-self: center;
   padding: 0.55rem 1.2rem;
   border: 1px solid #4e463b;
-  border-radius: 8px;
+  border-radius: 0;
   background: #2a251f;
   color: inherit;
   font: 600 0.9rem "Schibsted Grotesk", sans-serif;

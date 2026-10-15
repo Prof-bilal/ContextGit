@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from "react";
 import { projectRuntime, prepareProject } from "../../../shared/projectRuntime";
-import { LuPlus } from "react-icons/lu";
+import { LuTerminal } from "react-icons/lu";
 
 import type { FleetEntry, Session } from "@/shared/api";
 import type { Workspace } from "../../../shared/workspace";
@@ -21,6 +21,7 @@ export default function CodeView({
   activeId,
   workspace,
   onNewTerminal,
+  terminalStarting = false,
   onSelect,
   onClose,
   onNewAgent,
@@ -33,6 +34,7 @@ export default function CodeView({
   activeId: string | null;
   workspace: Workspace | null;
   onNewTerminal: () => void;
+  terminalStarting?: boolean;
   onSelect: (session: Session) => void;
   onClose: (session: Session) => void;
   onNewAgent: () => void;
@@ -72,12 +74,12 @@ export default function CodeView({
         <button
           type="button"
           className="cg-btn"
-          data-variant="primary"
           onClick={onNewTerminal}
-          disabled={!workspace || !backendAvailable}
-          title={workspace ? "Open a plain shell terminal" : "Choose a project folder first"}
+          disabled={!workspace || !backendAvailable || terminalStarting}
+          aria-busy={terminalStarting}
+          title={workspace ? "Open a shell in the project folder to run commands and development servers" : "Choose a project folder first"}
         >
-          <LuPlus aria-hidden="true" /> New terminal
+          <LuTerminal aria-hidden="true" /> {terminalStarting ? "Opening terminal…" : "Terminal"}
         </button>
       </div>
       <AgentTabs

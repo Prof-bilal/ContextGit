@@ -5,7 +5,7 @@
   max-height: 60vh;
   overflow: auto;
   border: 1px solid var(--cg-line);
-  border-radius: 8px;
+  border-radius: 0;
 }
 .cg-history-transcript li {
   padding: 1rem 1.25rem;
@@ -43,6 +43,6 @@
   color: var(--cg-ink);
   background: var(--cg-surface);
   border: 1px solid var(--cg-line);
-  border-radius: 8px;
+  border-radius: 0;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }

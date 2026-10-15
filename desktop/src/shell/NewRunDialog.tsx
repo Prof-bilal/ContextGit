@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { ROLE_BY_ID, ROLES, roleSkills } from "../../shared/roles";
 import { AGENTS, DEFAULT_AGENT } from "./agents";
 import Modal from "./Modal";
-import { LuChevronDown } from "react-icons/lu";
+import { LuChevronDown, LuFolder, LuGitBranch } from "react-icons/lu";
 
 type NewRunDialogProps = {
   onStart: (
@@ -59,28 +59,31 @@ export default function NewRunDialog({ onStart, initialAgent, title = "New agent
         <div className="cg-select-control"><select id="cg-new-agent-cli" value={agent} onChange={(event) => setAgent(event.target.value)}>
           {AGENTS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
         </select><LuChevronDown aria-hidden="true" /></div>
-        <fieldset className="cg-agent-advanced-fields">
+        <fieldset className="cg-run-location" aria-describedby="cg-run-location-help">
           <legend>Working folder</legend>
-          <label>
+          <div className="cg-run-location-tabs">
+          <label className="cg-run-location-tab">
             <input
               type="radio"
               name="cg-run-location"
               checked={worktree}
               onChange={() => setWorktree(true)}
             />
-            <span> Create an isolated worktree</span>
-            <small> Recommended for edits. The run gets its own branch and checkout.</small>
+            <span><LuGitBranch aria-hidden="true" />Isolated worktree</span>
           </label>
-          <label>
+          <label className="cg-run-location-tab">
             <input
               type="radio"
               name="cg-run-location"
               checked={!worktree}
               onChange={() => setWorktree(false)}
             />
-            <span> Start in the project root</span>
-            <small> Shares the selected folder and its uncommitted changes with other tools.</small>
+            <span><LuFolder aria-hidden="true" />Project root</span>
           </label>
+          </div>
+          <p id="cg-run-location-help" className="cg-run-location-help">
+            {worktree ? <>Recommended for edits. Uses its own branch and checkout.</> : <>Shares the selected folder and its uncommitted changes with other tools.</>}
+          </p>
         </fieldset>
         <details className="cg-agent-advanced"><summary>Advanced</summary><div className="cg-agent-advanced-fields">
         <label htmlFor="cg-new-agent-role">Role</label>
