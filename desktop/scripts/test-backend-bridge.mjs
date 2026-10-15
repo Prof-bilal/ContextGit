@@ -28,6 +28,7 @@ async function renderer(status, nativeEvents) {
   };
   const context = createContext({
     window, URL, AbortController, AbortSignal, setTimeout, clearTimeout,
+    document: { hidden: false, addEventListener() {} },
     fetch: async (url, options) => {
       requests.push({ url, options });
       if (url.endsWith('/projects/open')) {
@@ -66,6 +67,23 @@ test('renderer session reads and creation use the native ready address', async (
   ]);
   assert.equal(app.requests[1].options.method, 'POST');
   assert.equal(app.requests[1].options.headers.Authorization, 'Bearer test-launch-token');
+});
+
+test('concurrent health reads share one request and unchanged health does not rerender', async () => {
+  const app = await renderer({ state: 'ready', apiBase: 'http://127.0.0.1:42929' });
+  await app.window.contextgit.refreshBackendStatus();
+  let notifications = 0;
+  const unsubscribe = app.window.contextgit.onStatus(() => notifications++);
+  try {
+    const before = app.commands.filter(command => command === 'backend_status').length;
+    await Promise.all(Array.from({ length: 20 }, () => app.window.contextgit.refreshBackendStatus()));
+    assert.ok(app.commands.filter(command => command === 'backend_status').length - before <= 1);
+    assert.equal(notifications, 1, 'only the initial subscription notifies for identical status');
+    app.setStatus({ state: 'ready', apiBase: 'http://127.0.0.1:42930' });
+    await app.window.contextgit.refreshBackendStatus();
+    assert.equal(notifications, 2);
+    assert.equal(app.window.contextgit.apiBase, 'http://127.0.0.1:42930');
+  } finally { unsubscribe(); }
 });
 
 test('PTY launch waits for event registration and receives immediate output and exit', async () => {

@@ -132,6 +132,26 @@ def test_unknown_project_has_no_run_command(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ serving --
 
 
+@pytest.mark.parametrize("address", ["", " 127.0.0.1:8124"])
+def test_quoted_django_launcher_gets_one_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, address: str
+) -> None:
+    launched = []
+
+    def capture(argv: list[str], **_kwargs: object) -> None:
+        launched.append(argv)
+        raise OSError("launch intercepted")
+
+    monkeypatch.setattr(subprocess, "Popen", capture)
+    status = ServerSupervisor().start(
+        tmp_path, command=f'python "manage.py" runserver{address}', port=8123
+    )
+    assert status.error == "launch intercepted"
+    assert launched[0][-3:] == [
+        "manage.py", "runserver", address.strip() or "127.0.0.1:8123"
+    ]
+
+
 def test_supervisor_boots_a_real_server_and_stops_it(tmp_path: Path) -> None:
     project = fastapi_project(tmp_path)
     port = free_port()

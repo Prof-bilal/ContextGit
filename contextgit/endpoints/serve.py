@@ -376,8 +376,6 @@ class ServerSupervisor:
                 # often keep it one level down); run it there.
                 run_cwd = Path(detected.cwd) if detected else root
                 self._port = port or port_in_command(chosen) or free_port()
-                if "manage.py runserver" in chosen and not port_in_command(chosen):
-                    chosen = f"{chosen} 127.0.0.1:{self._port}"
                 env = {
                     **os.environ,
                     "PORT": str(self._port),
@@ -385,6 +383,8 @@ class ServerSupervisor:
                 }
                 try:
                     argv = command_argv(chosen)
+                    if "manage.py" in argv and "runserver" in argv and not port_in_command(chosen):
+                        argv.append(f"127.0.0.1:{self._port}")
                     self._process = subprocess.Popen(
                         argv,
                         cwd=run_cwd,
