@@ -41,17 +41,36 @@ export async function installTauriBridge(): Promise<void> {
   void ptyEventsReady.catch(() => {});
   const statusListeners = new Set<(next: BackendStatus) => void>();
   const publishStatus = (next: BackendStatus) => {
+    if (JSON.stringify(next) === JSON.stringify(status)) return;
     const changed = next.state === "ready" && next.apiBase !== apiBase;
     status = next;
     if (status.state === "ready") apiBase = status.apiBase;
     if (changed) invalidateProjects();
     statusListeners.forEach(callback => callback(status));
   };
-  let statusTimer: number | undefined;
-  const pollStatus = async () => {
-    try { publishStatus(await tauri.core!.invoke("backend_status") as BackendStatus); } catch { }
-    if (statusListeners.size) statusTimer = window.setTimeout(() => void pollStatus(), 5000);
+  let statusRead: Promise<BackendStatus> | null = null;
+  const readNativeStatus = () => {
+    if (!statusRead) {
+      statusRead = (tauri.core!.invoke("backend_status") as Promise<BackendStatus>)
+        .then(next => { publishStatus(next); return next; })
+        .finally(() => { statusRead = null; });
+    }
+    return statusRead;
   };
+  let statusTimer: number | undefined;
+  let pollingStatus = false;
+  const pollStatus = async () => {
+    window.clearTimeout(statusTimer);
+    if (pollingStatus || document.hidden || !statusListeners.size) return;
+    pollingStatus = true;
+    try { await readNativeStatus(); } catch { }
+    finally { pollingStatus = false; }
+    if (statusListeners.size && !document.hidden) statusTimer = window.setTimeout(() => void pollStatus(), 5000);
+  };
+  document.addEventListener("visibilitychange", () => {
+    window.clearTimeout(statusTimer);
+    if (!document.hidden) void pollStatus();
+  });
   const onStatus = (callback: (next: BackendStatus) => void) => {
     const first = statusListeners.size === 0;
     statusListeners.add(callback);
@@ -82,9 +101,7 @@ export async function installTauriBridge(): Promise<void> {
     apiToken,
     getStatus: () => ({ status, apiBase }),
     refreshBackendStatus: async () => {
-      const next = await tauri.core!.invoke("backend_status") as typeof status;
-      status = next;
-      if (status.state === "ready") apiBase = status.apiBase;
+      await readNativeStatus();
       return { status, apiBase };
     },
     restartBackend: async () => {
@@ -147,6 +164,13 @@ export async function installTauriBridge(): Promise<void> {
       adoptWorkspace(next as import("../shared/workspace").Workspace);
       return next;
     },
+    filesList: (project: string, relative?: string) => tauri.core!.invoke("files_list", { project, relative }) as Promise<import("../shared/workspaceFiles").FileNode[]>,
+    fileRead: (project: string, relative: string) => tauri.core!.invoke("file_read", { project, relative }) as Promise<import("../shared/workspaceFiles").FileDocument>,
+    fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) => tauri.core!.invoke("file_write", { project, relative, content, expectedVersion }) as Promise<import("../shared/workspaceFiles").FileDocument>,
+    editorStart: (project: string) => tauri.core!.invoke("editor_start", { project }) as Promise<import("../shared/editor").EditorStatus>,
+    editorStatus: (instanceId?: string) => tauri.core!.invoke("editor_status", { instanceId }) as Promise<import("../shared/editor").EditorStatus>,
+    editorSuspend: (instanceId: string) => tauri.core!.invoke("editor_suspend", { instanceId }) as Promise<import("../shared/editor").EditorStatus>,
+    editorStop: (instanceId?: string) => tauri.core!.invoke("editor_stop", { instanceId }) as Promise<void>,
     ptyStart: async (options: Parameters<ContextGitBridge["ptyStart"]>[0]) => {
       await ptyEventsReady;
       await tauri.core!.invoke("pty_start", { options });

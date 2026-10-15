@@ -18,6 +18,7 @@ export interface ContextGitBridge {
     id: string;
     command: string;
     sessionId?: string;
+    resume?: boolean;
     cols: number;
     rows: number;
     cwd?: string;
@@ -48,9 +49,10 @@ export interface ContextGitBridge {
   filesList: (project: string, relative?: string) => Promise<import("../shared/workspaceFiles").FileNode[]>;
   fileRead: (project: string, relative: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
   fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
-  editorStart: (project: string) => Promise<{ state: string; url?: string; message?: string }>;
-  editorStatus: () => Promise<{ state: string; url?: string; message?: string }>;
-  editorStop: () => Promise<void>;
+  editorStart: (project: string) => Promise<import("../shared/editor").EditorStatus>;
+  editorStatus: (instanceId?: string) => Promise<import("../shared/editor").EditorStatus>;
+  editorSuspend: (instanceId: string) => Promise<import("../shared/editor").EditorStatus>;
+  editorStop: (instanceId?: string) => Promise<void>;
   /** Native Save dialog; returns the written path or null when cancelled. */
   saveFile: (options: { defaultName: string; data: ArrayBuffer }) => Promise<string | null>;
   /** Assets tab: the app-level asset library (files live under the app's userData). */

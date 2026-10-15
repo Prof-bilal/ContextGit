@@ -501,6 +501,8 @@ dependencies = [
 name = "contextgit-desktop"
 version = "0.2.0-beta.3"
 dependencies = [
+ "gtk",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",
@@ -509,6 +511,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
  "uuid",
+ "webkit2gtk",
 ]
 
 [[package]]

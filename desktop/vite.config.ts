@@ -26,14 +26,14 @@ export default defineConfig(({ command }) => ({
     ],
   },
   server: {
+    host: "127.0.0.1",
     port: 5173,
     strictPort: true,
     fs: { allow: [here] },
-  },
-  // Monaco is only reached through a dynamic import, so without this Vite
-  // discovers it late, re-optimizes, and restarts the server mid-scan.
-  optimizeDeps: {
-    include: ["monaco-editor"],
+    // Tauri copies packaged resources (including the code-server sidecar)
+    // under src-tauri/target during dev. Watching that generated tree causes
+    // Vite reload storms and can race the Tauri resource copier.
+    watch: { ignored: ["**/src-tauri/target/**", "**/build/editor/**"] },
   },
   build: {
     outDir: "dist",

@@ -1,0 +1,10 @@
+{
+  "name": "contextgit-lifecycle",
+  "displayName": "ContextGit Lifecycle",
+  "publisher": "contextgit",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./extension.cjs",
+  "activationEvents": ["onStartupFinished"],
+  "extensionKind": ["workspace"]
+}

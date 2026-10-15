@@ -87,6 +87,10 @@ struct ProjectSelection(Mutex<()>);
 struct PtyStartOptions {
     id: String,
     command: String,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+    #[serde(default)]
+    resume: bool,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -102,6 +106,33 @@ struct PtySession {
 
 struct PtySupervisor {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+}
+
+struct EditorSupervisor {
+    processes: Mutex<HashMap<String, EditorProcess>>,
+}
+
+#[derive(Default)]
+struct NativeLayouts(Mutex<HashMap<String, [i32; 4]>>);
+
+#[derive(Default)]
+struct BrowserStates(Mutex<HashMap<String, BrowserState>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserState {
+    label: String, url: String, title: String, loading: bool, error: Option<String>,
+    #[serde(skip)]
+    owner: String,
+}
+
+struct EditorProcess {
+    child: Child,
+    _launcher: Option<std::sync::mpsc::Sender<()>>,
+    url: String,
+    project: PathBuf,
+    instance_id: String,
+    state_file: PathBuf,
 }
 
 #[derive(Clone, Serialize)]
@@ -176,6 +207,12 @@ impl BackendSupervisor {
 
     fn error(&self) -> Option<String> {
         self.last_error.lock().ok().and_then(|value| value.clone())
+    }
+}
+
+impl EditorSupervisor {
+    fn new() -> Self {
+        Self { processes: Mutex::new(HashMap::new()) }
     }
 }
 
@@ -427,7 +464,12 @@ fn runtime_info() -> RuntimeInfo {
 }
 
 #[tauri::command]
-fn backend_status(supervisor: tauri::State<'_, BackendSupervisor>) -> BackendStatus {
+async fn backend_status(app: tauri::AppHandle) -> Result<BackendStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || read_backend_status(&app.state::<BackendSupervisor>()))
+        .await.map_err(|error| error.to_string())
+}
+
+fn read_backend_status(supervisor: &BackendSupervisor) -> BackendStatus {
     let api_base = supervisor
         .api_base()
         .unwrap_or_else(|_| "http://127.0.0.1:8756".to_string());
@@ -678,6 +720,615 @@ fn create_workspace(
     activate_project(&app, &target)
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileNode {
+    name: String,
+    path: String,
+    kind: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileDocument {
+    path: String,
+    content: String,
+    version: String,
+    size: u64,
+    encoding: String,
+}
+
+fn file_version(metadata: &fs::Metadata) -> String {
+    format!("{}:{}", metadata.len(), metadata.modified().ok().and_then(|value| value.duration_since(UNIX_EPOCH).ok()).map(|value| value.as_nanos()).unwrap_or_default())
+}
+
+fn safe_project_path(project: &str, relative: &str) -> Result<PathBuf, String> {
+    let root = fs::canonicalize(project).map_err(|_| "The selected project folder is unavailable".to_string())?;
+    let candidate = root.join(relative.trim_start_matches(['/', '\\']));
+    let resolved = fs::canonicalize(&candidate).map_err(|_| "That project path is unavailable".to_string())?;
+    if resolved != root && !resolved.starts_with(&root) { return Err("Project path escapes the selected folder".to_string()); }
+    Ok(resolved)
+}
+
+#[tauri::command]
+fn files_list(project: String, relative: Option<String>) -> Result<Vec<FileNode>, String> {
+    let directory = safe_project_path(&project, relative.as_deref().unwrap_or("."))?;
+    if !directory.is_dir() { return Err("Choose a folder in the project".to_string()); }
+    let mut entries = fs::read_dir(directory).map_err(|error| error.to_string())?.flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || ["node_modules", "target", "dist", "build"].contains(&name.as_str()) { return None; }
+            let kind = if path.is_dir() { "directory" } else { "file" };
+            let relative = path.strip_prefix(fs::canonicalize(&project).ok()?).ok()?.to_string_lossy().replace('\\', "/");
+            Some(FileNode { name, path: relative, kind: kind.to_string() })
+        }).collect::<Vec<_>>();
+    entries.sort_by_key(|entry| (entry.kind != "directory", entry.name.to_lowercase()));
+    Ok(entries)
+}
+
+#[tauri::command]
+fn file_read(project: String, relative: String) -> Result<FileDocument, String> {
+    let path = safe_project_path(&project, &relative)?;
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    let content = fs::read_to_string(&path).map_err(|_| "This file is not a UTF-8 text file".to_string())?;
+    Ok(FileDocument { path: relative, content, version: file_version(&metadata), size: metadata.len(), encoding: "utf8".to_string() })
+}
+
+#[tauri::command]
+fn file_write(project: String, relative: String, content: String, expected_version: Option<String>) -> Result<FileDocument, String> {
+    let path = safe_project_path(&project, &relative)?;
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if let Some(expected) = expected_version.as_deref() {
+        if expected != file_version(&metadata) { return Err("The file changed on disk. Reload it before saving.".to_string()); }
+    }
+    fs::write(&path, content.as_bytes()).map_err(|error| error.to_string())?;
+    file_read(project, relative)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditorStatus {
+    state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+fn editor_binary(resource_dir: &Path) -> Option<PathBuf> {
+    let configured = env::var_os("CONTEXTGIT_CODE_SERVER").map(PathBuf::from);
+    if configured.as_ref().is_some_and(|path| path.is_file()) { return configured; }
+    let command = if cfg!(windows) { "code-server.cmd" } else { "code-server" };
+    let resolver = if cfg!(windows) { "where" } else { "which" };
+    if let Ok(output) = Command::new(resolver).arg(command).output() {
+        if output.status.success() {
+            if let Some(path) = String::from_utf8_lossy(&output.stdout).lines().next().map(str::trim).filter(|path| !path.is_empty()) { return Some(PathBuf::from(path)); }
+        }
+    }
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/editor");
+    let bundled_roots = if cfg!(debug_assertions) {
+        [source_root, resource_dir.join("editor")]
+    } else {
+        [resource_dir.join("editor"), source_root]
+    };
+    for bundled_root in bundled_roots {
+        let Ok(entries) = fs::read_dir(bundled_root) else { continue; };
+        for entry in entries.flatten() {
+            let candidate = entry.path().join("bin").join(if cfg!(windows) { "code-server.exe" } else { "code-server" });
+            if candidate.is_file() { return Some(candidate); }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+async fn browser_open_external(url: String) -> Result<(), String> {
+    let url = browser_url(&url)?.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        let mut command = Command::new("xdg-open");
+        #[cfg(target_os = "macos")]
+        let mut command = Command::new("open");
+        #[cfg(target_os = "windows")]
+        let mut command = { let mut command = Command::new("rundll32.exe"); command.arg("url.dll,FileProtocolHandler"); command };
+        let status = command.arg(url).status().map_err(|error| error.to_string())?;
+        if status.success() { Ok(()) } else { Err("Could not open the default browser".to_string()) }
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn browser_create(window: tauri::Window, app: tauri::AppHandle, label: String, url: String, x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+    let destination = browser_url(&url)?;
+    if !label.starts_with("contextgit-preview-") { return Err("Invalid browser label".into()); }
+    let owner = window.label().to_string();
+    {
+        let states = app.state::<BrowserStates>();
+        let mut states = states.0.lock().map_err(|_| "Browser state is unavailable")?;
+        states.retain(|label, _| app.get_webview(label).is_some());
+        states.insert(label.clone(), BrowserState { label: label.clone(), owner: owner.clone(), url: destination.to_string(), title: String::new(), loading: true, error: None });
+    }
+    let navigation_app = app.clone();
+    let navigation_label = label.clone();
+    let popup_app = app.clone();
+    let popup_label = label.clone();
+    let builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(destination))
+        .on_navigation(move |url| {
+            if !matches!(url.scheme(), "http" | "https") { return false; }
+            update_browser(&navigation_app, &navigation_label, |state| { state.url = url.to_string(); state.loading = true; state.error = None; });
+            true
+        })
+        .on_page_load(|view, payload| {
+            update_browser(view.app_handle(), view.label(), |state| {
+                state.url = payload.url().to_string();
+                state.loading = matches!(payload.event(), tauri::webview::PageLoadEvent::Started);
+            });
+        })
+        .on_document_title_changed(|view, title| { update_browser(view.app_handle(), view.label(), |state| state.title = title); })
+        .on_new_window(move |url, _features| {
+            // Keep target=_blank links inside the managed browser, rather than
+            // creating untracked windows that cannot be reclaimed when idle.
+            if matches!(url.scheme(), "http" | "https") {
+                if let Some(view) = popup_app.get_webview(&popup_label) { let _ = view.navigate(url); }
+            }
+            tauri::webview::NewWindowResponse::Deny
+        });
+    let view = window.add_child(builder, tauri::LogicalPosition::new(x.max(0), y.max(0)), tauri::LogicalSize::new(width.max(1), height.max(1)))
+        .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "linux")]
+    {
+        let handle = app.clone();
+        view.with_webview(move |platform| {
+            use webkit2gtk::WebViewExt;
+            let uri_handle = handle.clone();
+            let uri_label = label.clone();
+            platform.inner().connect_uri_notify(move |view| {
+                if let Some(uri) = view.uri() {
+                    update_browser(&uri_handle, &uri_label, |state| state.url = uri.to_string());
+                }
+            });
+            platform.inner().connect_load_failed(move |_, _, uri, error| {
+                if !error.matches(webkit2gtk::NetworkError::Cancelled) {
+                    update_browser(&handle, &label, |state| { state.url = uri.into(); state.loading = false; state.error = Some(error.to_string()); });
+                }
+                false // Retain WebKit's normal error page and certificate checks.
+            });
+        }).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn browser_url(value: &str) -> Result<tauri::Url, String> {
+    let url: tauri::Url = value.parse().map_err(|_| "Enter a valid website address".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() { return Err("Only HTTP and HTTPS websites are supported".into()); }
+    Ok(url)
+}
+
+#[cfg(test)]
+mod browser_tests {
+    use super::browser_url;
+    #[test]
+    fn accepts_public_websites_and_local_servers() {
+        assert!(browser_url("https://example.com/path").is_ok());
+        assert!(browser_url("http://localhost:3000").is_ok());
+    }
+    #[test]
+    fn rejects_non_web_navigation() {
+        for value in ["javascript:alert(1)", "file:///etc/passwd", "tauri://localhost", "data:text/html,hello", "not a url"] {
+            assert!(browser_url(value).is_err());
+        }
+    }
+}
+
+fn update_browser(app: &tauri::AppHandle, label: &str, update: impl FnOnce(&mut BrowserState)) {
+    let states = app.state::<BrowserStates>();
+    let snapshot = if let Ok(mut states) = states.0.lock() {
+        states.get_mut(label).map(|state| { update(state); state.clone() })
+    } else { None };
+    if let Some(state) = snapshot { let _ = app.emit_to(state.owner.clone(), "browser-state", state); }
+}
+
+#[tauri::command]
+fn browser_snapshot(caller: tauri::Webview, label: String) -> Result<BrowserState, String> {
+    let states = caller.app_handle().state::<BrowserStates>();
+    let states = states.0.lock().map_err(|_| "Browser state is unavailable")?;
+    let state = states.get(&label).ok_or("Browser view is closed")?;
+    if state.owner != caller.window().label() { return Err("Invalid browser view".into()); }
+    Ok(state.clone())
+}
+
+#[tauri::command]
+fn browser_navigate(caller: tauri::Webview, label: String, url: String) -> Result<(), String> {
+    let destination = browser_url(&url)?;
+    let view = caller.app_handle().get_webview(&label).ok_or("Browser view is closed")?;
+    if view.window().label() != caller.window().label() || !label.starts_with("contextgit-preview-") { return Err("Invalid browser view".into()); }
+    view.navigate(destination).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn native_view_action(caller: tauri::Webview, label: String, action: String) -> Result<(), String> {
+    let view = caller.app_handle().get_webview(&label).ok_or("Embedded view is closed")?;
+    if view.window().label() != caller.window().label() || !label.starts_with("contextgit-preview-") {
+        return Err("Invalid browser view".into());
+    }
+    match action.as_str() {
+        "back" => view.eval("history.back()"),
+        "forward" => view.eval("history.forward()"),
+        "reload" => view.eval("location.reload()"),
+        "stop" => {
+            update_browser(caller.app_handle(), &label, |state| state.loading = false);
+            view.eval("window.stop()")
+        },
+        "devtools" => { view.open_devtools(); Ok(()) },
+        _ => return Err("Unknown browser action".into()),
+    }.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn native_view_url(caller: tauri::Webview, label: String) -> Result<String, String> {
+    let view = caller.app_handle().get_webview(&label).ok_or("Embedded view is closed")?;
+    if view.window().label() != caller.window().label() || !label.starts_with("contextgit-preview-") {
+        return Err("Invalid browser view".into());
+    }
+    view.url().map(|url| url.to_string()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn native_view_bounds(caller: tauri::Webview, label: String, x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+    let view = caller.app_handle().get_webview(&label).ok_or("Embedded view is closed")?;
+    if view.window().label() != caller.window().label()
+        || !(label.starts_with("contextgit-editor-") || label.starts_with("contextgit-preview-")) {
+        return Err("Invalid embedded view".into());
+    }
+    let layouts = caller.app_handle().state::<NativeLayouts>();
+    let bounds = [x, y, width, height];
+    if let Ok(mut cache) = layouts.0.lock() {
+        if cache.get(&label) == Some(&bounds) { return Ok(()); }
+        if cache.len() >= 64 { cache.retain(|label, _| caller.app_handle().get_webview(label).is_some()); }
+        cache.insert(label, bounds);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Tauri's Linux runtime packs child webviews into a vertical GtkBox.
+        // Position/size calls cannot override that layout: each view takes half
+        // the window. Overlay the child on the shell instead, with its DOM bounds.
+        view.with_webview(move |platform| {
+            use gtk::prelude::*;
+            let child = platform.inner();
+            let Some(parent) = child.parent() else { return; };
+            let overlay = if let Ok(overlay) = parent.clone().downcast::<gtk::Overlay>() {
+                overlay
+            } else if let Ok(container) = parent.downcast::<gtk::Box>() {
+                let existing = container.children().into_iter()
+                    .find_map(|widget| widget.downcast::<gtk::Overlay>().ok());
+                let overlay = existing.unwrap_or_else(|| {
+                    let overlay = gtk::Overlay::new();
+                    if let Some(shell) = container.children().into_iter().find(|widget| widget != child.upcast_ref::<gtk::Widget>()) {
+                        container.remove(&shell);
+                        overlay.add(&shell);
+                    }
+                    overlay.set_hexpand(true);
+                    overlay.set_vexpand(true);
+                    container.pack_start(&overlay, true, true, 0);
+                    overlay.show();
+                    overlay
+                });
+                container.remove(&child);
+                overlay.add_overlay(&child);
+                child.set_size_request(-1, -1);
+                child.set_halign(gtk::Align::Fill);
+                child.set_valign(gtk::Align::Fill);
+                overlay
+            } else { return; };
+            child.set_margin_start(x.max(0));
+            child.set_margin_top(y.max(0));
+            child.set_margin_end((overlay.allocated_width() - x - width).max(0));
+            child.set_margin_bottom((overlay.allocated_height() - y - height).max(0));
+        }).map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    view.set_bounds(tauri::Rect {
+        position: tauri::LogicalPosition::new(x, y).into(),
+        size: tauri::LogicalSize::new(width.max(1), height.max(1)).into(),
+    }).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn editor_start(app: tauri::AppHandle, window: tauri::Window, project: String) -> Result<EditorStatus, String> {
+    let owner = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || start_editor(&app, owner, project))
+        .await.map_err(|error| error.to_string())?
+}
+
+fn editor_result(state: &str, process: Option<&EditorProcess>, message: Option<String>) -> EditorStatus {
+    EditorStatus {
+        state: state.into(),
+        instance_id: process.map(|process| process.instance_id.clone()),
+        url: process.map(|process| process.url.clone()),
+        message,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditorDocumentState { instance_id: String, dirty: bool, updated_at: u64 }
+
+fn editor_can_release(process: &EditorProcess) -> bool {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+    fs::read(&process.state_file).ok().is_some_and(|bytes| editor_state_can_release(&bytes, &process.instance_id, now))
+}
+
+fn editor_state_can_release(bytes: &[u8], instance_id: &str, now: u64) -> bool {
+    serde_json::from_slice::<EditorDocumentState>(bytes).ok().is_some_and(|state| state.instance_id == instance_id && !state.dirty
+        && state.updated_at <= now && now - state.updated_at < 30_000)
+}
+
+fn start_editor(app: &tauri::AppHandle, owner: String, project: String) -> Result<EditorStatus, String> {
+    use std::hash::{Hash, Hasher};
+    let supervisor = app.state::<EditorSupervisor>();
+    let root = fs::canonicalize(&project).map_err(|_| "The selected project folder is unavailable".to_string())?;
+    let mut processes = supervisor.processes.lock().map_err(|_| "Editor state is unavailable".to_string())?;
+    if let Some(process) = processes.get_mut(&owner) {
+        if process.child.try_wait().map_err(|error| error.to_string())?.is_none() {
+            if process.project == root { return Ok(editor_result("starting", Some(process), None)); }
+            if !editor_can_release(process) {
+                return Ok(editor_result("retained", Some(process), Some("Save or close unsaved files in the previous project before switching editors. The existing editor has been kept open to protect your work.".into())));
+            }
+        }
+    }
+    if let Some(mut process) = processes.remove(&owner) { stop_editor_process(&mut process.child); }
+    let resource_dir = app.path().resource_dir().map_err(|error| error.to_string())?;
+    let Some(executable) = editor_binary(&resource_dir) else {
+        return Ok(editor_result("unavailable", None, Some("Embedded VS Code is not installed. Run `bun run --cwd desktop fetch:editor`, then restart ContextGit.".into())));
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| format!("Could not reserve an editor port: {error}"))?;
+    let port = listener.local_addr().map_err(|error| error.to_string())?.port();
+    drop(listener);
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    root.hash(&mut hash);
+    let editor_dir = app.path().app_data_dir().map_err(|error| error.to_string())?.join("editor");
+    let data_dir = editor_dir.join("workspaces").join(format!("{}-{:016x}", owner, hash.finish()));
+    let extensions = editor_dir.join("extensions");
+    let integration = extensions.join("contextgit.contextgit-lifecycle-1.0.0");
+    fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&integration).map_err(|error| error.to_string())?;
+    fs::write(integration.join("package.json"), include_str!("../editor-extension/package.json")).map_err(|error| error.to_string())?;
+    fs::write(integration.join("extension.cjs"), include_str!("../editor-extension/extension.cjs")).map_err(|error| error.to_string())?;
+    let instance_id = Uuid::new_v4().to_string();
+    // Each reporter owns its ledger. A previous process must never overwrite a
+    // newer instance's safety state; only the clean layout is shared.
+    let state_file = data_dir.join(format!("lifecycle-{instance_id}.json"));
+    let log = fs::File::create(data_dir.join("code-server.log")).map_err(|error| error.to_string())?;
+    let stderr = log.try_clone().map_err(|error| error.to_string())?;
+    let mut command = Command::new(executable);
+    command.arg("--config").arg(editor_dir.join("config.yaml"));
+    command.env_remove("PORT").env_remove("VSCODE_IPC_HOOK_CLI")
+        .env("CONTEXTGIT_EDITOR_STATE_FILE", &state_file).env("CONTEXTGIT_EDITOR_INSTANCE", &instance_id)
+        .env("CONTEXTGIT_EDITOR_RESTORE_FILE", data_dir.join("lifecycle.json.restore"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command.args(["--bind-addr", &format!("127.0.0.1:{port}"), "--auth", "none", "--disable-telemetry", "--disable-update-check", "--disable-workspace-trust", "--user-data-dir"])
+        .arg(if owner == "main" { editor_dir.join("user-data") } else { editor_dir.join("windows").join(&owner).join("user-data") }).arg("--extensions-dir").arg(&extensions)
+        .arg(root.as_os_str()).stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(stderr));
+    let (child, launcher) = spawn_editor_process(command).map_err(|error| format!("Could not start VS Code: {error}"))?;
+    let process = EditorProcess {
+        child, _launcher: launcher,
+        url: format!("http://127.0.0.1:{port}/"), project: root, instance_id, state_file,
+    };
+    let result = editor_result("starting", Some(&process), None);
+    processes.insert(owner, process);
+    Ok(result)
+}
+
+fn spawn_editor_process(mut command: Command) -> std::io::Result<(Child, Option<std::sync::mpsc::Sender<()>>)> {
+    #[cfg(target_os = "linux")]
+    {
+        let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+        let (lifetime_tx, lifetime_rx) = std::sync::mpsc::channel::<()>();
+        // Linux's parent-death signal is tied to the spawning *thread*, not
+        // merely its process. Keep that thread parked for this editor's life
+        // instead of binding it to an expiring async worker-pool thread.
+        thread::Builder::new().name("editor-launcher".into()).spawn(move || {
+            editor_parent_guard(&mut command);
+            if result_tx.send(command.spawn()).is_ok() { let _ = lifetime_rx.recv(); }
+        })?;
+        let child = result_rx.recv().map_err(|_| std::io::Error::other("Editor launcher stopped"))??;
+        Ok((child, Some(lifetime_tx)))
+    }
+    #[cfg(not(target_os = "linux"))]
+    { Ok((command.spawn()?, None)) }
+}
+
+// Normal shutdown already stops the process group. Also cover a crashed or
+// SIGINT-terminated desktop: code-server handles SIGTERM and disposes its
+// children. Only async-signal-safe libc calls may run between fork and exec.
+fn editor_parent_guard(command: &mut Command) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let parent = std::process::id() as libc::pid_t;
+        unsafe {
+            command.pre_exec(move || {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::getppid() != parent {
+                    return Err(std::io::Error::from_raw_os_error(libc::ESRCH));
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = command;
+}
+
+#[tauri::command]
+async fn editor_status(app: tauri::AppHandle, window: tauri::Window, instance_id: Option<String>) -> Result<EditorStatus, String> {
+    let owner = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let supervisor = app.state::<EditorSupervisor>();
+        let mut processes = supervisor.processes.lock().map_err(|_| "Editor state is unavailable".to_string())?;
+        let Some(process) = processes.get_mut(&owner) else { return Ok(editor_result("stopped", None, None)); };
+        if instance_id.as_ref().is_some_and(|id| id != &process.instance_id) {
+            return Ok(editor_result("stopped", None, Some("A newer editor instance is active.".into())));
+        }
+        if process.child.try_wait().map_err(|error| error.to_string())?.is_some() {
+            return Ok(editor_result("error", None, Some(format!("VS Code stopped. See {}.", process.state_file.with_file_name("code-server.log").display()))));
+        }
+        let mut result = editor_result("starting", Some(process), None);
+        drop(processes);
+        if result.url.as_deref().is_some_and(editor_healthy) { result.state = "ready".into(); }
+        else { result.url = None; }
+        Ok(result)
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn editor_suspend(app: tauri::AppHandle, window: tauri::Window, instance_id: String) -> Result<EditorStatus, String> {
+    let owner = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let supervisor = app.state::<EditorSupervisor>();
+        let mut processes = supervisor.processes.lock().map_err(|_| "Editor state is unavailable".to_string())?;
+        let Some(process) = processes.get_mut(&owner) else { return Ok(editor_result("stopped", None, None)); };
+        if process.instance_id != instance_id { return Ok(editor_result("stopped", None, None)); }
+        if process.child.try_wait().map_err(|error| error.to_string())?.is_none() && !editor_can_release(process) {
+            return Ok(editor_result("retained", Some(process), Some("VS Code is kept in memory because files are unsaved or their recovery state is unavailable.".into())));
+        }
+        if let Some(mut process) = processes.remove(&owner) { stop_editor_process(&mut process.child); }
+        Ok(editor_result("stopped", None, None))
+    }).await.map_err(|error| error.to_string())?
+}
+
+fn editor_healthy(url: &str) -> bool {
+    let Some(address) = url.strip_prefix("http://").map(|value| value.trim_end_matches('/')).and_then(|value| value.parse().ok()) else { return false; };
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(250)) else { return false; };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
+    if stream.write_all(b"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").is_err() { return false; }
+    let mut response = [0_u8; 256];
+    let size = stream.read(&mut response).unwrap_or(0);
+    String::from_utf8_lossy(&response[..size]).starts_with("HTTP/1.1 200")
+}
+
+#[cfg(test)]
+mod editor_tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn editor_lifetime_outlasts_worker_but_not_launcher() {
+        let (mut child, lifetime) = thread::spawn(|| {
+            let mut command = Command::new("sleep");
+            command.arg("60");
+            spawn_editor_process(command).unwrap()
+        }).join().unwrap();
+        assert!(child.try_wait().unwrap().is_none(), "worker exit must not kill editor");
+        drop(lifetime);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if let Some(status) = child.try_wait().unwrap() {
+                use std::os::unix::process::ExitStatusExt;
+                assert_eq!(status.signal(), Some(libc::SIGTERM));
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("editor survived launcher shutdown");
+    }
+
+    fn probe(response: &'static [u8]) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 512];
+            let size = connection.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /healthz "));
+            connection.write_all(response).unwrap();
+        });
+        let ready = editor_healthy(&url);
+        server.join().unwrap();
+        ready
+    }
+
+    #[test]
+    fn editor_waits_for_successful_health_response() {
+        assert!(probe(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"));
+        assert!(!probe(b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n"));
+    }
+
+    #[test]
+    fn editor_rejects_invalid_health_address() {
+        assert!(!editor_healthy("https://example.com/"));
+        assert!(!editor_healthy("http://invalid/"));
+    }
+
+    #[test]
+    fn idle_cleanup_requires_recent_clean_state_from_the_current_instance() {
+        let state = br#"{"instanceId":"current","dirty":false,"updatedAt":1000}"#;
+        assert!(editor_state_can_release(state, "current", 2000));
+        assert!(!editor_state_can_release(state, "newer", 2000));
+        assert!(!editor_state_can_release(state, "current", 31_000));
+        assert!(!editor_state_can_release(state, "current", 999));
+        assert!(!editor_state_can_release(b"{}", "current", 2000));
+        assert!(!editor_state_can_release(br#"{"instanceId":"current","dirty":true,"updatedAt":1000}"#, "current", 2000));
+    }
+}
+
+#[tauri::command]
+async fn editor_stop(app: tauri::AppHandle, window: tauri::Window, instance_id: Option<String>) -> Result<(), String> {
+    let owner = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let supervisor = app.state::<EditorSupervisor>();
+        if let Ok(mut processes) = supervisor.processes.lock() {
+            if processes.get(&owner).is_some_and(|process| instance_id.as_ref().is_none_or(|id| id == &process.instance_id)) {
+                if let Some(mut process) = processes.remove(&owner) { stop_editor_process(&mut process.child); }
+            }
+        };
+    }).await.map_err(|error| error.to_string())
+}
+
+fn stop_editor(supervisor: &EditorSupervisor) {
+    if let Ok(mut processes) = supervisor.processes.lock() {
+        for (_, mut process) in processes.drain() { stop_editor_process(&mut process.child); }
+    }
+}
+
+fn stop_editor_process(process: &mut Child) {
+    if process.try_wait().ok().flatten().is_some() { return; }
+    // The launcher starts a VS Code server and extension host. Close the owned
+    // process group so those children cannot outlive the embedded editor.
+    #[cfg(unix)]
+    unsafe { libc::kill(-(process.id() as i32), libc::SIGTERM); }
+    #[cfg(windows)]
+    { let _ = Command::new("taskkill").args(["/PID", &process.id().to_string(), "/T"]).output(); }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if process.try_wait().ok().flatten().is_some() {
+            // The parent has exited; ensure no owned extension host survives it.
+            #[cfg(unix)]
+            unsafe { libc::kill(-(process.id() as i32), libc::SIGKILL); }
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    #[cfg(unix)]
+    unsafe { libc::kill(-(process.id() as i32), libc::SIGKILL); }
+    #[cfg(windows)]
+    { let _ = Command::new("taskkill").args(["/PID", &process.id().to_string(), "/T", "/F"]).output(); }
+    let _ = process.kill();
+    let _ = process.wait();
+}
+
 fn shell_command() -> String {
     if cfg!(windows) {
         env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
@@ -794,6 +1445,12 @@ fn harness_install(app: tauri::AppHandle, id: String) -> Result<serde_json::Valu
             None,
             None,
         );
+        let node = Command::new(if cfg!(windows) { "node.exe" } else { "node" }).arg("--version").output();
+        let npm = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" }).arg("--version").output();
+        if node.as_ref().map(|output| !output.status.success()).unwrap_or(true) || npm.as_ref().map(|output| !output.status.success()).unwrap_or(true) {
+            emit("error", None, None, None, Some("Node.js and npm are required before installing this agent. Install Node.js from https://nodejs.org/ and read https://docs.npmjs.com/downloading-and-installing-node-js-and-npm, then retry.".to_string()));
+            return;
+        }
         let mut command = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" });
         command.args(["install", "--global", package]);
         if ignore_scripts {
@@ -847,6 +1504,21 @@ fn pty_start(
     let executable = find_harness(&options.command).path.unwrap_or(program);
     let mut command = CommandBuilder::new(executable);
     command.args(args);
+    // Reopening a stored run resumes its native CLI session instead of
+    // starting a second conversation. The PTY remains disposable; the
+    // backend session and worktree are the durable identity.
+    if options.resume {
+        let Some(session_id) = options.session_id.as_deref() else { return Err("Cannot resume a terminal without a session id".to_string()); };
+        match options.command.as_str() {
+            "claude" => command.args(["--resume", session_id]),
+            // Codex owns the native conversation id. --last resumes the most
+            // recent recorded session for this worktree without opening the
+            // interactive picker.
+            "codex" => command.args(["resume", "--last"]),
+            "opencode" => command.args(["--continue"]),
+            _ => {}
+        }
+    }
     // Give shells and full-screen CLIs a predictable terminal even when the
     // desktop app was launched from a graphical session without TERM set.
     command.env("TERM", "xterm-256color");
@@ -1036,6 +1708,9 @@ async fn save_file(
 fn main() {
     let app = tauri::Builder::default()
         .manage(BackendSupervisor::new())
+        .manage(EditorSupervisor::new())
+        .manage(NativeLayouts::default())
+        .manage(BrowserStates::default())
         .manage(ProjectSelection(Mutex::new(())))
         .manage(PtySupervisor::new())
         .plugin(tauri_plugin_dialog::init())
@@ -1076,6 +1751,20 @@ fn main() {
             choose_workspace,
             pick_workspace_location,
             create_workspace,
+            files_list,
+            file_read,
+            file_write,
+            native_view_bounds,
+            native_view_url,
+            native_view_action,
+            browser_create,
+            browser_snapshot,
+            browser_navigate,
+            browser_open_external,
+            editor_start,
+            editor_status,
+            editor_suspend,
+            editor_stop,
             pty_start,
             pty_write,
             pty_resize,
@@ -1088,8 +1777,19 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building ContextGit Tauri application");
     app.run(|app_handle, event| {
-        if matches!(event, RunEvent::Exit) {
+        if let RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } = &event {
+            let app = app_handle.clone();
+            let owner = label.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let supervisor = app.state::<EditorSupervisor>();
+                if let Ok(mut processes) = supervisor.processes.lock() {
+                    if let Some(mut process) = processes.remove(&owner) { stop_editor_process(&mut process.child); }
+                };
+            });
+        }
+        if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
             stop_backend(&app_handle.state::<BackendSupervisor>());
+            stop_editor(&app_handle.state::<EditorSupervisor>());
         }
     });
 }
