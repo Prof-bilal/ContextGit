@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { shellActivity } from "../activity";
 import { api, type Session } from "@/shared/api";
 import { Field } from "../primitives";
 import StorageRail, { type StorageCategory } from "../rail/StorageRail";
@@ -14,7 +15,12 @@ export default function StorageFeature({
 }: {
   onClose?: () => void;
 }) {
-  const { setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, removeStoredSession, removeStoredBranch, clearStored, closedPanes, trashError } = useWorkbench();
+  const { tab, setClosedPanes, sessions, openSession, refresh, refreshTrash, refreshRepo, trashSessions, trashBranches, removeStoredSession, removeStoredBranch, clearStored, closedPanes, trashError } = useWorkbench();
+  useEffect(() => {
+    if (tab !== "git") return;
+    shellActivity.update({ storageOpen: true });
+    return () => shellActivity.update({ storageOpen: false });
+  }, [tab]);
   const [barError, setBarError] = useState<string | null>(null);
 
   const [trashCategory, setTrashCategory] = useState<StorageCategory>("all");

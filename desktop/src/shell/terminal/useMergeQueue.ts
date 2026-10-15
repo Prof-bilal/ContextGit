@@ -4,12 +4,14 @@ import { api, type MergeQueueEntry } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 import { useProjectState } from "../useProjectState";
+import { useShellActivity } from "../activity";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */
 export function useMergeQueue() {
+  const activity = useShellActivity();
   const [queue, setQueue] = useProjectState<MergeQueueEntry[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
 
@@ -18,7 +20,7 @@ export function useMergeQueue() {
     try {
       const next = await api.mergeQueue();
       if (!current()) return;
-      setQueue(next);
+      setQueue(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
       reportSuccess();
     } catch (cause) {
       if (!current()) return;
@@ -26,7 +28,7 @@ export function useMergeQueue() {
     }
   }, [reportSuccess, reportFailure, setQueue]);
 
-  const refresh = useBackendPolling(load, 4000);
+  const refresh = useBackendPolling(load, 4000, { active: activity.tab === "code" });
 
   const enqueue = useCallback(async (sessionId: string, target?: string) => {
     const entry = await api.enqueueMerge(sessionId, target);

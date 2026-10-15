@@ -2,7 +2,9 @@ import { useRef } from "react";
 
 export type PrimaryTabId =
   | "code"
-  | "git";
+  | "git"
+  | "editor"
+  | "browser";
 
 export type TabId = PrimaryTabId;
 

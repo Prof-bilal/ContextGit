@@ -4,6 +4,7 @@ import { LuRefreshCw } from "react-icons/lu";
 import type { HarnessLimits, LimitWindow } from "@/shared/api";
 import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, Chip, IconButton } from "../primitives";
+import { useShellActivity } from "../activity";
 
 /** 1351057602 -> "1.35B". */
 function compact(value: number | null | undefined): string {
@@ -68,7 +69,21 @@ export default function HarnessLimitsPanel({
   error?: string | null;
 }) {
   const [, tick] = useState(0);
-  useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 1000); return () => clearInterval(timer); }, []);
+  const { tab } = useShellActivity();
+  useEffect(() => {
+    if (tab !== "code" || !limits) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const resume = () => {
+      clearInterval(timer);
+      if (document.hidden) return;
+      tick(value => value + 1);
+      // Countdown labels display minutes, not seconds.
+      timer = setInterval(() => tick(value => value + 1), 30_000);
+    };
+    resume();
+    document.addEventListener("visibilitychange", resume);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", resume); };
+  }, [tab, limits]);
   const aged = !!limits && Date.now() - new Date(limits.fetched_at).getTime() > (limits.scope === "account" ? 360_000 : 90_000);
   const label = limits?.label ?? agentLabel(harness);
   return (

@@ -129,6 +129,10 @@ export default function HarnessInstall({
           <button type="button" className="cg-btn cg-btn-sm" data-variant="primary" onClick={retry}>
             Retry
           </button>
+          {error?.includes("Node.js") && <>
+            <a className="cg-btn cg-btn-sm" href="https://nodejs.org/" target="_blank" rel="noreferrer">Install Node.js</a>
+            <a className="cg-btn cg-btn-sm" href="https://docs.npmjs.com/downloading-and-installing-node-js-and-npm" target="_blank" rel="noreferrer">Node/npm docs</a>
+          </>}
           {harness.docsUrl && (
             <a className="cg-btn cg-btn-sm" href={harness.docsUrl} target="_blank" rel="noreferrer">
               Install docs

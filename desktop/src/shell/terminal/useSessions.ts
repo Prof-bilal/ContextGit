@@ -5,6 +5,7 @@ import { projectRuntime } from "../../../shared/projectRuntime";
 import { SessionRevision, uniqueSessions } from "./sessionState";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
+import { useShellActivity } from "../activity";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
@@ -14,6 +15,7 @@ const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextg
  * status changes and runs created elsewhere show up.
  */
 export function useSessions() {
+  const activity = useShellActivity();
   const [sessions, setSessions] = useState<Session[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
   const revision = useRef(new SessionRevision());
@@ -47,10 +49,13 @@ export function useSessions() {
         }
       }));
       if (!current() || !revision.current.accepts(ticket)) return;
-      setSessions(previous => uniqueSessions([...previous.filter(session => session.project_path !== owner), ...next]));
-      setRemovedIds(removed);
+      setSessions(previous => {
+        const value = uniqueSessions([...previous.filter(session => session.project_path !== owner), ...next]);
+        return JSON.stringify(previous) === JSON.stringify(value) ? previous : value;
+      });
+      setRemovedIds(previous => previous.join() === removed.join() ? previous : removed);
       setLoaded(true);
-      if (owner) setLoadedProjects(previous => [...new Set([...previous, owner])]);
+      if (owner) setLoadedProjects(previous => previous.includes(owner) ? previous : [...previous, owner]);
       reportSuccess();
     } catch (cause) {
       if (!current()) return;
@@ -58,7 +63,7 @@ export function useSessions() {
     }
   }, [reportSuccess, reportFailure]);
 
-  const refresh = useBackendPolling(load, 4000);
+  const refresh = useBackendPolling(load, activity.tab === "code" ? 4000 : 15000);
 
   const create = useCallback(
     async (

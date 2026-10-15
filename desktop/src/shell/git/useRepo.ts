@@ -3,12 +3,14 @@ import { useCallback, useState } from "react";
 import { api, type RepoSnapshot } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useProjectState } from "../useProjectState";
+import { useShellActivity } from "../activity";
 
 /** In a plain browser there is no Tauri bridge and no local API to read. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The real repository snapshot (`GET /api/v1/repo`) — the Git tab's data. */
 export function useRepo() {
+  const activity = useShellActivity();
   const [snapshot, setSnapshot, path] = useProjectState<RepoSnapshot | null>(null);
   const [loading, setLoading] = useProjectState(hasBridge);
   const [error, setError] = useProjectState<string | null>(null);
@@ -21,7 +23,7 @@ export function useRepo() {
     try {
       const next = await api.snapshot();
       if (!current()) return;
-      setSnapshot(next);
+      setSnapshot(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
       setError(null);
     } catch (cause) {
       if (current()) setError(cause instanceof Error ? cause.message : "Could not load the repository");
@@ -31,7 +33,7 @@ export function useRepo() {
   }, [path, setSnapshot, setError, setLoading]);
 
   // Event/mutation-driven: do not repeatedly download full history while idle.
-  const refresh = useBackendPolling(load, 0);
+  const refresh = useBackendPolling(load, 0, { active: activity.tab === "git" });
 
   return { snapshot, loading, error, refresh };
 }

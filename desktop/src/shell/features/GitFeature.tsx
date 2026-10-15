@@ -20,7 +20,7 @@ import { FeaturePorts } from "../FeaturePorts";
 export default function GitFeature() {
   const { snapshot, refreshRepo, repoLoading, refreshTrash, repoError, sessions, projects, activePath, refresh: refreshSessions, remove } = useWorkbench();
   const branches = snapshot?.branches ?? [];
-  const commits = [...(snapshot?.commits ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const commits = useMemo(() => [...(snapshot?.commits ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)), [snapshot?.commits]);
 
   const [barError, setBarError] = useProjectState<string | null>(null);
 
@@ -45,13 +45,6 @@ export default function GitFeature() {
   const [conversationOpen, setConversationOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [sessionDeleteBusy, setSessionDeleteBusy] = useState(false);
-
-  // The project list and repository resource initialize independently. When
-  // the active project arrives (or changes), refresh the snapshot for that
-  // project so Git is populated without requiring a manual Refresh click.
-  useEffect(() => {
-    void refreshRepo();
-  }, [activePath, refreshRepo]);
 
   const projectSessions = useMemo(
     () => sessions.filter((session) => (selectedProject ? session.project_path === selectedProject : true)),

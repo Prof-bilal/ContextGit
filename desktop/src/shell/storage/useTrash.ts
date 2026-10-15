@@ -4,6 +4,7 @@ import { api, type Branch, type Session } from "@/shared/api";
 import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 import { useProjectState } from "../useProjectState";
+import { useShellActivity } from "../activity";
 
 /** In a plain browser there is no Tauri bridge and no local API to poll. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
@@ -13,6 +14,7 @@ const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextg
  * runs and branches appear and disappear as they are moved around.
  */
 export function useTrash() {
+  const activity = useShellActivity();
   const [sessions, setSessions] = useProjectState<Session[]>([]);
   const [branches, setBranches] = useProjectState<Branch[]>([]);
   const { error, reportSuccess, reportFailure } = useTransientError();
@@ -22,8 +24,8 @@ export function useTrash() {
     try {
       const snapshot = await api.trash();
       if (!current()) return;
-      setSessions(snapshot.sessions);
-      setBranches(snapshot.branches);
+      setSessions(previous => JSON.stringify(previous) === JSON.stringify(snapshot.sessions) ? previous : snapshot.sessions);
+      setBranches(previous => JSON.stringify(previous) === JSON.stringify(snapshot.branches) ? previous : snapshot.branches);
       reportSuccess();
     } catch (cause) {
       if (!current()) return;
@@ -31,7 +33,7 @@ export function useTrash() {
     }
   }, [reportSuccess, reportFailure, setSessions, setBranches]);
 
-  const refresh = useBackendPolling(load, 4000);
+  const refresh = useBackendPolling(load, 4000, { active: activity.tab === "git" && activity.storageOpen });
 
   const removeSession = useCallback((id: string) => {
     setSessions((current) => current.filter((session) => session.id !== id));

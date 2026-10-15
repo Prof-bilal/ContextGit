@@ -353,14 +353,19 @@ export default function TerminalPane({
       // whole startup screen (or exit) before the invoke promise resolves.
       try {
         if (!bridge) throw new Error("The desktop terminal bridge is unavailable.");
+        const resumeKey = `contextgit:launched-session:${session.id}`;
+        const resume = window.localStorage.getItem(resumeKey) === "1";
         await bridge.ptyStart({
           id: ptyId,
           sessionId: session.id,
+          resume,
           command,
           cols: term.cols,
           rows: term.rows,
           cwd: session.worktree_path ?? session.project_path ?? undefined,
-          input: roleBriefing,
+          // Skills and role metadata are managed in the session/worktree
+          // context. Never inject a skill-loading prompt into the agent PTY.
+          input: roleBriefing && !roleBriefing.includes("Apply these skills") ? roleBriefing : undefined,
           env: {
             ...(session.port ? { PORT: String(session.port) } : {}),
             CONTEXTGIT_RUN: session.name,
@@ -373,6 +378,7 @@ export default function TerminalPane({
         }
         term.focus();
         if (!processExited) {
+          window.localStorage.setItem(resumeKey, "1");
           void api.updateSession(sessionRef.current.id, { status: "running" })
             .then(() => onStatus?.()).catch(() => {});
         }
