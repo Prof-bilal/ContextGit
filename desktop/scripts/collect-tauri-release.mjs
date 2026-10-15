@@ -6,7 +6,7 @@ const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const bundle = path.join(desktop, "src-tauri", "target", "release", "bundle");
 const release = path.join(desktop, "release");
 const publicVersion = JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).version;
-const artifactVersion = process.platform === "win32" ? publicVersion.replace(/-beta\.\d+$/, "-1") : publicVersion;
+const artifactVersion = process.platform === "win32" ? publicVersion.replace(/-beta\.(\d+)$/, "-$1") : publicVersion;
 const extensions = new Set([".AppImage", ".deb", ".rpm", ".pacman", ".dmg", ".msi", ".exe", ".zip", ".tar.gz"]);
 
 function filesUnder(directory) {

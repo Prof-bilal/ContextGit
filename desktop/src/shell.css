@@ -985,6 +985,7 @@ textarea.cg-text-input {
 .cg-agent-advanced-fields { display: grid; gap: 0.55rem; padding-top: 0.75rem; }
 .cg-agent-advanced-fields label { letter-spacing: 0; text-transform: none; font-size: 0.75rem; }
 .cg-command-search { display: flex; align-items: center; gap: 0.65rem; padding: 0.7rem; border: 1px solid var(--cg-line-strong); background: var(--cg-bg); }
+.cg-update-check-error { position: absolute; right: 1rem; top: 3.3rem; z-index: 100; max-width: min(32rem, calc(100vw - 2rem)); padding: 0.75rem; border: 1px solid var(--cg-bad); background: var(--cg-surface); color: var(--cg-ink); font-size: 0.8rem; }
 .cg-command-search > svg { color: var(--cg-ink-3); flex-shrink: 0; }
 .cg-command-search input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; color: var(--cg-ink); font: inherit; font-size: 0.85rem; }
 .cg-command-search:focus-within { border-color: var(--cg-focus); }

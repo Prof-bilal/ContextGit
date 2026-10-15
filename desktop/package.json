@@ -1,7 +1,7 @@
 {
   "name": "contextgit-desktop",
   "private": true,
-  "version": "0.2.0-beta.3",
+  "version": "0.2.0-beta.4",
   "license": "Apache-2.0",
   "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
   "homepage": "https://github.com/Prof-bilal/ContextGit",
@@ -19,6 +19,7 @@
     "test:editor": "node --test scripts/test-native-layout.mjs scripts/test-editor-extension.mjs scripts/test-backend-bridge.mjs",
     "test:editor-runtime": "node scripts/test-editor-runtime.mjs",
     "test:browser": "node --test scripts/test-browser-address.mjs",
+    "test:updates": "node --test scripts/test-updates.mjs",
     "build:renderer": "vite build",
     "build": "bun run typecheck && bun run build:renderer && bun run build:backend",
     "build:backend": "bun scripts/build-backend.mjs",

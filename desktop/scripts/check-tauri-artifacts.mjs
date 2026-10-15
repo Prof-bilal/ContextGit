@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundle = path.join(desktop, "src-tauri", "target", "release", "bundle");
 const version = JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).version;
-const artifactVersion = process.platform === "win32" ? version.replace(/-beta\.\d+$/, "-1") : version;
+const artifactVersion = process.platform === "win32" ? version.replace(/-beta\.(\d+)$/, "-$1") : version;
 
 function filesUnder(directory) {
   if (!fs.existsSync(directory)) return [];

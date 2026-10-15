@@ -1,5 +1,6 @@
 import type { BackendStatus } from "../shared/status";
 import { projectRuntime, invalidateProjects } from "../shared/projectRuntime";
+import { createUpdateBridge } from "./update-bridge";
 
 type TauriGlobals = {
   core?: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -18,6 +19,8 @@ export async function installTauriBridge(): Promise<void> {
 
   let apiBase = "http://127.0.0.1:8756";
   const apiToken = String(await tauri.core.invoke("backend_token"));
+  const version = await tauri.core.invoke("app_version").catch(() => "unknown");
+  const updates = createUpdateBridge(command => tauri.core!.invoke(command), tauri.event?.listen, typeof version === "string" ? version : "unknown");
   let status: BackendStatus = { state: "starting", message: "Starting the local ContextGit backend…" };
   const unsupported = (name: string) => Promise.reject(new Error(`Tauri command not migrated yet: ${name}`));
   const noEvents = () => () => { };
@@ -114,12 +117,7 @@ export async function installTauriBridge(): Promise<void> {
     newWindow: () => tauri.core!.invoke("new_window") as Promise<void>,
     runtimeInfo: () => tauri.core!.invoke("runtime_info") as Promise<import("../shared/runtime").RuntimeInfo>,
     onStatus,
-    getUpdateStatus: () => ({ state: "idle", currentVersion: "0.2.0-beta.3", supported: false } as import("../shared/update").UpdateStatus),
-    checkForUpdates: () => unsupported("check_for_updates"),
-    downloadUpdate: () => unsupported("download_update"),
-    installUpdate: () => unsupported("install_update"),
-    openUpdateRelease: () => unsupported("open_update_release"),
-    onUpdateStatus: noEvents,
+    ...updates,
   } as unknown as ContextGitBridge;
   const migrated = {
     getWorkspace: async () => {

@@ -16,6 +16,7 @@ use std::{
 use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
+mod updates;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -817,7 +818,7 @@ fn editor_binary(resource_dir: &Path) -> Option<PathBuf> {
     for bundled_root in bundled_roots {
         let Ok(entries) = fs::read_dir(bundled_root) else { continue; };
         for entry in entries.flatten() {
-            let candidate = entry.path().join("bin").join(if cfg!(windows) { "code-server.exe" } else { "code-server" });
+            let candidate = if cfg!(windows) { entry.path().join("lib").join("node.exe") } else { entry.path().join("bin").join("code-server") };
             if candidate.is_file() { return Some(candidate); }
         }
     }
@@ -1103,7 +1104,13 @@ fn start_editor(app: &tauri::AppHandle, owner: String, project: String) -> Resul
     let state_file = data_dir.join(format!("lifecycle-{instance_id}.json"));
     let log = fs::File::create(data_dir.join("code-server.log")).map_err(|error| error.to_string())?;
     let stderr = log.try_clone().map_err(|error| error.to_string())?;
-    let mut command = Command::new(executable);
+    let mut command = Command::new(&executable);
+    // The official Windows archive ships node.exe plus a .cmd wrapper, not
+    // code-server.exe. Launch Node directly to avoid cmd.exe quoting/injection.
+    if cfg!(windows) && executable.file_name().is_some_and(|name| name == "node.exe") {
+        let root = executable.parent().and_then(Path::parent).ok_or("Invalid editor runtime path")?;
+        command.arg(root.join("out").join("node").join("entry.js"));
+    }
     command.arg("--config").arg(editor_dir.join("config.yaml"));
     command.env_remove("PORT").env_remove("VSCODE_IPC_HOOK_CLI")
         .env("CONTEXTGIT_EDITOR_STATE_FILE", &state_file).env("CONTEXTGIT_EDITOR_INSTANCE", &instance_id)
@@ -1713,6 +1720,7 @@ fn main() {
         .manage(BrowserStates::default())
         .manage(ProjectSelection(Mutex::new(())))
         .manage(PtySupervisor::new())
+        .manage(updates::UpdateService::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -1743,6 +1751,10 @@ fn main() {
             backend_token,
             restart_backend,
             app_version,
+            updates::check_for_updates,
+            updates::download_update,
+            updates::install_update,
+            updates::open_update_release,
             new_window,
             get_workspace,
             list_projects,

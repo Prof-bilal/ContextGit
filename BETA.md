@@ -1,4 +1,4 @@
-# ContextGit `0.2.0-beta.3`
+# ContextGit `0.2.0-beta.4`
 
 This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
@@ -13,8 +13,12 @@ For Omarchy and other Arch-based systems, use the **Linux x86_64 `.pacman`**
 package, or the x86_64 AppImage. Do not use an arm64/aarch64 package unless
 your machine reports `aarch64` or `arm64`.
 
-The beta focuses on terminal agents and Git context. It does not bundle an
-editor and does not expose the Why analysis surface.
+This beta includes the embedded VS Code workbench and native browser, reduced
+background polling and idle cleanup, the command palette, square-corner UI,
+and a direct project shell terminal. Update app now checks GitHub releases,
+shows clear status and errors, and opens the matching release's downloads.
+Install updates manually; signed automatic installation is not configured yet.
+The Why analysis surface is not exposed.
 
 ## Support contract
 
