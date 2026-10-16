@@ -20,8 +20,8 @@ import { useSyncExternalStore } from "react";
 import { projectRuntime } from "../../shared/projectRuntime";
 
 const FEATURES: Array<TabDef & { title: string; Controller: ComponentType }> = [
-  { id: "code", label: "Code", title: "Run", Controller: CodeFeature },
-  { id: "git", label: "Git", title: "Commit", Controller: GitFeature },
+  { id: "code", label: "Workspace", title: "Task", Controller: CodeFeature },
+  { id: "git", label: "Advanced Git", title: "History", Controller: GitFeature },
   { id: "editor", label: "Editor", title: "Editor", Controller: EditorFeature },
   { id: "browser", label: "Browser", title: "Browser", Controller: BrowserFeature },
 ];
@@ -56,7 +56,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
     });
   }, []);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [dockOpen, setDockOpen] = useState(true);
+  const [dockOpen, setDockOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -65,7 +65,7 @@ function WorkbenchFrame({ backendAvailable = true }: { backendAvailable?: boolea
   const setFeatureOverlay = useCallback((id: TabId, open: boolean) => {
     setOverlays(current => current[id] === open ? current : { ...current, [id]: open });
   }, []);
-  const overlayOpen = Object.values(overlays).some(Boolean) || shared.projectOpen || paletteOpen;
+  const overlayOpen = Object.values(overlays).some(Boolean) || shared.projectOpen || !!shared.checkpointSession || paletteOpen;
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {

@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
 from contextgit.core import hashing
@@ -104,6 +104,9 @@ from contextgit.merge.semantic import extract_semantics
 from contextgit.storage.sqlite import SqliteStorage
 from contextgit.verify import detect_gate, run_command
 from contextgit.verify.env import capture_env, diff_env
+
+if TYPE_CHECKING:
+    from contextgit.knowledge.service import KnowledgeService
 
 _DB_NAME = "contextgit.db"
 _ROOT_PARENT = "a3f9c21"
@@ -546,6 +549,7 @@ class Repo:
         kind: str = "chat",
         branch: str | None = None,
         agent: str | None = None,
+        model: str | None = None,
         auto_commit: bool = False,
         from_commit: str | None = None,
         project_path: str | None = None,
@@ -555,6 +559,7 @@ class Repo:
         scope: list[str] | None = None,
         role: str | None = None,
         skills: list[str] | None = None,
+        category: str = "",
     ) -> Session:
         """Create a session bound to a branch (creating the branch if needed).
 
@@ -582,11 +587,13 @@ class Repo:
             kind=cast("Literal['chat', 'terminal']", kind),
             branch=branch_name,
             agent=agent,
+            model=model.strip() if model else None,
             auto_commit=auto_commit,
             task=task,
             scope=scope or [],
             role=role,
             skills=skills or [],
+            category=category.strip(),
             project_path=project_path,
         )
         if worktree and project_path:
@@ -603,6 +610,7 @@ class Repo:
                 project_path,
                 self.shared_context(session.id) if session.worktree_path else None,
             )
+            self.knowledge.refresh_context(project_path, write_skills=False, sync_root=False)
         self._fleet_cache = None
         return session
 
@@ -882,7 +890,11 @@ class Repo:
     def sync_agent_context(self, project_path: str, digest: str | None = None) -> None:
         """Rewrite the managed AGENTS.md block with runs' scopes, shared context,
         and the alternatives already rejected in the files these runs own."""
-        sessions = [session for session in self._storage.list_sessions() if session.worktree_path]
+        sessions = [
+            session for session in self._storage.list_sessions()
+            if session.worktree_path
+            and session.project_path == self.canonical_project_path(project_path)
+        ]
         runs = [
             {
                 "name": session.name,
@@ -897,7 +909,14 @@ class Repo:
         rejected = self.rejected_alternatives(project_path, scope)
         memory = self.project_memory(project_path)
         memory_text = self.project_memory_text(memory)
+        memory_text += self.knowledge.approved_index(self.canonical_project_path(project_path))
         write_context_block(project_path, context_document(runs, digest, rejected, memory_text))
+
+    @property
+    def knowledge(self) -> "KnowledgeService":
+        from contextgit.knowledge.service import KnowledgeService
+
+        return KnowledgeService(self, self._storage)
 
     @staticmethod
     def canonical_project_path(project_path: str | Path) -> str:
@@ -2140,6 +2159,12 @@ class Repo:
     def list_providers(self) -> list[ProviderRecord]:
         """Every user-configured provider row (built-ins live in llm/spec.py)."""
         return self._storage.list_provider_rows()
+
+    def learning_provider(self) -> str | None:
+        return self._storage.learning_provider()
+
+    def set_learning_provider(self, provider_id: str) -> None:
+        self._storage.set_learning_provider(provider_id)
 
     def get_provider(self, provider_id: str) -> ProviderRecord | None:
         """One stored provider row, or None when only the built-in is defined."""

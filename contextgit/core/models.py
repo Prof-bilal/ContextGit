@@ -344,6 +344,7 @@ class Session(BaseModel):
     branch: str
     status: SessionStatus = "idle"
     agent: str | None = None
+    model: str | None = None
     auto_commit: bool = False
     # Worktree pairing: the git checkout (code) that goes with `branch` (conversation).
     # All None/empty for non-git projects, which share one workspace folder.
@@ -361,6 +362,7 @@ class Session(BaseModel):
     role: str | None = None
     skills: list[str] = Field(default_factory=list)
     # A stable local port for this run, so two runs' dev servers cannot collide.
+    category: str = ""
     port: int | None = None
     # When set, the run is in Storage (trash): hidden from normal lists but
     # recoverable. None means live.

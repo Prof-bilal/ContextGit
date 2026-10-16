@@ -74,6 +74,8 @@ export function useSessions() {
       role?: string,
       skills?: string[],
       worktree = true,
+      category = "",
+      model?: string,
     ) => {
       if (!connected() || !projectRuntime.read().ready) throw new Error("This project is still loading. Please wait or retry opening it.");
       if (creating.current) throw new Error("A run is already starting. Please wait.");
@@ -83,6 +85,7 @@ export function useSessions() {
           name,
           kind: "terminal",
           agent,
+          model,
           projectPath,
           // A shared project-root run is useful for quick investigation; an
           // isolated worktree remains the safe default for edits.
@@ -90,6 +93,7 @@ export function useSessions() {
           scope: scope ?? [],
           role,
           skills,
+          category,
         });
         revision.current.changed();
         // A poll can land between the POST and this append and already contain the

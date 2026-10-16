@@ -31,6 +31,7 @@ try {
   browser = await chromium.launch({ executablePath: existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined, headless: true });
   const page = await browser.newPage({ viewport: { width: 600, height: 650 } });
   await page.goto(`${server.resolvedUrls.local[0].replace(/\/$/, "")}${route}`);
+  await page.getByText("Advanced", { exact: true }).click();
   const worktree = page.getByRole("radio", { name: "Isolated worktree" });
   const project = page.getByRole("radio", { name: "Project root" });
   await worktree.waitFor({ state: "attached" });

@@ -1,5 +1,6 @@
 import { apiRequest, ApiError, requestTimeout, type RequestOptions } from "./apiRequest";
 import { prepareProject, projectRuntime } from "./projectRuntime";
+import type { Checkpoint, Feedback, Knowledge, Lesson, Preflight, LearningConnectionInput, LearningProvider, LearningSettings } from "./knowledge";
 export { ApiError } from "./apiRequest";
 
 export type Role = "system" | "user" | "assistant" | "tool";
@@ -184,6 +185,7 @@ export interface Session {
   branch: string;
   status: SessionStatus;
   agent: string | null;
+  model: string | null;
   auto_commit: boolean;
   worktree_path: string | null;
   git_branch: string | null;
@@ -196,6 +198,7 @@ export interface Session {
   /** The role this run plays, and the skills auto-loaded for it. */
   role: string | null;
   skills: string[];
+  category?: string;
   /** A private local port for this run's dev server. */
   port: number | null;
   /** Set when the run is in Storage (trash); null means live. */
@@ -251,6 +254,19 @@ export interface SessionDetail {
   workspace_status: WorkspaceStatus | null;
   commits: Commit[];
   project_memory_preview: ProjectMemoryPreview | null;
+}
+
+export interface ContextWindowReading {
+  session_id: string;
+  agent: string | null;
+  model: string | null;
+  used_tokens: number;
+  limit_tokens: number | null;
+  percentage: number | null;
+  remaining_tokens: number | null;
+  source: string;
+  estimated: boolean;
+  draft_tokens: number;
 }
 
 /** The Storage view payload: trashed runs/conversations and trashed branches. */
@@ -885,6 +901,20 @@ export interface DbQueryResult {
 export function projectApi(owner?: string) {
   const request = <T>(path: string, init?: RequestOptions) => sendRequest<T>(path, init, owner);
   return {
+  knowledge: (project: string) => request<Knowledge>(`/api/v1/knowledge?project_path=${encodeURIComponent(project)}`),
+  checkpoint: (id: string) => request<{ status: string; changed: boolean; checkpoint: Checkpoint | null }>(`/api/v1/sessions/${id}/checkpoint`, { method: "POST", timeoutMs: 30_000 }),
+  latestCheckpoint: (id: string) => request<Checkpoint | null>(`/api/v1/sessions/${id}/checkpoint`, { timeoutMs: 10_000 }),
+  exportCheckpoint: (id: string, checkpoint: string, markdown: string) => request<Checkpoint>(`/api/v1/sessions/${id}/checkpoint/export`, { method: "POST", body: JSON.stringify({ checkpoint_id: checkpoint, markdown }), timeoutMs: 30_000 }),
+  feedback: (id: string, feedback: Feedback) => request<Checkpoint>(`/api/v1/sessions/${id}/feedback`, { method: "POST", body: JSON.stringify(feedback), timeoutMs: 10_000 }),
+  learningDraft: (id: string, provider?: string) => request<Lesson>(`/api/v1/sessions/${id}/learning-draft`, { method: "POST", body: JSON.stringify({ provider }), timeoutMs: 120_000 }),
+  cleanCheckpoint: (id: string, provider?: string) => request<{ markdown: string }>(`/api/v1/sessions/${id}/checkpoint/clean`, { method: "POST", body: JSON.stringify({ provider }), timeoutMs: 120_000 }),
+  approveLesson: (id: string, instruction: string, resolveConflicts: boolean) => request<Lesson>(`/api/v1/project-memory/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ instruction, resolve_conflicts: resolveConflicts }), timeoutMs: 30_000 }),
+  rejectLesson: (id: string) => request<Lesson>(`/api/v1/project-memory/drafts/${id}/reject`, { method: "POST", timeoutMs: 10_000 }),
+  knowledgePreflight: (project: string, category: string, scope: string[], task: string) => request<Preflight>("/api/v1/knowledge/preflight", { method: "POST", body: JSON.stringify({ project_path: project, category, scope, task }), timeoutMs: 10_000 }),
+  learningProviders: () => request<{ id: string; label: string; configured: boolean; kind: string }[]>("/api/v1/knowledge/providers"),
+  learningSettings: () => request<LearningSettings>("/api/v1/knowledge/provider-settings", { timeoutMs: 10_000 }),
+  saveLearningConnection: (input: LearningConnectionInput) => request<LearningProvider>("/api/v1/knowledge/provider-settings", { method: "PUT", body: JSON.stringify(input), timeoutMs: 10_000 }),
+  testLearningConnection: (input: LearningConnectionInput) => request<{ status: string; message: string }>("/api/v1/knowledge/provider-settings/test", { method: "POST", body: JSON.stringify(input), timeoutMs: 20_000 }),
   snapshot: () => request<RepoSnapshot>("/api/v1/repo"),
   branchBudget: (name: string) =>
     request<BranchBudget>(
@@ -1167,6 +1197,8 @@ export function projectApi(owner?: string) {
     }),
   sessionContext: (id: string) =>
     request<{ text: string }>(`/api/v1/sessions/${id}/context`),
+  contextWindow: (id: string, draft = "") =>
+    request<ContextWindowReading>(`/api/v1/sessions/${id}/context-window?draft=${encodeURIComponent(draft)}`),
   crossRunConflicts: (id: string) =>
     request<CrossRunConflict[]>(`/api/v1/sessions/${id}/cross-conflicts`, {
       method: "POST",
@@ -1176,6 +1208,7 @@ export function projectApi(owner?: string) {
     kind?: SessionKind;
     branch?: string;
     agent?: string;
+    model?: string;
     autoCommit?: boolean;
     fromCommit?: string;
     projectPath?: string;
@@ -1185,6 +1218,7 @@ export function projectApi(owner?: string) {
     scope?: string[];
     role?: string;
     skills?: string[];
+    category?: string;
   }) =>
     request<Session>("/api/v1/sessions", {
       method: "POST",
@@ -1193,6 +1227,7 @@ export function projectApi(owner?: string) {
         kind: input.kind ?? "chat",
         branch: input.branch,
         agent: input.agent,
+        model: input.model,
         auto_commit: input.autoCommit ?? false,
         from_commit: input.fromCommit,
         project_path: input.projectPath,
@@ -1202,6 +1237,7 @@ export function projectApi(owner?: string) {
         scope: input.scope ?? [],
         role: input.role,
         skills: input.skills ?? [],
+        category: input.category ?? "",
       }),
     }),
   updateSession: (

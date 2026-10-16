@@ -26,6 +26,7 @@ export function useWorkbenchState() {
   } = useProjectResource();
 
   const [projectOpen, setProjectOpen] = useState(false);
+  const [checkpointSession, setCheckpointSession] = useState<{ session: Session; closing: boolean } | null>(null);
 
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [dismissedTabIds, setDismissedTabIds, dismissedPath] = useProjectState(() => loadDismissedAgentTabs());
@@ -89,10 +90,15 @@ export function useWorkbenchState() {
     }
   }, [stop, setActiveId]);
 
-  const closeAgentTab = useCallback((session: Session) => {
+  const finishCloseAgentTab = useCallback((session: Session) => {
     setDismissedTabIds(current => [...new Set([...current, session.id])]);
     void closeTerminal(session);
   }, [closeTerminal, setDismissedTabIds]);
+
+  const closeAgentTab = useCallback((session: Session) => {
+    if (!session.agent || session.agent === "shell") { finishCloseAgentTab(session); return; }
+    setCheckpointSession({ session, closing: true });
+  }, [finishCloseAgentTab]);
 
   const restoredPanes = useRef(false);
   const restoredProjects = useRef(new Set<string>());
@@ -112,5 +118,5 @@ export function useWorkbenchState() {
     if (!activePath || !restoredProjects.current.has(activePath)) return;
     saveOpenPanes(openIds.filter(id => sessions.some(session => session.id === id && session.project_path === activePath)), activePath);
   }, [openIds, activePath, sessions]);
-  return { mode, sessions, tabSessions, closeAgentTab, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, removeStoredSession, removeStoredBranch, clearStored, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
+  return { checkpointSession, setCheckpointSession, finishCloseAgentTab, mode, sessions, tabSessions, closeAgentTab, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, removeStoredSession, removeStoredBranch, clearStored, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
 }

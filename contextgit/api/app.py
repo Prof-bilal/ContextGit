@@ -209,6 +209,9 @@ def create_app(
     from contextgit.api.transcripts import router as transcript_router
 
     app.include_router(transcript_router(get_repo))
+    from contextgit.api.knowledge import router as knowledge_router
+
+    app.include_router(knowledge_router(get_repo, llm, provider is not None))
 
     @asynccontextmanager
     async def integration_lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -720,6 +723,7 @@ def create_app(
             kind=body.kind,
             branch=body.branch,
             agent=body.agent,
+            model=body.model,
             auto_commit=body.auto_commit,
             from_commit=body.from_commit,
             project_path=body.project_path,
@@ -729,8 +733,41 @@ def create_app(
             scope=body.scope,
             role=body.role,
             skills=body.skills,
+            category=body.category,
         )
         return session.model_dump(mode="json")
+
+    @app.get("/api/v1/sessions/{session_id}/context-window")
+    def session_context_window(
+        session_id: str,
+        draft: str = "",
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        """Estimate the next request's context for one agent session."""
+        from contextgit.llm.context_window import context_window, estimate_tokens
+
+        session = current.get_session(session_id)
+        commits = current.log(session.branch)
+        messages = current.build_context(commits[0].id) if commits else []
+        staged = current.staged(session_id)
+        text = "\n".join(item.content for item in [*messages, *staged])
+        if draft:
+            text += "\n" + draft
+        model = session.model or next((item.model for item in commits if item.model), None)
+        window = context_window(model)
+        used = estimate_tokens(text)
+        return {
+            "session_id": session_id,
+            "agent": session.agent,
+            "model": model,
+            "used_tokens": used,
+            "limit_tokens": window.limit,
+            "percentage": round((used / window.limit) * 100, 1) if window.limit else None,
+            "remaining_tokens": max(window.limit - used, 0) if window.limit else None,
+            "source": window.source,
+            "estimated": True,
+            "draft_tokens": estimate_tokens(draft),
+        }
 
     @app.get("/api/v1/sessions/{session_id}")
     def get_session(session_id: str, current: Repo = repo_dep) -> dict[str, object]:

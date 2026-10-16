@@ -126,6 +126,7 @@ class SessionRequest(BaseModel):
     kind: Literal["chat", "terminal"] = "chat"
     branch: str | None = None
     agent: str | None = None
+    model: str | None = Field(default=None, max_length=200)
     auto_commit: bool = False
     from_commit: str | None = None
     # Worktree pairing: give this run its own git checkout in `project_path`.
@@ -137,6 +138,7 @@ class SessionRequest(BaseModel):
     # The role this run plays and the skills auto-loaded for it (labels).
     role: str | None = None
     skills: list[str] = Field(default_factory=list)
+    category: str = Field(default="", max_length=80)
 
 
 class SessionUpdateRequest(BaseModel):
