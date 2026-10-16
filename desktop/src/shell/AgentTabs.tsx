@@ -1,6 +1,6 @@
 import { LuPlus, LuX } from "react-icons/lu";
 
-import type { Session } from "../../shared/api";
+import type { ContextWindowReading, Session } from "../../shared/api";
 import { agentLabel, agentMonogram } from "./agents";
 import { AgentMark, StatusIcon } from "./primitives";
 
@@ -11,10 +11,18 @@ type AgentTabsProps = {
   onSelect: (session: Session) => void;
   onClose: (session: Session) => void;
   onNewAgent: () => void;
+  contextWindows?: Record<string, ContextWindowReading>;
 };
 
+function ContextBadge({ reading }: { reading?: ContextWindowReading }) {
+  if (!reading) return null;
+  if (reading.percentage === null) return <span className="cg-context-badge" title="Context limit unknown">—</span>;
+  const tone = reading.percentage >= 90 ? "bad" : reading.percentage >= 70 ? "warn" : "";
+  return <span className="cg-context-badge" data-tone={tone} title={`${reading.used_tokens.toLocaleString()} / ${reading.limit_tokens?.toLocaleString()} tokens`}>{Math.round(reading.percentage)}%</span>;
+}
+
 /** Agent tabs remain available after their terminal process is stopped. */
-export default function AgentTabs({ sessions, openIds, activeId, onSelect, onClose, onNewAgent }: AgentTabsProps) {
+export default function AgentTabs({ sessions, openIds, activeId, onSelect, onClose, onNewAgent, contextWindows = {} }: AgentTabsProps) {
   return (
     <div className="cg-agent-tabs" role="tablist" aria-label="Open agents">
       {sessions.map((session) => (
@@ -30,6 +38,7 @@ export default function AgentTabs({ sessions, openIds, activeId, onSelect, onClo
           >
             <AgentMark agent={session.agent ?? "shell"} label={agentMonogram(session.agent)} />
             <span className="cg-agent-tab-name">{session.name}</span>
+            <ContextBadge reading={contextWindows[session.id]} />
             <StatusIcon status={openIds.includes(session.id) ? session.status : "idle"} />
             {(!openIds.includes(session.id) || session.status !== "running") && <span className="cg-agent-tab-offline">Offline</span>}
           </button>

@@ -2,12 +2,14 @@ import { useState, useSyncExternalStore } from "react";
 import { projectRuntime, prepareProject } from "../../../shared/projectRuntime";
 import { LuTerminal } from "react-icons/lu";
 
-import type { FleetEntry, Session } from "@/shared/api";
+import type { ContextWindowReading, FleetEntry, Session } from "@/shared/api";
 import type { Workspace } from "../../../shared/workspace";
 import { Chip } from "../primitives";
 import { openSessions } from "../terminal/PaneCanvas";
 import DiagnosticsDialog from "../DiagnosticsDialog";
 import AgentTabs from "../AgentTabs";
+import ProjectHome from "../knowledge/ProjectHome";
+import Modal from "../Modal";
 
 /**
  * Single mode's header: the runs rail drives the shared pane canvas that Shell
@@ -26,6 +28,7 @@ export default function CodeView({
   onClose,
   onNewAgent,
   onChooseProject,
+  contextWindows = {},
 }: {
   sessions: Session[];
   backendAvailable?: boolean;
@@ -39,8 +42,10 @@ export default function CodeView({
   onClose: (session: Session) => void;
   onNewAgent: () => void;
   onChooseProject: () => void;
+  contextWindows?: Record<string, ContextWindowReading>;
 }) {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const project = useSyncExternalStore(projectRuntime.subscribe, projectRuntime.read);
   const clashing = fleet.filter((entry) => entry.overlaps.length > 0).length;
   const open = openSessions(sessions, openIds);
@@ -50,7 +55,7 @@ export default function CodeView({
       {project.error && <p className="cg-banner" role="alert">{project.error} <button className="cg-btn" onClick={() => project.path && void prepareProject(project.path).catch(() => {})}>Retry project</button></p>}
       {project.path && !project.ready && !project.error && <p className="cg-empty-note" role="status">Loading project...</p>}
       <div className="cg-view-toolbar">
-        <h1>Terminals</h1>
+        <h1>Workspace</h1>
         <button
           type="button"
           className="cg-project-btn"
@@ -68,6 +73,7 @@ export default function CodeView({
           </Chip>
         )}
         <span className="cg-toolbar-spacer" />
+        <button type="button" className="cg-btn" onClick={() => setKnowledgeOpen(true)}>Project history & knowledge</button>
         <button type="button" className="cg-btn cg-btn-sm" onClick={() => setDiagnosticsOpen(true)}>
           Diagnostics
         </button>
@@ -89,14 +95,11 @@ export default function CodeView({
         onSelect={onSelect}
         onClose={onClose}
         onNewAgent={onNewAgent}
+        contextWindows={contextWindows}
       />
       {diagnosticsOpen && <DiagnosticsDialog backendAvailable={backendAvailable} onClose={() => setDiagnosticsOpen(false)} />}
-      {open.length === 0 && (
-        <div className="cg-pane-empty">
-          <strong>No terminals open</strong>
-          <span>Open an agent tab or start a new terminal for this project.</span>
-        </div>
-      )}
+      {knowledgeOpen && <Modal title="Project history & knowledge" size="lg" onClose={() => setKnowledgeOpen(false)}><ProjectHome onNew={() => { setKnowledgeOpen(false); onNewAgent(); }} /></Modal>}
+      {open.length === 0 && <ProjectHome onNew={onNewAgent} />}
     </>
   );
 }

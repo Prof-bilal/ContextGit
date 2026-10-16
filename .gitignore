@@ -42,6 +42,7 @@ coverage.xml
 # local editor / agent tooling
 .commandcode/
 .freebuff/
+.codeatlas/
 
 # electron desktop
 .desktop-venv/

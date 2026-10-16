@@ -2,7 +2,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import MergeAgentPanel from "../terminal/MergeAgentPanel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuX } from "react-icons/lu";
-import { api, ApiError, type Message, type Session, type Task } from "@/shared/api";
+import { api, ApiError, type ContextWindowReading, type Message, type Session, type Task } from "@/shared/api";
 import { ROLE_BY_ID, roleFor, roleSkills } from "../../../shared/roles";
 import { agentLabel } from "../agents";
 import { Chip, Field, StatusIcon } from "../primitives";
@@ -21,6 +21,17 @@ import { useWorkbench } from "../WorkbenchContext";
 import { useFeatureAction } from "../useFeatureAction";
 import { FeaturePorts } from "../FeaturePorts";
 import { useProjectState } from "../useProjectState";
+import { useContextWindows } from "../useContextWindows";
+
+function ContextWindowPanel({ reading }: { reading: ContextWindowReading }) {
+  const percentage = reading.percentage;
+  const tone = percentage === null ? "unknown" : percentage >= 90 ? "bad" : percentage >= 70 ? "warn" : "good";
+  return <section className="cg-context-window" aria-label="Context window">
+    <div className="cg-context-window-head"><span className="cg-kicker">Context window</span><strong>{percentage === null ? "Unknown" : `${Math.round(percentage)}%`}</strong></div>
+    <div className="cg-context-window-bar" data-tone={tone}><span style={{ width: `${Math.min(100, percentage ?? 0)}%` }} /></div>
+    <p className="cg-view-sub">{reading.used_tokens.toLocaleString()} tokens{reading.limit_tokens ? ` / ${reading.limit_tokens.toLocaleString()}` : " · limit unavailable"}{reading.estimated ? " · estimated" : ""}</p>
+  </section>;
+}
 
 
 export default function CodeFeature() {
@@ -67,6 +78,7 @@ export default function CodeFeature() {
   const limitsByHarness = new Map(limits.map((entry) => [entry.harness, entry]));
 
   const runHarness = activeSession?.agent ?? "shell";
+  const contextWindows = useContextWindows(sessions.filter(session => session.project_path === workspace?.path), tab === "code");
 
   useEffect(() => {
     if (!activeSession) {
@@ -94,7 +106,7 @@ export default function CodeFeature() {
   }, [activeSession, revision, refresh]);
 
   const startRun = useCallback(
-    async (name: string, agent: string, scope: string[], roleId: string, worktree: boolean) => {
+    async (name: string, agent: string, scope: string[], roleId: string, worktree: boolean, category = "", model?: string) => {
       if (!workspace) {
         setProjectOpen(true);
         throw new Error("Choose a project folder first");
@@ -108,6 +120,8 @@ export default function CodeFeature() {
         role?.label,
         role ? roleSkills(role).map((skill) => skill.label) : [],
         worktree,
+        category,
+        model,
       );
       if (role) {
         // Auto-load the role's skills as this run's opening instruction.
@@ -394,6 +408,7 @@ export default function CodeFeature() {
         onNewAgent={() => setRunForm({})}
         backendAvailable={backendAvailable}
         onChooseProject={() => setProjectOpen(true)}
+        contextWindows={contextWindows}
       />
     )}
 
@@ -437,6 +452,7 @@ export default function CodeFeature() {
         <div className="cg-fields">
           <Field label="Run">{activeSession.name}</Field>
           <Field label="Agent">{agentLabel(activeSession.agent)}</Field>
+          <Field label="Model">{activeSession.model ?? contextWindows[activeSession.id]?.model ?? "Unknown"}</Field>
           <Field label="Branch">
             <Chip>{activeSession.branch}</Chip>
           </Field>
@@ -448,6 +464,7 @@ export default function CodeFeature() {
           </Field>
           <Field label="Staged">{staged.length}</Field>
         </div>
+        {contextWindows[activeSession.id] && <ContextWindowPanel reading={contextWindows[activeSession.id]} />}
         <div className="cg-dock-group">
           <label className="cg-toggle">
             <input
@@ -592,6 +609,7 @@ export default function CodeFeature() {
       );
     }
     return (
+      <details className="cg-advanced-checkpoints"><summary>Advanced checkpoints</summary>
       <footer className="cg-bottombar" aria-label="Commit staged messages">
         <span className="cg-bb-info">
           <strong>{activeSession?.name ?? "No run selected"}</strong>
@@ -623,7 +641,7 @@ export default function CodeFeature() {
             Commit {staged.length || ""}
           </button>
         </span>
-      </footer>
+      </footer></details>
     );
   };
 
@@ -638,6 +656,7 @@ export default function CodeFeature() {
     )}
     {runForm && (
       <NewRunDialog
+        projectPath={workspace?.path}
         onStart={startRun}
         initialAgent={runForm.initialAgent}
         title={runForm.title}

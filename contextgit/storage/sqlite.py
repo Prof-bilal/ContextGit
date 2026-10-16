@@ -235,7 +235,7 @@ class SqliteStorage:
             parent_ids=json.loads(row["parent_ids"]),
             messages=messages,
             kind=cast("CommitKind", row["kind"]),
-            model=row["model"],
+            model=row["model"] if "model" in row.keys() else None,
             summary=row["summary"],
             token_count=row["token_count"],
             author=row["author"],
@@ -397,6 +397,7 @@ class SqliteStorage:
             branch=row["branch"],
             status=cast("SessionStatus", row["status"]),
             agent=row["agent"],
+            model=row["model"],
             auto_commit=bool(row["auto_commit"]),
             worktree_path=row["worktree_path"],
             git_branch=row["git_branch"],
@@ -407,6 +408,7 @@ class SqliteStorage:
             scope=json.loads(row["scope"]) if row["scope"] else [],
             role=row["role"],
             skills=json.loads(row["skills"]) if row["skills"] else [],
+            category=row["category"],
             port=row["port"],
             deleted_at=row["deleted_at"],
             created_at=row["created_at"],
@@ -418,9 +420,9 @@ class SqliteStorage:
             self._conn.execute(
                 "INSERT INTO sessions"
                 " (id, name, kind, branch, status, agent, auto_commit, worktree_path,"
-                " git_branch, base_ref, base_commit, project_path, task, scope, role,"
-                " skills, port, deleted_at, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " git_branch, base_ref, base_commit, project_path, task, scope, role, model,"
+                " skills, port, deleted_at, created_at, updated_at, category)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.name,
@@ -437,11 +439,13 @@ class SqliteStorage:
                     session.task,
                     json.dumps(session.scope),
                     session.role,
+                    session.model,
                     json.dumps(session.skills),
                     session.port,
                     session.deleted_at.isoformat() if session.deleted_at else None,
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
+                    session.category,
                 ),
             )
 
@@ -469,7 +473,7 @@ class SqliteStorage:
             cur = self._conn.execute(
                 "UPDATE sessions SET name = ?, branch = ?, status = ?, agent = ?,"
                 " auto_commit = ?, worktree_path = ?, git_branch = ?, base_ref = ?,"
-                " base_commit = ?, project_path = ?, task = ?, scope = ?, role = ?,"
+                " base_commit = ?, project_path = ?, task = ?, scope = ?, role = ?, model = ?,"
                 " skills = ?, port = ?, deleted_at = ?, updated_at = ? WHERE id = ?",
                 (
                     session.name,
@@ -485,6 +489,7 @@ class SqliteStorage:
                     session.task,
                     json.dumps(session.scope),
                     session.role,
+                    session.model,
                     json.dumps(session.skills),
                     session.port,
                     session.deleted_at.isoformat() if session.deleted_at else None,
@@ -1494,6 +1499,17 @@ class SqliteStorage:
     def get_provider_row(self, provider_id: str) -> ProviderRecord | None:
         """One stored Chat provider row, or None."""
         return self._get_provider_row("providers", provider_id)
+
+    def learning_provider(self) -> str | None:
+        row = self._conn.execute("SELECT provider_id FROM learning_settings WHERE id=1").fetchone()
+        return str(row[0]) if row and row[0] else None
+
+    def set_learning_provider(self, provider_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO learning_settings VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id", (provider_id,),
+            )
 
     def list_provider_rows(self) -> list[ProviderRecord]:
         """Every stored Chat provider row."""

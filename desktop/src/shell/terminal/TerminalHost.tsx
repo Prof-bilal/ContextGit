@@ -3,7 +3,7 @@ import { useWorkbench } from "../WorkbenchContext";
 
 /** The Code controller can fail and retry without unmounting these live panes. */
 export default function TerminalHost() {
-  const { sessions, openIds, theme, kickoff, openSession, closeTerminal,
+  const { sessions, openIds, theme, kickoff, openSession, closeAgentTab,
     setRevision, refresh, teamBoard } = useWorkbench();
   const tasks = Array.isArray(teamBoard?.tasks) ? teamBoard.tasks : [];
   const taskIds = Object.fromEntries(tasks.filter(task => task && typeof task.id === "string").flatMap(task => [
@@ -12,6 +12,6 @@ export default function TerminalHost() {
   ]));
   return <PaneCanvas sessions={sessions} openIds={openIds}
     theme={theme} kickoff={kickoff} taskIds={taskIds}
-    onSelect={openSession} onClose={closeTerminal}
+    onSelect={openSession} onClose={closeAgentTab}
     onStaged={() => setRevision(value => value + 1)} onStatus={() => void refresh()} />;
 }

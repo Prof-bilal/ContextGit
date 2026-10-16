@@ -19,6 +19,7 @@
     "test:editor": "node --test scripts/test-native-layout.mjs scripts/test-editor-extension.mjs scripts/test-backend-bridge.mjs",
     "test:editor-runtime": "node scripts/test-editor-runtime.mjs",
     "test:browser": "node --test scripts/test-browser-address.mjs",
+    "test:knowledge": "node scripts/test-knowledge.mjs",
     "test:updates": "node --test scripts/test-updates.mjs",
     "build:renderer": "vite build",
     "build": "bun run typecheck && bun run build:renderer && bun run build:backend",

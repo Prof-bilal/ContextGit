@@ -13,6 +13,7 @@ import { agentLabel, agentMonogram } from "../agents";
 import { AgentMark, StatusIcon } from "../primitives";
 import HarnessInstall from "./HarnessInstall";
 import { readableTerminalOutput } from "./readableOutput";
+import { registerTranscriptFlush } from "./transcriptFlush";
 
 /** ANSI palette shared by both themes so full-screen TUIs render intentional colours. */
 const ANSI = {
@@ -240,6 +241,13 @@ export default function TerminalPane({
 
       let transcriptTimer: number | null = null;
       let transcriptBusy = false;
+      let transcriptFlight: Promise<void> | null = null;
+      const unregisterFlush = registerTranscriptFlush(session.id, async () => {
+        if (sessionRef.current.agent === "opencode") return;
+        if (transcriptFlight) await transcriptFlight;
+        await flushTranscript();
+        if (transcriptPendingRef.current) throw new Error("The recording could not be saved yet. Retry before closing.");
+      });
       function scheduleTranscriptFlush(): void {
         if (transcriptTimer !== null) return;
         transcriptTimer = window.setTimeout(() => {
@@ -254,15 +262,17 @@ export default function TerminalPane({
         transcriptPendingRef.current = "";
         transcriptBusy = true;
         try {
-          await api.appendTerminalTranscript(
+          transcriptFlight = api.appendTerminalTranscript(
             sessionRef.current.id,
             readableTerminalOutput(content).slice(-90_000),
-          );
+          ).then(() => {});
+          await transcriptFlight;
         } catch {
           // A transient backend failure must not interrupt the terminal.
           transcriptPendingRef.current = content + transcriptPendingRef.current;
         } finally {
           transcriptBusy = false;
+          transcriptFlight = null;
           if (transcriptPendingRef.current) scheduleTranscriptFlush();
         }
       }
@@ -335,6 +345,7 @@ export default function TerminalPane({
       observer.observe(host);
 
       disposeRef.current = () => {
+        unregisterFlush();
         if (transcriptTimer !== null) window.clearTimeout(transcriptTimer);
         transcriptTimer = null;
         void flushTranscript();
