@@ -106,6 +106,8 @@ class TestTeamCrud:
         second = repo.create_task(team.id, title="web", depends_on=[first.id])
         assert second.depends_on == [first.id]
         assert second.blocked_by == [first.id]
+        repo.launch_team()
+        repo.complete_task(first.id)
         repo.approve_task(first.id)
         assert repo.get_task(second.id).blocked_by == []
 

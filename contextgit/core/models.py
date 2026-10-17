@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from contextgit.core.lifecycle import TaskPhase, legacy_task_phase
+
 Role = Literal["system", "user", "assistant", "tool"]
 CommitKind = Literal["normal", "merge", "note", "root"]
 
@@ -469,10 +471,21 @@ class Task(BaseModel):
     # Independent review: a read-only run that inspects the task's diff.
     verifier_session_id: str | None = None
     review_note: str | None = None
+    # Parent task in the same team when this task is a subtask.
+    parent_id: str | None = None
     # Derived: the committed context size of this task's branch (never stored).
     tokens: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+def task_phase(task: Task) -> TaskPhase:
+    """Canonical lifecycle phase for a Task, derived from its legacy status (never stored)."""
+    return legacy_task_phase(
+        task.status,
+        blocked=bool(task.blocked_by),
+        verifying=task.verifier_session_id is not None,
+    )
 
 
 class TeamMessage(BaseModel):

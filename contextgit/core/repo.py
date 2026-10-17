@@ -33,6 +33,8 @@ from contextgit.core.errors import (
     TeamNotFound,
     WorkInProgressLimit,
 )
+from contextgit.core.events import AgentEvent, AgentEventKind
+from contextgit.core.lifecycle import assert_transition
 from contextgit.core.models import (
     AgentApproval,
     AgentArtifact,
@@ -70,6 +72,7 @@ from contextgit.core.models import (
     UsageSummary,
     UsageSurface,
     UsageTotals,
+    task_phase,
     utcnow,
 )
 from contextgit.core.team import (
@@ -1142,6 +1145,7 @@ class Repo:
         contract: str | None = None,
         depends_on: list[str] | None = None,
         gate_command: str | None = None,
+        parent_id: str | None = None,
     ) -> Task:
         """Add one task to the graph. A contract file is added to its claims."""
         self._storage.get_team(team_id)
@@ -1151,7 +1155,10 @@ class Repo:
         for dep in depends_on or []:
             if self._storage.get_task(dep).team_id != team_id:
                 raise InvalidRefName("a task can only depend on a task in the same team")
+        if parent_id is not None and self._storage.get_task(parent_id).team_id != team_id:
+            raise InvalidRefName("a task can only have a parent in the same team")
         task = Task(
+            parent_id=parent_id,
             id=uuid4().hex,
             team_id=team_id,
             title=title,
@@ -1304,11 +1311,12 @@ class Repo:
         self._storage.update_task(task)
         return task
 
-    def start_task(self, task_id: str) -> Task:
+    def start_task(self, task_id: str, *, agent: str | None = None) -> Task:
         """Start one ready task: its own worktree, branch and terminal session.
 
         Enforced ownership: the task is refused if another run already claims
         any of its files (Single mode stays advisory; team mode blocks).
+        `agent` picks the provider for a task that has not started yet.
         """
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
@@ -1316,6 +1324,8 @@ class Repo:
         tasks_by_id = {item.id: item for item in tasks}
         if task.session_id:
             return self.get_task(task_id)
+        if agent is not None:
+            task.agent = agent
         waiting = blocked_by(task_id, tasks_by_id, deps)
         if waiting:
             names = ", ".join(tasks_by_id[dep].title for dep in waiting)
@@ -1344,6 +1354,17 @@ class Repo:
         task.status = "working"
         task.updated_at = utcnow()
         self._storage.update_task(task)
+        run = AgentRun(
+            id=uuid4().hex,
+            session_id=session.id,
+            task=task.title,
+            provider=task.agent or "terminal",
+            base_commit=session.base_commit,
+            worktree_path=session.worktree_path,
+            status="executing",
+        )
+        self._storage.insert_agent_run(run)
+        self._emit_task_event(task, session.id, run.id, "lifecycle", {"transition": "started"})
         self._record(team.id, "task_started", task.id, {"session_id": session.id})
         self.post_message(
             team.id,
@@ -1469,16 +1490,22 @@ class Repo:
         return self.get_task(task_id)
 
     def approve_task(self, task_id: str) -> Task:
-        """Accept reviewed work: mark it done, then unblock and start dependents."""
+        """Accept reviewed work: mark it done, then unblock and start dependents.
+
+        Canonical: IMPLEMENTED or VERIFYING -> READY_TO_MERGE. Work that was never
+        implemented is refused.
+        """
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
-        if task.status not in {"todo", "review"}:
+        if task.status != "review":
             raise TaskNotReviewable(f"'{task.title}' is not waiting for review")
+        assert_transition(task_phase(task), "READY_TO_MERGE")
         if self._gate_command_for(task, team, None) and task.gate_status != "pass":
             raise TaskNotReviewable(f"'{task.title}' has not passed its quality gate")
         task.status = "done"
         task.updated_at = utcnow()
         self._storage.update_task(task)
+        self._emit_review_event(task, "approved")
         self._record(team.id, "task_approved", task.id, {})
         self.post_message(team.id, f"'{task.title}' approved", kind="review", task_id=task.id)
 
@@ -1499,21 +1526,76 @@ class Repo:
         return self.get_task(task_id)
 
     def reject_task(self, task_id: str, note: str) -> Task:
-        """Send reviewed work back to the implementer with a note."""
+        """Send reviewed work back to the implementer with a note.
+
+        Canonical: IMPLEMENTED or VERIFYING -> RUNNING.
+        """
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
-        if task.status == "done":
-            raise TaskNotReviewable(f"'{task.title}' is already done")
+        if task.status != "review":
+            raise TaskNotReviewable(f"'{task.title}' is not waiting for review")
+        assert_transition(task_phase(task), "RUNNING")
         task.status = "working"
         task.review_note = note
         task.updated_at = utcnow()
         self._storage.update_task(task)
+        self._emit_review_event(task, "changes_requested")
         self._record(team.id, "task_rejected", task.id, {"note": note})
         self.post_message(
             team.id,
             f"changes requested on '{task.title}': {note}",
             kind="review",
             task_id=task.id,
+        )
+        self.sync_team_board(team.id)
+        return self.get_task(task_id)
+
+    def reset_task(self, task_id: str) -> Task:
+        """Return a stopped task to the start of the lifecycle so it can be started again.
+
+        Canonical FAILED -> READY. The old session, branch and worktree stay as
+        history; the task is detached from them and gets a fresh session on start.
+        """
+        task = self._storage.get_task(task_id)
+        assert_transition(task_phase(task), "READY")
+        task.status = "todo"
+        task.session_id = None
+        task.review_note = None
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        return self.get_task(task_id)
+
+    def _emit_review_event(self, task: Task, transition: str) -> None:
+        run = self.agent_run_for_session(task.session_id) if task.session_id else None
+        self._emit_task_event(
+            task, task.session_id, run.id if run else None, "status", {"transition": transition}
+        )
+
+    def stop_task(self, task_id: str, note: str = "stopped by user") -> Task:
+        """Stop a running task: mark it failed so the board shows it as stopped.
+
+        The canonical transition is checked first (RUNNING/IMPLEMENTED/VERIFYING -> FAILED).
+        The task's terminal session is not killed here; it lives in the desktop client.
+        """
+        task = self._storage.get_task(task_id)
+        team = self._storage.get_team(task.team_id)
+        assert_transition(task_phase(self.get_task(task_id)), "FAILED")
+        task.status = "failed"
+        task.review_note = note
+        task.updated_at = utcnow()
+        self._storage.update_task(task)
+        run = self.agent_run_for_session(task.session_id) if task.session_id else None
+        if run is not None:
+            run.status = "failed"
+            run.error = note
+            run.updated_at = utcnow()
+            self._storage.update_agent_run(run)
+        self._emit_task_event(
+            task, task.session_id, run.id if run else None, "status", {"transition": "stopped"}
+        )
+        self._record(team.id, "task_stopped", task.id, {"note": note})
+        self.post_message(
+            team.id, f"'{task.title}' stopped: {note}", kind="review", task_id=task.id
         )
         self.sync_team_board(team.id)
         return self.get_task(task_id)
@@ -2228,6 +2310,40 @@ class Repo:
 
     def create_agent_run(self, run: AgentRun) -> None:
         self._storage.insert_agent_run(run)
+
+    def agent_run_for_session(self, session_id: str) -> AgentRun | None:
+        """The most recently updated AgentRun linked to this session, if any."""
+        runs = [run for run in self._storage.list_agent_runs(1000) if run.session_id == session_id]
+        return runs[0] if runs else None
+
+    def append_agent_event(self, event: AgentEvent) -> None:
+        """Append one normalized agent event. Events are never updated or deleted."""
+        self._storage.insert_agent_event(event)
+
+    def agent_events(self, aggregate_id: str) -> list[AgentEvent]:
+        return self._storage.list_agent_events(aggregate_id)
+
+    def _emit_task_event(
+        self,
+        task: Task,
+        session_id: str | None,
+        run_id: str | None,
+        event_type: AgentEventKind,
+        payload: dict[str, object],
+    ) -> None:
+        self.append_agent_event(
+            AgentEvent(
+                id=uuid4().hex,
+                aggregate_id=task.id,
+                event_type=event_type,
+                source=task.agent or "terminal",
+                correlation_id=run_id,
+                task_id=task.id,
+                session_id=session_id,
+                run_id=run_id,
+                payload=payload,
+            )
+        )
 
     def save_agent_run(self, run: AgentRun) -> None:
         self._storage.update_agent_run(run)

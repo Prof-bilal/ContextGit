@@ -200,6 +200,13 @@ class TestReviewVerdict:
         bodies = [message.body for message in repo.team_messages(team.id)]
         assert any("cancelled-tier" in body for body in bodies)
 
+    def test_unstarted_task_cannot_be_approved_or_rejected(self, repo: Repo, team) -> None:  # noqa: ANN001
+        task = repo.create_task(team.id, title="api")
+        with pytest.raises(TaskNotReviewable):
+            repo.approve_task(task.id)
+        with pytest.raises(TaskNotReviewable):
+            repo.reject_task(task.id, "nope")
+
     def test_done_task_cannot_be_reviewed_again(self, repo: Repo, team) -> None:  # noqa: ANN001
         task = repo.create_task(team.id, title="api")
         repo.launch_team()

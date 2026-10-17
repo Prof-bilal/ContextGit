@@ -7,10 +7,12 @@ per applied migration number).
 
 import json
 import sqlite3
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
+from contextgit.core.events import AgentEvent
 from contextgit.storage.connection import _GuardedConnection
 
 if TYPE_CHECKING:
@@ -1019,6 +1021,52 @@ class SqliteStorage:
         ).fetchall()
         return [self._agent_run(row) for row in rows]
 
+    def insert_agent_event(self, event: AgentEvent) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO agent_events (id, aggregate_id, event_type, timestamp, source, "
+                "payload_version, correlation_id, task_id, session_id, run_id, capture, "
+                "data_label, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    event.id,
+                    event.aggregate_id,
+                    event.event_type,
+                    event.timestamp.isoformat(),
+                    event.source,
+                    event.payload_version,
+                    event.correlation_id,
+                    event.task_id,
+                    event.session_id,
+                    event.run_id,
+                    event.capture,
+                    event.data_label,
+                    json.dumps(event.payload),
+                ),
+            )
+
+    def list_agent_events(self, aggregate_id: str) -> list[AgentEvent]:
+        rows = self._conn.execute(
+            "SELECT * FROM agent_events WHERE aggregate_id = ? ORDER BY seq", (aggregate_id,)
+        ).fetchall()
+        return [
+            AgentEvent(
+                id=row["id"],
+                aggregate_id=row["aggregate_id"],
+                event_type=row["event_type"],
+                timestamp=datetime.fromisoformat(row["timestamp"]),
+                source=row["source"],
+                payload_version=row["payload_version"],
+                correlation_id=row["correlation_id"],
+                task_id=row["task_id"],
+                session_id=row["session_id"],
+                run_id=row["run_id"],
+                capture=row["capture"],
+                data_label=row["data_label"],
+                payload=json.loads(row["payload"]),
+            )
+            for row in rows
+        ]
+
     def insert_agent_step(self, step: AgentStep) -> None:
         with self._conn:
             self._conn.execute(
@@ -1243,6 +1291,7 @@ class SqliteStorage:
             gate_ran_at=row["gate_ran_at"],
             verifier_session_id=row["verifier_session_id"],
             review_note=row["review_note"],
+            parent_id=row["parent_id"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -1254,8 +1303,8 @@ class SqliteStorage:
                 " (id, team_id, title, brief, done_criteria, role, status, agent, session_id,"
                 " scope, contract, position, gate_command, gate_status, gate_exit_code,"
                 " gate_output, gate_ran_at, verifier_session_id, review_note, created_at,"
-                " updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " updated_at, parent_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.id,
                     task.team_id,
@@ -1278,6 +1327,7 @@ class SqliteStorage:
                     task.review_note,
                     task.created_at.isoformat(),
                     task.updated_at.isoformat(),
+                    task.parent_id,
                 ),
             )
 
@@ -1299,7 +1349,8 @@ class SqliteStorage:
                 "UPDATE tasks SET title = ?, brief = ?, done_criteria = ?, role = ?, status = ?,"
                 " agent = ?, session_id = ?, scope = ?, contract = ?, position = ?,"
                 " gate_command = ?, gate_status = ?, gate_exit_code = ?, gate_output = ?,"
-                " gate_ran_at = ?, verifier_session_id = ?, review_note = ?, updated_at = ?"
+                " gate_ran_at = ?, verifier_session_id = ?, review_note = ?, parent_id = ?,"
+                " updated_at = ?"
                 " WHERE id = ?",
                 (
                     task.title,
@@ -1319,6 +1370,7 @@ class SqliteStorage:
                     task.gate_ran_at.isoformat() if task.gate_ran_at else None,
                     task.verifier_session_id,
                     task.review_note,
+                    task.parent_id,
                     task.updated_at.isoformat(),
                     task.id,
                 ),

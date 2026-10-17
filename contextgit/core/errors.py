@@ -81,6 +81,10 @@ class WorkInProgressLimit(ContextGitError):
     """Too many runs are active at once; finish one before starting another."""
 
 
+class InvalidTaskTransition(ContextGitError):
+    """A task lifecycle move is not allowed from its current phase."""
+
+
 class GateNotConfigured(ContextGitError):
     """No quality gate is configured or detectable for this project."""
 

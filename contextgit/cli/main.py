@@ -16,6 +16,7 @@ import typer
 from contextgit.core import models as m
 from contextgit.core.errors import ContextGitError
 from contextgit.core.repo import Repo
+from contextgit.core.task_service import TaskService, TaskView
 from contextgit.issues import run_scan
 from contextgit.llm import OpenAICompatibleProvider
 from contextgit.merge.models import MergePreview
@@ -23,12 +24,141 @@ from contextgit.merge.models import MergePreview
 app = typer.Typer(name="ctx", help="Version control for LLM conversations.", no_args_is_help=True)
 issues_app = typer.Typer(name="issues", help="Scan the repository and manage findings.")
 app.add_typer(issues_app)
+task_app = typer.Typer(name="task", help="Create, start and stop tasks on the team graph.")
+app.add_typer(task_app)
 
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")]
 
 
 def _repo() -> Repo:
     return Repo.open(Path.cwd())
+
+
+def _print_task(view: TaskView, as_json: bool) -> None:
+    if as_json:
+        typer.echo(json.dumps(view.to_json()))
+        return
+    typer.echo(f"{view.id[:8]}  {view.phase:<14} {view.title}")
+    if view.branch:
+        typer.echo(f"  branch    {view.branch}")
+    if view.worktree_path:
+        typer.echo(f"  worktree  {view.worktree_path}")
+    if view.agent_run_id:
+        typer.echo(f"  run       {view.agent_run_id}")
+    if view.agent:
+        supported = [name for name, on in view.capabilities.items() if on]
+        typer.echo(
+            f"  agent     {view.agent} ({', '.join(supported) or 'no declared capabilities'})"
+        )
+        if view.unsupported:
+            typer.echo(f"  unsupported {', '.join(view.unsupported)}")
+    if view.blocked_by:
+        typer.echo(f"  waiting   {', '.join(view.blocked_by)}")
+
+
+def _task_service() -> TaskService:
+    return TaskService(_repo())
+
+
+@task_app.command("create")
+def task_create(
+    title: Annotated[str, typer.Argument()],
+    brief: Annotated[str, typer.Option("--brief")] = "",
+    done: Annotated[str, typer.Option("--done", help="Done criteria.")] = "",
+    scope: Annotated[list[str] | None, typer.Option("--scope", help="File glob to claim.")] = None,
+    depends_on: Annotated[list[str] | None, typer.Option("--depends-on")] = None,
+    parent: Annotated[str | None, typer.Option("--parent", help="Parent task id.")] = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Add a task to the team graph."""
+    try:
+        view = _task_service().create(
+            title,
+            brief=brief,
+            done_criteria=done,
+            scope=scope,
+            depends_on=depends_on,
+            parent_id=parent,
+        )
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    _print_task(view, as_json)
+
+
+@task_app.command("list")
+def task_list(as_json: JsonOpt = False) -> None:
+    """List the team's tasks with their lifecycle phase."""
+    try:
+        views = _task_service().list_tasks()
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    if as_json:
+        typer.echo(json.dumps([view.to_json() for view in views]))
+        return
+    if not views:
+        typer.echo("no tasks yet")
+    for view in views:
+        _print_task(view, as_json=False)
+
+
+@task_app.command("show")
+def task_show(task_id: Annotated[str, typer.Argument()], as_json: JsonOpt = False) -> None:
+    """Show one task with its branch, worktree and run."""
+    try:
+        view = _task_service().show(task_id)
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    _print_task(view, as_json)
+
+
+@task_app.command("start")
+def task_start(
+    task_id: Annotated[str, typer.Argument()],
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="codex, claude, opencode or terminal.")
+    ] = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Start a ready task: its own worktree, branch and session."""
+    try:
+        view = _task_service().start(task_id, agent=agent)
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    _print_task(view, as_json)
+
+
+@task_app.command("retry")
+def task_retry(
+    task_id: Annotated[str, typer.Argument()],
+    agent: Annotated[str | None, typer.Option("--agent", help="Provider to use.")] = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """Restart a stopped task with a fresh worktree and session."""
+    try:
+        view = _task_service().retry(task_id, agent=agent)
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    _print_task(view, as_json)
+
+
+@task_app.command("stop")
+def task_stop(
+    task_id: Annotated[str, typer.Argument()],
+    note: Annotated[str, typer.Option("--note")] = "stopped by user",
+    as_json: JsonOpt = False,
+) -> None:
+    """Stop a running task; it is marked failed with the given note."""
+    try:
+        view = _task_service().stop(task_id, note)
+    except ContextGitError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from e
+    _print_task(view, as_json)
 
 
 @app.command()
