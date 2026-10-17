@@ -6,4 +6,6 @@ if you must touch a file owned by another run, say so before editing.
 
 - fix_git [codex] - (no scope claimed)
 - add_vscodeandbrowser [codex] - (no scope claimed)
+- redesigngit [freebuff] - (no scope claimed)
+- makesimplegit [codex] - (no scope claimed)
 <!-- contextgit:end -->
