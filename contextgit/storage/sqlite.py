@@ -237,7 +237,7 @@ class SqliteStorage:
             parent_ids=json.loads(row["parent_ids"]),
             messages=messages,
             kind=cast("CommitKind", row["kind"]),
-            model=row["model"] if "model" in row.keys() else None,
+            model=row["model"] if "model" in row.keys() else "",
             summary=row["summary"],
             token_count=row["token_count"],
             author=row["author"],
