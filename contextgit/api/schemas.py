@@ -47,8 +47,6 @@ class CheckoutRequest(BaseModel):
     ref: str
 
 
-
-
 class AgentRunRequest(BaseModel):
     task: str = Field(min_length=1, max_length=20_000)
     provider: str | None = None
@@ -68,8 +66,6 @@ class LocalIssueRequest(BaseModel):
     body: str = Field(min_length=1, max_length=20_000)
 
 
-
-
 class IssueConfigRequest(BaseModel):
     enabled: bool | None = None
     timezone: str | None = None
@@ -80,8 +76,6 @@ class IssueConfigRequest(BaseModel):
     minimum_confidence: float | None = Field(default=None, ge=0, le=1)
     auto_create: bool | None = None
     github_repository: str | None = None
-
-
 
 
 class MergePreviewRequest(BaseModel):
@@ -115,8 +109,6 @@ class RepoSnapshot(BaseModel):
     branches: list[Branch]
     commits: list[Commit]
     tags: list[Tag]
-
-
 
 
 class SessionRequest(BaseModel):
@@ -224,6 +216,76 @@ class TeamCreateRequest(BaseModel):
     project_path: str = Field(min_length=1)
     base_ref: str | None = None
     gate_command: str | None = None
+    goal: str = ""
+    orchestrator_agent: str | None = None
+
+
+class TeamUpdateRequest(BaseModel):
+    name: str | None = None
+    goal: str | None = None
+    state: (
+        Literal[
+            "draft",
+            "planning",
+            "ready",
+            "running",
+            "paused",
+            "review",
+            "merge_ready",
+            "completed",
+            "failed",
+        ]
+        | None
+    ) = None
+    orchestrator_agent: str | None = None
+    orchestrator_session_id: str | None = None
+
+
+class TeamPlanRequest(BaseModel):
+    goal: str = ""
+    tasks: list[dict[str, object]] = Field(default_factory=list, max_length=12)
+    completion_criteria: list[str] = Field(default_factory=list)
+    quality_gates: list[str] = Field(default_factory=list)
+
+
+class CanvasViewportRequest(BaseModel):
+    project_path: str = Field(min_length=1)
+    x: float
+    y: float
+    zoom: float = Field(ge=0.18, le=1.35)
+
+
+class CanvasLayoutRequest(BaseModel):
+    x: float | None = None
+    y: float | None = None
+    width: float | None = Field(default=None, ge=420, le=2400)
+    height: float | None = Field(default=None, ge=180, le=1800)
+    collapsed: bool | None = None
+    z_index: int | None = None
+
+
+class SkillLinkRequest(BaseModel):
+    skill_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    instruction: str = Field(min_length=1)
+    origin: Literal["built-in", "project", "global"] = "project"
+    task_id: str | None = None
+    agent: str | None = None
+
+
+class SkillReviewRequest(BaseModel):
+    action: Literal["approve", "reject", "remove", "promote"]
+    instruction: str | None = Field(default=None, min_length=1, max_length=12000)
+
+
+class GroupWorkersRequest(BaseModel):
+    project_path: str
+    name: str = Field(min_length=1, max_length=160)
+    task_ids: list[str] = Field(min_length=1, max_length=12)
+
+
+class ReorderWorkersRequest(BaseModel):
+    task_ids: list[str] = Field(max_length=12)
 
 
 class TeamGateRequest(BaseModel):
@@ -244,6 +306,19 @@ class TaskCreateRequest(BaseModel):
     contract: str | None = None
     depends_on: list[str] = Field(default_factory=list)
     gate_command: str | None = None
+    parent_id: str | None = None
+
+
+class TaskStartRequest(BaseModel):
+    """Optionally choose the provider when starting a task."""
+
+    agent: str | None = None
+
+
+class TaskStopRequest(BaseModel):
+    """Stop a running task and explain why."""
+
+    note: str = "stopped by user"
 
 
 class TaskUpdateRequest(BaseModel):

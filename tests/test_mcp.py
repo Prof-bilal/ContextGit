@@ -54,9 +54,10 @@ class TestTools:
         assert tools.team_status(repo)["team"] is None
 
     def test_list_tasks_filters_by_status(self, repo: Repo, team) -> None:  # noqa: ANN001
-        repo.create_task(team.id, title="api")
+        api = repo.create_task(team.id, title="api")
         repo.create_task(team.id, title="web")
-        repo.complete_task(str(repo.list_tasks(team.id)[0].id))
+        repo.start_task(api.id)
+        repo.complete_task(api.id)
 
         assert len(tools.list_tasks(repo)) == 2
         assert [task["title"] for task in tools.list_tasks(repo, "review")] == ["api"]

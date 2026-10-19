@@ -61,6 +61,9 @@ def build_server(repo_path: str | None = None) -> MCPServer:
     )
     def ready_for_integration(session_id: str | None = None) -> dict[str, Any]:
         current = repo()
+        team_id = tools.current_team_id(current)
+        if team_id and current.get_team(team_id).orchestrator_agent:
+            return {"error": "Spatial teams require a user-confirmed merge. Use prepare_merge."}
         if not session_id:
             task_id = tools.current_task_id()
             if not task_id:
@@ -95,6 +98,106 @@ def build_server(repo_path: str | None = None) -> MCPServer:
     @server.tool(description="Declare the interface file your task owns (single owner).")
     def publish_contract(path: str, task_id: str | None = None) -> dict[str, Any]:
         return tools.publish_contract(repo(), path, task_id)
+
+    # -- orchestrator: these calls are authorized by CONTEXTGIT_ROLE + CONTEXTGIT_TEAM --
+
+    @server.tool(
+        description=(
+            "Orchestrator only: submit a structured 1-12 worker plan for user review "
+            "without launching it."
+        )
+    )
+    def propose_team_plan(
+        goal: str,
+        tasks: list[dict[str, Any]],
+        completion_criteria: list[str] | None = None,
+        quality_gates: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return tools.propose_team_plan(repo(), goal, tasks, completion_criteria, quality_gates)
+
+    @server.tool(description="Orchestrator only: submit a new immutable revision of the team plan.")
+    def revise_team_plan(
+        goal: str,
+        tasks: list[dict[str, Any]],
+        completion_criteria: list[str] | None = None,
+        quality_gates: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return tools.revise_team_plan(repo(), goal, tasks, completion_criteria, quality_gates)
+
+    @server.tool(
+        description="Orchestrator only: create a task or revise an existing task before launch."
+    )
+    def create_or_update_task(
+        title: str,
+        brief: str = "",
+        role: str = "implementer",
+        agent: str | None = None,
+        scope: list[str] | None = None,
+        done_criteria: str = "",
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        return tools.create_or_update_task(
+            repo(), title, brief, role, agent, scope, done_criteria, task_id
+        )
+
+    @server.tool(description="Orchestrator only: assign a CLI and role to a worker task.")
+    def assign_worker(task_id: str, agent: str, role: str) -> dict[str, Any]:
+        return tools.assign_worker(repo(), task_id, agent, role)
+
+    @server.tool(
+        description="Orchestrator only: attach an immutable skill snapshot to its team or task."
+    )
+    def attach_skill(
+        skill_id: str,
+        title: str,
+        instruction: str,
+        origin: str = "project",
+        task_id: str | None = None,
+        agent: str | None = None,
+    ) -> dict[str, Any]:
+        return tools.attach_skill(repo(), skill_id, title, instruction, origin, task_id, agent)
+
+    @server.tool(description="Orchestrator only: approve reviewed work or request changes.")
+    def review_task(
+        task_id: str, decision: Literal["approve", "reject"], note: str = ""
+    ) -> dict[str, Any]:
+        return tools.review_task(repo(), task_id, decision, note)
+
+    @server.tool(
+        description=(
+            "Orchestrator only: pause dependency scheduling without killing active processes."
+        )
+    )
+    def pause_team() -> dict[str, Any]:
+        return tools.pause_team(repo())
+
+    @server.tool(
+        description="Orchestrator only: resume dependency scheduling and launch ready workers."
+    )
+    def resume_team() -> dict[str, Any]:
+        return tools.resume_team(repo())
+
+    @server.tool(
+        description=(
+            "Orchestrator only: check merge readiness; final integration "
+            "still requires a user action."
+        )
+    )
+    def prepare_merge() -> dict[str, Any]:
+        return tools.prepare_merge(repo())
+
+    @server.tool(
+        description=(
+            "Orchestrator only: propose a reusable skill for user review; never activates it."
+        )
+    )
+    def propose_skill(
+        title: str,
+        instruction: str,
+        evidence: str,
+        scope: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return tools.propose_skill(repo(), title, instruction, evidence, scope)
 
     # -- memory: what the runs already decided and rejected for your files --
 

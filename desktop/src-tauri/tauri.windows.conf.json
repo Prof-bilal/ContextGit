@@ -3,7 +3,8 @@
   "bundle": {
     "icon": ["icons/icon.ico"],
     "resources": {
-      "../build/backend/contextgit-api.exe": "backend/contextgit-api.exe"
+      "../build/backend/contextgit-api.exe": "backend/contextgit-api.exe",
+      "../build/voice": "voice"
     }
   }
 }

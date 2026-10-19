@@ -64,6 +64,19 @@ def test_unstarted_task_has_no_branch_worktree_or_run(service: TaskService) -> N
     assert view.agent_run_id is None
 
 
+def test_on_demand_team_points_at_the_project_not_the_metadata_dir(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    repo = Repo.init(project / ".contextgit")
+
+    TaskService(repo).create("standalone")
+
+    team = repo.current_team()
+    assert team is not None
+    assert team.name == "proj"
+    assert team.project_path == str(project)
+
+
 def test_stop_refused_for_a_task_that_is_not_running(service: TaskService) -> None:
     view = service.create("idle")
     with pytest.raises(InvalidTaskTransition):

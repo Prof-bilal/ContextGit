@@ -163,7 +163,19 @@ export async function installTauriBridge(): Promise<void> {
       return next;
     },
     filesList: (project: string, relative?: string) => tauri.core!.invoke("files_list", { project, relative }) as Promise<import("../shared/workspaceFiles").FileNode[]>,
+    voiceModelStatus: () => tauri.core!.invoke('voice_model_status'),
+    voiceModelDownload: () => tauri.core!.invoke('voice_model_download'),
+    voiceModelRemove: () => tauri.core!.invoke('voice_model_remove'),
+    voiceCancel: () => tauri.core!.invoke('voice_cancel'),
+    voiceTranscribe: (wav: number[]) => tauri.core!.invoke('voice_transcribe', { wav }),
+    onVoiceProgress: (callback: (progress: { bytes: number; total: number }) => void) => {
+      let active = true;
+      let off: (() => void) | undefined;
+      void tauri.event?.listen('voice-progress', event => { if (active) callback(event.payload as { bytes: number; total: number }); }).then(unlisten => { if (active) off = unlisten; else unlisten(); });
+      return () => { active = false; off?.(); };
+    },
     fileRead: (project: string, relative: string) => tauri.core!.invoke("file_read", { project, relative }) as Promise<import("../shared/workspaceFiles").FileDocument>,
+    filePreview: (project: string, relative: string) => tauri.core!.invoke('file_preview', { project, relative }),
     fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) => tauri.core!.invoke("file_write", { project, relative, content, expectedVersion }) as Promise<import("../shared/workspaceFiles").FileDocument>,
     editorStart: (project: string) => tauri.core!.invoke("editor_start", { project }) as Promise<import("../shared/editor").EditorStatus>,
     editorStatus: (instanceId?: string) => tauri.core!.invoke("editor_status", { instanceId }) as Promise<import("../shared/editor").EditorStatus>,

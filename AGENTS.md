@@ -4,6 +4,5 @@
 Each run works in its own git worktree. Stay inside the files you own;
 if you must touch a file owned by another run, say so before editing.
 
-- fix_git [codex] - (no scope claimed)
-- add_vscodeandbrowser [codex] - (no scope claimed)
+- findbug [codex] - (no scope claimed) · role: QA Engineer · skills: Test plan, Write tests, Exploratory testing, Regression sweep, Bug report
 <!-- contextgit:end -->

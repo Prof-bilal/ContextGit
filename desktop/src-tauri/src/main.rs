@@ -17,6 +17,7 @@ use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 mod updates;
+mod voice;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,6 +291,9 @@ fn backend_command(
     command.env("CONTEXTGIT_PORT", port);
     command.env("CONTEXTGIT_REPO", &repo);
     command.env("CONTEXTGIT_ROOT", data_dir);
+    if !cfg!(debug_assertions) {
+        command.env("CONTEXTGIT_MCP_COMMAND", resource_dir.join("backend").join(bundled_name));
+    }
     command.env("CONTEXTGIT_DESKTOP_PROJECTS", "1");
     command.env("CONTEXTGIT_API_TOKEN", api_token);
     command.env(
@@ -772,8 +776,23 @@ fn files_list(project: String, relative: Option<String>) -> Result<Vec<FileNode>
 fn file_read(project: String, relative: String) -> Result<FileDocument, String> {
     let path = safe_project_path(&project, &relative)?;
     let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if metadata.len() > 2_000_000 { return Err("Use a terminal to inspect text files larger than 2 MB".into()); }
     let content = fs::read_to_string(&path).map_err(|_| "This file is not a UTF-8 text file".to_string())?;
     Ok(FileDocument { path: relative, content, version: file_version(&metadata), size: metadata.len(), encoding: "utf8".to_string() })
+}
+
+#[tauri::command]
+fn file_preview(project: String, relative: String) -> Result<serde_json::Value, String> {
+    use base64::Engine;
+    let path = safe_project_path(&project, &relative)?;
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if metadata.len() > 8_000_000 { return Err("Preview supports files up to 8 MB".into()); }
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
+    let mime = match extension.as_str() { "png" => Some("image/png"), "jpg" | "jpeg" => Some("image/jpeg"), "gif" => Some("image/gif"), "webp" => Some("image/webp"), _ => None };
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    let content = if let Some(kind) = mime { format!("data:{kind};base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes)) }
+        else { String::from_utf8(bytes).map_err(|_| "This binary file has no preview".to_string())? };
+    Ok(serde_json::json!({ "path": relative, "size": metadata.len(), "version": file_version(&metadata), "kind": if mime.is_some() { "image" } else if ["md", "markdown"].contains(&extension.as_str()) { "markdown" } else if ["diff", "patch"].contains(&extension.as_str()) { "diff" } else { "text" }, "content": content }))
 }
 
 #[tauri::command]
@@ -1349,7 +1368,7 @@ fn harness_command(id: &str) -> (String, Vec<String>) {
         "antigravity" => ("agy".to_string(), Vec::new()),
         "commandcode" => ("command-code".to_string(), Vec::new()),
         "ollama" => ("ollama".to_string(), vec!["run".to_string()]),
-        "shell" | "" => (shell_command(), Vec::new()),
+        "shell" | "terminal" | "" => (shell_command(), Vec::new()),
         other => (other.to_string(), Vec::new()),
     }
 }
@@ -1367,7 +1386,7 @@ fn npm_package(id: &str) -> Option<(&'static str, bool)> {
 
 fn find_harness(id: &str) -> HarnessCheck {
     let (command, _) = harness_command(id);
-    if id == "shell" {
+    if id == "shell" || id == "terminal" {
         return HarnessCheck {
             id: id.to_string(),
             command,
@@ -1517,13 +1536,26 @@ fn pty_start(
     if options.resume {
         let Some(session_id) = options.session_id.as_deref() else { return Err("Cannot resume a terminal without a session id".to_string()); };
         match options.command.as_str() {
-            "claude" => command.args(["--resume", session_id]),
+            "claude" => {
+                let native_id = Uuid::parse_str(session_id).map_err(|_| "Invalid Claude session UUID".to_string())?.to_string();
+                command.args(["--resume", &native_id]);
+            },
             // Codex owns the native conversation id. --last resumes the most
             // recent recorded session for this worktree without opening the
             // interactive picker.
             "codex" => command.args(["resume", "--last"]),
             "opencode" => command.args(["--continue"]),
             _ => {}
+        }
+    } else {
+        if options.command == "claude" {
+            if let Some(session_id) = options.session_id.as_deref() {
+                let native_id = Uuid::parse_str(session_id).map_err(|_| "Invalid Claude session UUID".to_string())?.to_string();
+                command.args(["--session-id", &native_id]);
+            }
+        }
+        if ["claude", "codex"].contains(&options.command.as_str()) {
+            if let Some(input) = options.input.as_deref().filter(|value| !value.trim().is_empty()) { command.arg(input); }
         }
     }
     // Give shells and full-screen CLIs a predictable terminal even when the
@@ -1610,7 +1642,7 @@ fn pty_start(
         }
     });
 
-    if let Some(input) = options.input.filter(|value| !value.trim().is_empty()) {
+    if let Some(input) = options.input.filter(|value| !value.trim().is_empty() && !["claude", "codex"].contains(&options.command.as_str())) {
         let input_writer = writer;
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(700));
@@ -1712,8 +1744,49 @@ async fn save_file(
     Ok(Some(path))
 }
 
+fn trusted_microphone_window(label: &str, url: &tauri::Url) -> bool {
+    let app_window = label == "main" || label.starts_with("workspace-");
+    let bundled = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
+        || (matches!(url.scheme(), "http" | "https")
+            && url.host_str() == Some("tauri.localhost"));
+    let development = cfg!(debug_assertions)
+        && url.scheme() == "http"
+        && url.host_str() == Some("localhost")
+        && url.port() == Some(5173);
+    app_window && (bundled || development)
+}
+
+#[cfg(test)]
+mod microphone_permission_tests {
+    use super::trusted_microphone_window;
+
+    #[test]
+    fn microphone_is_restricted_to_local_app_windows() {
+        let app = tauri::Url::parse("tauri://localhost/index.html").unwrap();
+        assert!(trusted_microphone_window("main", &app));
+        assert!(trusted_microphone_window("workspace-123", &app));
+        assert!(!trusted_microphone_window("browser-123", &app));
+        let website = tauri::Url::parse("https://example.com").unwrap();
+        assert!(!trusted_microphone_window("main", &website));
+        let spoof = tauri::Url::parse("https://tauri.localhost.example.com").unwrap();
+        assert!(!trusted_microphone_window("main", &spoof));
+    }
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .on_permission_request(|webview, kind| {
+            use tauri::webview::{PermissionKind, PermissionResponse};
+            if matches!(kind, PermissionKind::Microphone) {
+                if webview.url().is_ok_and(|url| trusted_microphone_window(webview.label(), &url)) {
+                    PermissionResponse::Allow
+                } else {
+                    PermissionResponse::Deny
+                }
+            } else {
+                PermissionResponse::Default
+            }
+        })
         .manage(BackendSupervisor::new())
         .manage(EditorSupervisor::new())
         .manage(NativeLayouts::default())
@@ -1721,6 +1794,7 @@ fn main() {
         .manage(ProjectSelection(Mutex::new(())))
         .manage(PtySupervisor::new())
         .manage(updates::UpdateService::default())
+        .manage(voice::VoiceState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -1747,6 +1821,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            voice::voice_model_status,
+            voice::voice_model_download,
+            voice::voice_model_remove,
+            voice::voice_cancel,
+            voice::voice_transcribe,
             backend_status,
             backend_token,
             restart_backend,
@@ -1765,6 +1844,7 @@ fn main() {
             create_workspace,
             files_list,
             file_read,
+            file_preview,
             file_write,
             native_view_bounds,
             native_view_url,

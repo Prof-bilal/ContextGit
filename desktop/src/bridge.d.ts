@@ -1,5 +1,11 @@
 /** Bridge exposed by the Tauri renderer adapter. */
 export interface ContextGitBridge {
+  voiceModelStatus: () => Promise<{ modelReady: boolean; sidecarReady: boolean; busy: boolean; modelBytes: number; version: string }>;
+  voiceModelDownload: () => Promise<void>;
+  voiceModelRemove: () => Promise<void>;
+  voiceCancel: () => Promise<void>;
+  voiceTranscribe: (wav: number[]) => Promise<string>;
+  onVoiceProgress: (callback: (progress: { bytes: number; total: number }) => void) => () => void;
   apiBase: string;
   apiToken: string;
   getStatus: () => { status: import("../shared/status").BackendStatus; apiBase: string };
@@ -48,6 +54,7 @@ export interface ContextGitBridge {
   createWorkspace: (parent: string, name: string) => Promise<import("../shared/workspace").Workspace>;
   filesList: (project: string, relative?: string) => Promise<import("../shared/workspaceFiles").FileNode[]>;
   fileRead: (project: string, relative: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
+  filePreview: (project: string, relative: string) => Promise<{ path: string; size: number; version: string; kind: 'image' | 'markdown' | 'text' | 'diff'; content: string }>;
   fileWrite: (project: string, relative: string, content: string, expectedVersion?: string) => Promise<import("../shared/workspaceFiles").FileDocument>;
   editorStart: (project: string) => Promise<import("../shared/editor").EditorStatus>;
   editorStatus: (instanceId?: string) => Promise<import("../shared/editor").EditorStatus>;

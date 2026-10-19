@@ -1,4 +1,6 @@
 fn main() {
+    std::fs::create_dir_all(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/voice"))
+        .expect("create voice resource directory for development checks");
     // Tauri validates configured resources during `cargo check`, before the
     // release build's beforeBuildCommand has produced the PyInstaller binary.
     // Keep a generated placeholder for development/checks; release builds

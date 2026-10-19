@@ -47,6 +47,8 @@ export default function PaneCanvas({
   theme,
   kickoff,
   taskIds,
+  teamIds,
+  visibleIds,
   onSelect,
   onClose,
   onStaged,
@@ -59,6 +61,10 @@ export default function PaneCanvas({
   kickoff?: Record<string, string>;
   /** Session id → the team task it owns, exported as CONTEXTGIT_TASK. */
   taskIds?: Record<string, string>;
+  /** Session id → the spatial team it belongs to, exported as CONTEXTGIT_TEAM. */
+  teamIds?: Record<string, string>;
+  /** Which retained terminals are painted; all openIds remain mounted and running. */
+  visibleIds?: string[];
   onSelect: (session: Session) => void;
   onClose: (session: Session) => void;
   onStaged: () => void;
@@ -71,7 +77,8 @@ export default function PaneCanvas({
   for (const session of uniqueSessions(sessions)) if (ids.has(session.id)) retained.current.set(session.id, session);
   const open = openSessions([...retained.current.values()], openIds);
   if (open.length === 0) return null;
-  const visible = open.filter(session => session.project_path === selection.path);
+  const requested = visibleIds ? new Set(visibleIds) : null;
+  const visible = open.filter(session => session.project_path === selection.path && (!requested || requested.has(session.id)));
   const layout = layoutForCount(visible.length);
   const shownIds = new Set(visible.map(session => session.id));
 
@@ -90,6 +97,7 @@ export default function PaneCanvas({
               theme={theme}
               initialInput={kickoff?.[session.id]}
               taskId={taskIds?.[session.id]}
+              teamId={teamIds?.[session.id]}
               onActivate={() => onSelect(session)}
               onClose={() => onClose(session)}
               onStaged={onStaged}

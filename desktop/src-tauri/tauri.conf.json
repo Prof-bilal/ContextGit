@@ -5,7 +5,7 @@
   "identifier": "dev.contextgit.desktop",
   "build": {
     "beforeDevCommand": "npm run dev:mock",
-    "beforeBuildCommand": "bun run build:renderer && bun run build:backend",
+    "beforeBuildCommand": "bun run build:voice && bun run build:renderer && bun run build:backend",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -28,11 +28,12 @@
   },
   "bundle": {
     "active": true,
+    "macOS": { "entitlements": "Entitlements.plist", "infoPlist": "Info.plist" },
     "targets": "all",
     "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
     "resources": {
       "../build/backend/contextgit-api": "backend/contextgit-api",
-      "../build/editor": "editor"
+      "../build/voice": "voice"
     }
   }
 }

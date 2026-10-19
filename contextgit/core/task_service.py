@@ -4,13 +4,14 @@ A task is a unit of work on the team graph. Its branch, worktree and AgentRun
 are not stored on the task: they are read through its linked Session, so the
 task never holds a second copy of state that could drift.
 
-The team is created on demand: a repository has one team, which is the mission
-every task hangs off.
+A team is created on demand for the repository's project when a standalone task
+needs one; projects may have multiple teams.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from contextgit.adapters.registry import get_adapter, known_adapters
 from contextgit.core.errors import ContextGitError, InvalidTaskTransition
@@ -50,11 +51,16 @@ class TaskService:
     def __init__(self, repo: Repo) -> None:
         self._repo = repo
 
+    def _project_path(self) -> str:
+        root = self._repo.root
+        project = root.parent if root.name == ".contextgit" else root
+        return str(project.resolve())
+
     def _team_id(self) -> str:
-        team = self._repo.current_team()
+        team = self._repo.team_for_project(self._project_path()) or self._repo.current_team()
         if team is None:
-            root = self._repo.root
-            team = self._repo.create_team(root.name, project_path=str(root))
+            project = Path(self._project_path())
+            team = self._repo.create_team(project.name, project_path=str(project))
         return team.id
 
     def create(
@@ -63,8 +69,12 @@ class TaskService:
         *,
         brief: str = "",
         done_criteria: str = "",
+        role: str = "implementer",
+        agent: str | None = None,
         scope: list[str] | None = None,
+        contract: str | None = None,
         depends_on: list[str] | None = None,
+        gate_command: str | None = None,
         parent_id: str | None = None,
     ) -> TaskView:
         task = self._repo.create_task(
@@ -72,17 +82,23 @@ class TaskService:
             title=title,
             brief=brief,
             done_criteria=done_criteria,
+            role=role,
+            agent=agent,
             scope=scope,
+            contract=contract,
             depends_on=depends_on,
+            gate_command=gate_command,
             parent_id=parent_id,
         )
         return self._view(self._repo.get_task(task.id))
 
     def list_tasks(self) -> list[TaskView]:
-        team = self._repo.current_team()
-        if team is None:
-            return []
-        return [self._view(task) for task in self._repo.list_tasks(team.id)]
+        teams = self._repo.list_teams(project_path=self._project_path())
+        return [
+            self._view(task)
+            for team in teams
+            for task in self._repo.list_tasks(team.id)
+        ]
 
     def show(self, task_id: str) -> TaskView:
         return self._view(self._repo.get_task(task_id))

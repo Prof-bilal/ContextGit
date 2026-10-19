@@ -8,7 +8,7 @@ subset defined in hashing.py.
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from contextgit.core.lifecycle import TaskPhase, legacy_task_phase
 
@@ -436,8 +436,66 @@ class Team(BaseModel):
     base_ref: str | None = None
     # The default quality gate command for this team's tasks.
     gate_command: str | None = None
+    goal: str = ""
+    state: Literal[
+        "draft",
+        "planning",
+        "ready",
+        "running",
+        "paused",
+        "review",
+        "merge_ready",
+        "completed",
+        "failed",
+    ] = "draft"
+    orchestrator_agent: str | None = None
+    orchestrator_session_id: str | None = None
+    archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class TeamPlanRevision(BaseModel):
+    id: str
+    team_id: str
+    revision: int
+    status: Literal["draft", "approved", "superseded"] = "draft"
+    plan: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CanvasLayout(BaseModel):
+    team_id: str
+    x: float = 80
+    y: float = 80
+    width: float = 960
+    height: float = 620
+    collapsed: bool = False
+    z_index: int = 0
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CanvasViewport(BaseModel):
+    project_path: str
+    x: float = 0
+    y: float = 0
+    zoom: float = 1
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SkillLink(BaseModel):
+    """Immutable skill instructions captured for a team, task, or agent run."""
+
+    id: str
+    team_id: str
+    task_id: str | None = None
+    agent: str | None = None
+    skill_id: str
+    origin: Literal["built-in", "project", "global"] = "project"
+    title: str
+    instruction: str
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Task(BaseModel):
@@ -477,6 +535,16 @@ class Task(BaseModel):
     tokens: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def phase(self) -> TaskPhase:
+        """Canonical lifecycle phase, derived from the legacy status (never stored)."""
+        return legacy_task_phase(
+            self.status,
+            blocked=bool(self.blocked_by),
+            verifying=self.verifier_session_id is not None,
+        )
 
 
 def task_phase(task: Task) -> TaskPhase:

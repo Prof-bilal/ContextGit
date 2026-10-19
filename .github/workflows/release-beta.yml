@@ -89,8 +89,8 @@ jobs:
       - name: Install Tauri Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - name: Fetch verified embedded editor runtime
-        run: npm run fetch:editor --prefix desktop
+      - name: Build bundled local speech engine
+        run: npm run build:voice --prefix desktop
       - name: Build Tauri installer
         if: runner.os != 'Windows'
         run: bun run --cwd desktop tauri:build

@@ -370,6 +370,11 @@ export interface Team {
   base_ref: string | null;
   /** The team's default quality gate command (detected or authored). */
   gate_command: string | null;
+  goal: string;
+  state: "draft" | "planning" | "ready" | "running" | "paused" | "review" | "merge_ready" | "completed" | "failed";
+  orchestrator_agent: string | null;
+  orchestrator_session_id: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -423,6 +428,72 @@ export interface TeamBoard {
   tasks: Task[];
   messages: TeamMessage[];
   current_branch: string;
+}
+
+export interface TeamPlanRevision {
+  id: string;
+  team_id: string;
+  revision: number;
+  status: "draft" | "approved" | "superseded";
+  plan: { goal?: string; tasks?: TeamPlanTask[] };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamPlanTask {
+  id?: string;
+  title: string;
+  brief?: string;
+  done_criteria?: string;
+  role?: string;
+  agent?: string | null;
+  scope?: string[];
+  depends_on?: string[];
+  gate_command?: string | null;
+  skills?: string[];
+}
+
+export interface CanvasViewport {
+  project_path: string;
+  x: number;
+  y: number;
+  zoom: number;
+  updated_at: string;
+}
+
+export interface CanvasLayout {
+  team_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  collapsed: boolean;
+  z_index: number;
+  updated_at: string;
+}
+
+export interface SpatialTeam extends TeamBoard {
+  layout: CanvasLayout;
+  plan: TeamPlanRevision | null;
+  skills: SkillLink[];
+}
+
+export interface SkillLink {
+  id: string;
+  team_id: string;
+  task_id: string | null;
+  agent: string | null;
+  skill_id: string;
+  origin: "built-in" | "project" | "global";
+  title: string;
+  instruction: string;
+  created_at: string;
+}
+
+export interface LibrarySkill {
+  id: string; origin: 'project' | 'global'; status: 'draft' | 'approved' | 'rejected' | 'removed';
+  title: string; instruction: string; evidence: string; scope: string[];
+  source_team: string | null; source_session: string | null; revision: number; updated_at: string;
 }
 
 /** Fields accepted when creating or editing a task. */
@@ -1317,6 +1388,78 @@ export function projectApi(owner?: string) {
   testGithubIssues: () => request<{ configured: boolean; repository: string | null }>("/api/v1/issues/github/test", { method: "POST" }),
   installIssuesWorkflow: () => request<{ path: string; installed: boolean }>("/api/v1/issues/github/install-workflow", { method: "POST" }),
   // ---------- team mode (a task graph over parallel runs) ----------
+  canvasViewport: (projectPath: string) => request<CanvasViewport>(`/api/v1/canvas/viewport?project_path=${encodeURIComponent(projectPath)}`),
+  importCanvasSessions: (projectPath: string) => request<SpatialTeam[]>(`/api/v1/canvas/import-sessions?project_path=${encodeURIComponent(projectPath)}`, { method: 'POST' }),
+  groupCanvasWorkers: (projectPath: string, name: string, taskIds: string[]) => request<SpatialTeam>('/api/v1/canvas/group-workers', { method: 'POST', body: JSON.stringify({ project_path: projectPath, name, task_ids: taskIds }) }),
+  reorderCanvasWorkers: (teamId: string, taskIds: string[]) => request<SpatialTeam>(`/api/v1/teams/${teamId}/worker-order`, { method: 'PUT', body: JSON.stringify({ task_ids: taskIds }) }),
+  librarySkills: (projectPath: string) => request<LibrarySkill[]>(`/api/v1/skills?project_path=${encodeURIComponent(projectPath)}`),
+  proposeLibrarySkill: (projectPath: string, draft: Pick<LibrarySkill, 'title' | 'instruction' | 'evidence' | 'scope'> & { source_team?: string }) =>
+    request<LibrarySkill>(`/api/v1/skills?project_path=${encodeURIComponent(projectPath)}`, { method: 'POST', body: JSON.stringify(draft) }),
+  reviewLibrarySkill: (projectPath: string, skill: LibrarySkill, action: 'approve' | 'reject' | 'remove' | 'promote', instruction?: string) =>
+    request<LibrarySkill>(`/api/v1/skills/${skill.origin}/${skill.id}/review?project_path=${encodeURIComponent(projectPath)}`, { method: 'POST', body: JSON.stringify({ action, instruction }) }),
+  saveCanvasViewport: (projectPath: string, viewport: Pick<CanvasViewport, "x" | "y" | "zoom">) =>
+    request<CanvasViewport>("/api/v1/canvas/viewport", { method: "PUT", body: JSON.stringify({ project_path: projectPath, ...viewport }) }),
+  teams: (projectPath?: string) => request<SpatialTeam[]>(
+    `/api/v1/teams${projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : ""}`,
+  ),
+  spatialTeam: (id: string) => request<SpatialTeam>(`/api/v1/teams/${id}`),
+  createSpatialTeam: (input: {
+    name: string;
+    projectPath: string;
+    goal?: string;
+    orchestratorAgent?: string;
+    baseRef?: string;
+  }) => request<SpatialTeam>("/api/v1/teams", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      project_path: input.projectPath,
+      goal: input.goal ?? "",
+      orchestrator_agent: input.orchestratorAgent,
+      base_ref: input.baseRef,
+    }),
+  }),
+  updateSpatialTeam: (id: string, patch: Partial<Pick<Team, "name" | "goal" | "state" | "orchestrator_agent" | "orchestrator_session_id">>) =>
+    request<SpatialTeam>(`/api/v1/teams/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  startOrchestrator: (id: string) => request<Session>(`/api/v1/teams/${id}/orchestrator/start`, { method: "POST" }),
+  teamPlan: (id: string) => request<TeamPlanRevision | null>(`/api/v1/teams/${id}/plan`),
+  saveTeamPlan: (id: string, goal: string, tasks: TeamPlanTask[]) =>
+    request<TeamPlanRevision>(`/api/v1/teams/${id}/plan`, {
+      method: "PUT", body: JSON.stringify({ goal, tasks }),
+    }),
+  approveTeamPlan: (id: string) => request<SpatialTeam>(`/api/v1/teams/${id}/plan/approve`, { method: "POST" }),
+  pauseSpatialTeam: (id: string) => request<SpatialTeam>(`/api/v1/teams/${id}/pause`, { method: "POST" }),
+  resumeSpatialTeam: (id: string) => request<SpatialTeam>(`/api/v1/teams/${id}/resume`, { method: "POST" }),
+  updateTeamLayout: (id: string, layout: Omit<CanvasLayout, "team_id" | "updated_at">) =>
+    request<CanvasLayout>(`/api/v1/teams/${id}/layout`, { method: "PATCH", body: JSON.stringify(layout) }),
+  attachTeamSkill: (id: string, skill: { skill_id: string; title: string; instruction: string; origin?: SkillLink["origin"]; task_id?: string; agent?: string }) =>
+    request<SkillLink>(`/api/v1/teams/${id}/skills`, { method: "POST", body: JSON.stringify(skill) }),
+  detachTeamSkill: (id: string, linkId: string) =>
+    request<void>(`/api/v1/teams/${id}/skills/${linkId}`, { method: "DELETE" }),
+  previewSpatialTeamMerge: (id: string) => request<{
+    ready: boolean;
+    unfinished: string[];
+    tasks: Task[];
+    changes: Array<{ task_id: string; title: string; status: string; gate_status: string | null; gate_output: string | null; files: Array<{ status: string; path: string }>; conflicts: string[] }>;
+    checks: Array<{ task_id: string; command: string | null; status: string | null }>;
+    requires_confirmation: boolean;
+  }>(`/api/v1/teams/${id}/merge/preview`, { method: "POST" }),
+  confirmSpatialTeamMerge: (id: string) => request<{ entries: MergeQueueEntry[]; completed?: boolean }>(`/api/v1/teams/${id}/merge/confirm`, { method: "POST" }),
+  spatialTasks: (id: string) => request<Task[]>(`/api/v1/teams/${id}/tasks`),
+  createSpatialTask: (teamId: string, input: TaskInput) => request<Task>(`/api/v1/teams/${teamId}/tasks`, { method: "POST", body: JSON.stringify(input) }),
+  updateSpatialTask: (teamId: string, taskId: string, patch: Partial<TaskInput> & { status?: TaskStatus }) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteSpatialTask: (teamId: string, taskId: string) => request<void>(`/api/v1/teams/${teamId}/tasks/${taskId}`, { method: "DELETE" }),
+  launchSpatialTeam: (id: string) => request<Task[]>(`/api/v1/teams/${id}/launch`, { method: "POST" }),
+  startSpatialTask: (teamId: string, taskId: string, agent?: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/start`, { method: "POST", body: JSON.stringify({ agent }) }),
+  stopSpatialTask: (teamId: string, taskId: string, note?: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/stop`, { method: "POST", body: JSON.stringify({ note }) }),
+  retrySpatialTask: (teamId: string, taskId: string, agent?: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/retry`, { method: "POST", body: JSON.stringify({ agent }) }),
+  completeSpatialTask: (teamId: string, taskId: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/complete`, { method: "POST" }),
+  gateSpatialTask: (teamId: string, taskId: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/gate`, { method: "POST" }),
+  approveSpatialTask: (teamId: string, taskId: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/approve`, { method: "POST" }),
+  rejectSpatialTask: (teamId: string, taskId: string, note: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  verifySpatialTask: (teamId: string, taskId: string, agent?: string) => request<Task>(`/api/v1/teams/${teamId}/tasks/${taskId}/verify`, { method: "POST", body: JSON.stringify({ agent }) }),
+  spatialTeamMessages: (id: string, limit = 50) => request<TeamMessage[]>(`/api/v1/teams/${id}/messages?limit=${limit}`),
+  postSpatialTeamMessage: (id: string, input: { body: string; kind?: TeamMessageKind; taskId?: string }) => request<TeamMessage>(`/api/v1/teams/${id}/messages`, { method: "POST", body: JSON.stringify({ body: input.body, kind: input.kind ?? "update", task_id: input.taskId }) }),
   team: () => request<TeamBoard | null>("/api/v1/team"),
   createTeam: (input: {
     name: string;

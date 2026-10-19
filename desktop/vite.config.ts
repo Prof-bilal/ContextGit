@@ -33,7 +33,7 @@ export default defineConfig(({ command }) => ({
     // Tauri copies packaged resources (including the code-server sidecar)
     // under src-tauri/target during dev. Watching that generated tree causes
     // Vite reload storms and can race the Tauri resource copier.
-    watch: { ignored: ["**/src-tauri/target/**", "**/build/editor/**"] },
+    watch: { ignored: ["**/src-tauri/target/**", "**/build/**"] },
   },
   build: {
     outDir: "dist",

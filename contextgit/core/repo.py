@@ -5,12 +5,13 @@ else touches storage. Commits are immutable; branches and HEAD are pointers.
 Deleting a branch never deletes commits.
 """
 
+import json
 import os
 import time
 from collections.abc import Callable, Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
 from contextgit.core import hashing
@@ -20,6 +21,7 @@ from contextgit.core.errors import (
     GateNotConfigured,
     InvalidMergeResolution,
     InvalidRefName,
+    InvalidTaskTransition,
     MergeConflict,
     RepoAlreadyExists,
     RepoNotFound,
@@ -34,7 +36,7 @@ from contextgit.core.errors import (
     WorkInProgressLimit,
 )
 from contextgit.core.events import AgentEvent, AgentEventKind
-from contextgit.core.lifecycle import assert_transition
+from contextgit.core.lifecycle import assert_transition, legacy_task_phase
 from contextgit.core.models import (
     AgentApproval,
     AgentArtifact,
@@ -42,6 +44,8 @@ from contextgit.core.models import (
     AgentStep,
     BlameEntry,
     Branch,
+    CanvasLayout,
+    CanvasViewport,
     Commit,
     CommitKind,
     EnvDrift,
@@ -57,6 +61,7 @@ from contextgit.core.models import (
     ProjectMemoryRevision,
     ProviderRecord,
     Session,
+    SkillLink,
     Tag,
     Task,
     Team,
@@ -64,6 +69,7 @@ from contextgit.core.models import (
     TeamEvent,
     TeamMessage,
     TeamMessageKind,
+    TeamPlanRevision,
     UsageDay,
     UsageEvent,
     UsageRow,
@@ -194,6 +200,9 @@ class Repo:
         return self._integration
 
     def _queue_completed_task(self, task: Task) -> Task:
+        # Spatial teams always wait for the user's merge confirmation.
+        if self.get_team(task.team_id).orchestrator_agent:
+            return task
         if task.status == "review" and task.session_id:
             session = self.get_session(task.session_id)
             if (
@@ -894,7 +903,8 @@ class Repo:
         """Rewrite the managed AGENTS.md block with runs' scopes, shared context,
         and the alternatives already rejected in the files these runs own."""
         sessions = [
-            session for session in self._storage.list_sessions()
+            session
+            for session in self._storage.list_sessions()
             if session.worktree_path
             and session.project_path == self.canonical_project_path(project_path)
         ]
@@ -1010,11 +1020,144 @@ class Repo:
     # ---------- team mode (a task graph over parallel runs) ----------
 
     def current_team(self) -> Team | None:
-        """The team for this repository — the most recently created one, if any."""
+        """The most recently created team (legacy compatibility behavior)."""
         teams = self._storage.list_teams()
         return teams[-1] if teams else None
 
-    def create_team(self, name: str, *, project_path: str, base_ref: str | None = None) -> Team:
+    def team_for_project(self, project_path: str) -> Team | None:
+        """The newest active team for one project, used by compatibility APIs."""
+        teams = self.list_teams(project_path=project_path)
+        active = [team for team in teams if team.archived_at is None]
+        return active[-1] if active else None
+
+    def list_teams(self, *, project_path: str | None = None) -> list[Team]:
+        teams = self._storage.list_teams()
+        if project_path is None:
+            return teams
+        resolved = str(Path(project_path).expanduser().resolve())
+        return [
+            team
+            for team in teams
+            if str(Path(team.project_path).expanduser().resolve()) == resolved
+        ]
+
+    def import_ungrouped_sessions(self, project_path: str) -> list[Team]:
+        """Expose pre-canvas standalone CLI sessions without replacing their worktrees."""
+        project = self.canonical_project_path(project_path)
+        teams = self.list_teams(project_path=project)
+        linked = {task.session_id for team in teams for task in self.list_tasks(team.id)}
+        linked.update(team.orchestrator_session_id for team in teams)
+        sessions = [
+            session
+            for session in self.list_sessions()
+            if session.kind == "terminal"
+            and session.project_path == project
+            and session.id not in linked
+            and session.deleted_at is None
+        ]
+        created = []
+        for index in range(0, len(sessions), 12):
+            team = self.create_team("Ungrouped runs", project_path=project)
+            for session in sessions[index : index + 12]:
+                task = self.create_task(
+                    team.id,
+                    title=session.name,
+                    role=session.role or "worker",
+                    agent=session.agent,
+                    scope=session.scope,
+                )
+                task.session_id = session.id
+                task.status = cast(
+                    Any,
+                    {"done": "done", "error": "failed", "running": "working"}.get(
+                        session.status, "todo"
+                    ),
+                )
+                self._storage.update_task(task)
+            self.sync_team_board(team.id)
+            created.append(team)
+        return created
+
+    def regroup_workers(self, project_path: str, name: str, task_ids: list[str]) -> Team:
+        project = self.canonical_project_path(project_path)
+        ids = set(task_ids)
+        if not ids or len(ids) > 12:
+            raise InvalidTaskTransition("Select between 1 and 12 workers")
+        tasks = [self.get_task(identity) for identity in task_ids]
+        source_ids = {task.team_id for task in tasks}
+        for task in tasks:
+            if self.get_team(task.team_id).project_path != project:
+                raise InvalidTaskTransition("Group workers from the same project")
+            if task.status in {"working", "review"}:
+                raise InvalidTaskTransition(
+                    "Stop active workers before moving them to another team"
+                )
+            if task.parent_id and task.parent_id not in ids:
+                raise InvalidTaskTransition("Include the worker parent in the group")
+        for source in source_ids:
+            for task in self.list_tasks(source):
+                if any((task.id in ids) != (dependency in ids) for dependency in task.depends_on):
+                    raise InvalidTaskTransition("Include all dependent workers in the group")
+        with self._storage._conn:
+            team = self.create_team(
+                name,
+                project_path=project,
+                goal="Coordinate grouped workers",
+                orchestrator_agent="claude",
+            )
+            for position, task in enumerate(tasks):
+                self._storage._conn.execute(
+                    "UPDATE tasks SET team_id = ?, position = ? WHERE id = ?",
+                    (team.id, position, task.id),
+                )
+                self._storage._conn.execute(
+                    "UPDATE skill_links SET team_id = ? WHERE task_id = ?", (team.id, task.id)
+                )
+            plan = self.save_team_plan(
+                team.id,
+                {
+                    "goal": team.goal,
+                    "tasks": [
+                        {
+                            "id": task.id,
+                            "title": task.title,
+                            "brief": task.brief,
+                            "agent": task.agent,
+                            "role": task.role,
+                            "scope": task.scope,
+                            "depends_on": task.depends_on,
+                            "done_criteria": task.done_criteria,
+                        }
+                        for task in tasks
+                    ],
+                },
+            )
+            # The grouping dialog is the user's confirmation of these existing workers.
+            plan.status = "approved"
+            self._storage.update_team_plan(plan)
+        for source in source_ids | {team.id}:
+            self.sync_team_board(source)
+        return team
+
+    def reorder_workers(self, team_id: str, task_ids: list[str]) -> None:
+        existing = self.list_tasks(team_id)
+        if len(task_ids) != len(set(task_ids)) or set(task_ids) != {task.id for task in existing}:
+            raise InvalidTaskTransition("Provide every team worker exactly once")
+        with self._storage._conn:
+            for position, identity in enumerate(task_ids):
+                self._storage._conn.execute(
+                    "UPDATE tasks SET position = ? WHERE id = ?", (position, identity)
+                )
+
+    def create_team(
+        self,
+        name: str,
+        *,
+        project_path: str,
+        base_ref: str | None = None,
+        goal: str = "",
+        orchestrator_agent: str | None = None,
+    ) -> Team:
         """Create the mission every task hangs off. One team per repository."""
         project = Path(project_path)
         resolved = base_ref
@@ -1025,15 +1168,321 @@ class Repo:
         team = Team(
             id=uuid4().hex,
             name=name,
-            project_path=str(project),
+            project_path=str(project.expanduser().resolve()),
             base_ref=resolved,
             # A project that already declares a test command gets it for free.
             gate_command=detect_gate(project),
+            goal=goal,
+            orchestrator_agent=orchestrator_agent,
         )
         self._storage.insert_team(team)
         self._record(team.id, "team_created", None, {"name": name, "base_ref": resolved})
         self.sync_team_board(team.id)
         return team
+
+    def update_team_details(
+        self,
+        team_id: str,
+        *,
+        name: str | None = None,
+        goal: str | None = None,
+        state: str | None = None,
+        orchestrator_agent: str | None = None,
+        orchestrator_session_id: str | None = None,
+    ) -> Team:
+        team = self.get_team(team_id)
+        if name is not None:
+            team.name = name.strip() or team.name
+        if goal is not None:
+            team.goal = goal
+        if state is not None:
+            allowed = {
+                "draft",
+                "planning",
+                "ready",
+                "running",
+                "paused",
+                "review",
+                "merge_ready",
+                "completed",
+                "failed",
+            }
+            if state not in allowed:
+                raise InvalidTaskTransition(f"unknown team state: {state}")
+            team.state = cast(Any, state)
+        if orchestrator_agent is not None:
+            team.orchestrator_agent = orchestrator_agent or None
+        if orchestrator_session_id is not None:
+            team.orchestrator_session_id = orchestrator_session_id or None
+        team.updated_at = utcnow()
+        self._storage.update_team(team)
+        return team
+
+    def save_team_plan(self, team_id: str, plan: dict[str, object]) -> TeamPlanRevision:
+        self.get_team(team_id)
+        raw_tasks = plan.get("tasks")
+        if (
+            not isinstance(raw_tasks, list)
+            or not 1 <= len(raw_tasks) <= 12
+            or any(not isinstance(item, dict) for item in raw_tasks)
+        ):
+            raise InvalidTaskTransition("a team plan must contain between 1 and 12 worker tasks")
+        latest = self._storage.latest_team_plan(team_id)
+        revision = (latest.revision if latest else 0) + 1
+        if latest and latest.status == "approved":
+            raise InvalidTaskTransition("an approved team plan cannot be revised")
+        if latest and latest.status == "draft":
+            latest.status = "superseded"
+            latest.updated_at = utcnow()
+            self._storage.update_team_plan(latest)
+        saved = TeamPlanRevision(id=uuid4().hex, team_id=team_id, revision=revision, plan=plan)
+        if self.get_team(team_id).state != "paused":
+            self.update_team_details(team_id, state="ready")
+        result = self._storage.insert_team_plan(saved)
+        self.sync_team_board(team_id)
+        return result
+
+    def latest_team_plan(self, team_id: str) -> TeamPlanRevision | None:
+        self.get_team(team_id)
+        return self._storage.latest_team_plan(team_id)
+
+    def approve_team_plan(self, team_id: str) -> TeamPlanRevision:
+        with self._storage._conn:
+            return self._approve_team_plan(team_id)
+
+    def _approve_team_plan(self, team_id: str) -> TeamPlanRevision:
+        plan = self.latest_team_plan(team_id)
+        if plan is None:
+            raise TeamNotFound("this team has no proposed plan")
+        existing = self.list_tasks(team_id)
+        proposed_tasks = plan.plan.get("tasks", [])
+        if (
+            existing
+            and plan.status == "approved"
+            and isinstance(proposed_tasks, list)
+            and len(existing) == len(proposed_tasks)
+        ):
+            return plan
+        if plan.status == "approved":
+            raise InvalidTaskTransition("approved plan has no matching task graph")
+        if existing:
+            raise InvalidTaskTransition("plan approval cannot replace an existing team task graph")
+        raw_tasks: object = plan.plan.get("tasks", [])
+        if not isinstance(raw_tasks, list):
+            raise InvalidTaskTransition("team plan tasks must be a list")
+        if len(raw_tasks) > 12:
+            raise InvalidTaskTransition("a team plan may contain at most 12 worker tasks")
+        if any(not isinstance(item, dict) for item in raw_tasks):
+            raise InvalidTaskTransition("each team plan worker must be an object")
+        keys = [str(item.get("id") or f"task-{index + 1}") for index, item in enumerate(raw_tasks)]
+        if len(set(keys)) != len(keys):
+            raise InvalidTaskTransition("worker IDs must be unique")
+        plan_dependencies: dict[str, list[str]] = {}
+        for key, item in zip(keys, raw_tasks, strict=True):
+            deps = item.get("depends_on", [])
+            scope = item.get("scope", [])
+            if not isinstance(deps, list) or any(dep not in keys for dep in deps):
+                raise InvalidTaskTransition("every dependency must name a worker in the plan")
+            if not isinstance(scope, list) or any(not isinstance(path, str) for path in scope):
+                raise InvalidTaskTransition("worker scopes must be lists of file patterns")
+            plan_dependencies[key] = deps
+            gate = item.get("gate_command")
+            if gate and gate != detect_gate(Path(self.get_team(team_id).project_path)):
+                raise InvalidTaskTransition("worker gates must match the project quality gate")
+        validate_graph(keys, plan_dependencies)
+        plan.status = "approved"
+        plan.updated_at = utcnow()
+        self._storage.update_team_plan(plan)
+        if not existing:
+            created: dict[str, str] = {}
+            pending_deps: list[tuple[str, list[str]]] = []
+            for index, item in enumerate(raw_tasks[:12]):
+                key = str(item.get("id") or f"task-{index + 1}")
+                task = self.create_task(
+                    team_id,
+                    title=str(item.get("title") or f"Task {index + 1}"),
+                    brief=str(item.get("brief") or ""),
+                    done_criteria=str(item.get("done_criteria") or ""),
+                    role=str(item.get("role") or "implementer"),
+                    agent=str(item["agent"]) if item.get("agent") else None,
+                    scope=[str(value) for value in item.get("scope", []) if isinstance(value, str)],
+                    gate_command=str(item["gate_command"]) if item.get("gate_command") else None,
+                )
+                skills = item.get("skills", [])
+                if isinstance(skills, list):
+                    for skill_id in skills:
+                        if isinstance(skill_id, str) and skill_id:
+                            link = next(
+                                (
+                                    candidate
+                                    for candidate in self.team_skills(team_id)
+                                    if candidate.skill_id == skill_id and candidate.task_id is None
+                                ),
+                                None,
+                            )
+                            if link:
+                                self.attach_skill(
+                                    team_id,
+                                    skill_id=link.skill_id,
+                                    title=link.title,
+                                    instruction=link.instruction,
+                                    origin=link.origin,
+                                    task_id=task.id,
+                                    agent=task.agent,
+                                )
+                created[key] = task.id
+                deps = item.get("depends_on", [])
+                pending_deps.append(
+                    (task.id, [str(value) for value in deps] if isinstance(deps, list) else [])
+                )
+            for task_id, dependency_keys in pending_deps:
+                dependencies = [created[key] for key in dependency_keys if key in created]
+                if dependencies:
+                    self.set_task_deps(task_id, dependencies)
+        created_ids = {task.id for task in self.list_tasks(team_id)}
+        expected_ids = {created[key] for key in created} if not existing else set()
+        if not existing and created_ids != expected_ids:
+            raise InvalidTaskTransition("approved plan task graph was only partially created")
+        if self.get_team(team_id).state != "paused":
+            self.update_team_details(team_id, state="ready")
+        return plan
+
+    def team_layout(self, team_id: str) -> CanvasLayout:
+        team = self.get_team(team_id)
+        layout = self._storage.canvas_layout(team_id)
+        if layout is not None:
+            return layout
+        index = next(
+            (
+                i
+                for i, candidate in enumerate(self.list_teams(project_path=team.project_path))
+                if candidate.id == team_id
+            ),
+            0,
+        )
+        return CanvasLayout(
+            team_id=team_id,
+            x=80 + (index % 3) * 1040,
+            y=80 + (index // 3) * 700,
+        )
+
+    def update_canvas_layout(self, team_id: str, **changes: Any) -> CanvasLayout:
+        current = self.team_layout(team_id)
+        values = current.model_dump()
+        values.update({key: value for key, value in changes.items() if value is not None})
+        return self.save_team_layout(
+            team_id,
+            x=float(values["x"]),
+            y=float(values["y"]),
+            width=float(values["width"]),
+            height=float(values["height"]),
+            collapsed=bool(values["collapsed"]),
+            z_index=int(values["z_index"]),
+        )
+
+    def canvas_viewport(self, project_path: str) -> CanvasViewport:
+        resolved = str(Path(project_path).expanduser().resolve())
+        return self._storage.canvas_viewport(resolved) or CanvasViewport(project_path=resolved)
+
+    def save_canvas_viewport(
+        self, project_path: str, *, x: float, y: float, zoom: float
+    ) -> CanvasViewport:
+        resolved = str(Path(project_path).expanduser().resolve())
+        return self._storage.save_canvas_viewport(
+            CanvasViewport(
+                project_path=resolved,
+                x=x,
+                y=y,
+                zoom=max(0.18, min(1.35, zoom)),
+            )
+        )
+
+    def save_team_layout(
+        self,
+        team_id: str,
+        *,
+        x: float,
+        y: float,
+        width: float = 960,
+        height: float = 620,
+        collapsed: bool = False,
+        z_index: int = 0,
+    ) -> CanvasLayout:
+        self.get_team(team_id)
+        return self._storage.save_canvas_layout(
+            CanvasLayout(
+                team_id=team_id,
+                x=x,
+                y=y,
+                width=max(420, width),
+                height=max(180, height),
+                collapsed=collapsed,
+                z_index=z_index,
+            )
+        )
+
+    def attach_skill(
+        self,
+        team_id: str,
+        *,
+        skill_id: str,
+        title: str,
+        instruction: str,
+        origin: str = "project",
+        task_id: str | None = None,
+        agent: str | None = None,
+    ) -> SkillLink:
+        """Attach an immutable instruction snapshot to a team or one of its tasks."""
+        team = self.get_team(team_id)
+        if task_id is not None and self.get_task(task_id).team_id != team_id:
+            raise InvalidTaskTransition("a skill can only target a task in its team")
+        resolved_origin = origin if origin in {"built-in", "project", "global"} else "project"
+        if resolved_origin != "built-in":
+            from contextgit.knowledge.skills import SkillLibrary
+
+            frozen = next(
+                (
+                    link
+                    for link in self.team_skills(team_id)
+                    if task_id is not None
+                    and link.task_id is None
+                    and link.skill_id == skill_id
+                    and link.origin == resolved_origin
+                ),
+                None,
+            )
+            if frozen:
+                title, instruction = frozen.title, frozen.instruction
+            else:
+                try:
+                    skill = SkillLibrary(team.project_path).get(resolved_origin, skill_id)
+                except (OSError, ValueError) as error:
+                    raise InvalidTaskTransition(
+                        "Approve the library skill before assigning it"
+                    ) from error
+                if skill.status != "approved":
+                    raise InvalidTaskTransition("Approve the library skill before assigning it")
+                title, instruction = skill.title, skill.instruction
+        return self._storage.insert_skill_link(
+            SkillLink(
+                id=uuid4().hex,
+                team_id=team_id,
+                task_id=task_id,
+                agent=agent,
+                skill_id=skill_id,
+                origin=cast(Any, resolved_origin),
+                title=title,
+                instruction=instruction,
+            )
+        )
+
+    def team_skills(self, team_id: str) -> list[SkillLink]:
+        self.get_team(team_id)
+        return self._storage.list_skill_links(team_id)
+
+    def detach_skill(self, team_id: str, link_id: str) -> None:
+        self.get_team(team_id)
+        self._storage.delete_skill_link(link_id, team_id)
 
     def get_team(self, team_id: str) -> Team:
         return self._storage.get_team(team_id)
@@ -1149,6 +1598,8 @@ class Repo:
     ) -> Task:
         """Add one task to the graph. A contract file is added to its claims."""
         self._storage.get_team(team_id)
+        if len(self.list_tasks(team_id)) >= 12:
+            raise InvalidTaskTransition("a team supports at most 12 workers")
         globs = list(scope or [])
         if contract and contract not in globs:
             globs.append(contract)
@@ -1223,6 +1674,10 @@ class Repo:
                 raise InvalidRefName(f"unknown task status: {status!r}")
             if status == "done":
                 raise TaskNotReviewable("tasks become done only through the approval flow")
+            current_phase = task_phase(self.get_task(task_id))
+            target_phase = legacy_task_phase(status)
+            if target_phase != current_phase:
+                assert_transition(current_phase, target_phase)
             task.status = status
         task.updated_at = utcnow()
         self._storage.update_task(task)
@@ -1286,14 +1741,36 @@ class Repo:
     def sync_team_board(self, team_id: str) -> None:
         """Rewrite `.contextgit/team.md` and the managed AGENTS.md team block."""
         team = self._storage.get_team(team_id)
-        write_team_board(
-            team.project_path,
+        documents = [
             team_document(
-                team,
-                self.list_tasks(team_id),
-                self._storage.list_team_messages(team_id, limit=12),
-            ),
-        )
+                entry,
+                self.list_tasks(entry.id),
+                self._storage.list_team_messages(entry.id, limit=12),
+            )
+            for entry in self.list_teams(project_path=team.project_path)
+            if entry.archived_at is None
+        ]
+        write_team_board(team.project_path, "\n\n".join(documents))
+        folder = Path(team.project_path) / ".contextgit" / "teams" / team.id
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            plan = self.latest_team_plan(team.id)
+            temporary = folder / f"job-{uuid4().hex}.tmp"
+            temporary.write_text(
+                json.dumps(
+                    {
+                        "team": team.model_dump(mode="json"),
+                        "plan": plan.model_dump(mode="json") if plan else None,
+                        "tasks": [
+                            task.model_dump(mode="json") for task in self.list_tasks(team.id)
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+            temporary.replace(folder / "job.json")
+        except OSError:
+            pass
 
     def _record(
         self, team_id: str, kind: str, task_id: str | None, payload: dict[str, object]
@@ -1321,8 +1798,22 @@ class Repo:
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
         tasks, deps = self._load_tasks(task.team_id)
+        if team.state == "paused":
+            raise InvalidTaskTransition("Resume the team before starting workers")
+        if team.orchestrator_agent:
+            plan = self.latest_team_plan(team.id)
+            if plan is None or plan.status != "approved":
+                raise InvalidTaskTransition(
+                    "The user must approve the team plan before workers start"
+                )
         tasks_by_id = {item.id: item for item in tasks}
         if task.session_id:
+            if task.status in {"todo", "blocked"}:
+                if self.get_task(task.id).blocked_by:
+                    raise TaskDependencyError("This worker is waiting for dependencies")
+                if self._active_count(team.id) >= self._max_active():
+                    raise WorkInProgressLimit("The team has reached its active worker limit")
+                self._set_task_status(task.id, "working")
             return self.get_task(task_id)
         if agent is not None:
             task.agent = agent
@@ -1347,9 +1838,17 @@ class Repo:
             project_path=team.project_path,
             worktree=True,
             base_ref=team.base_ref,
-            task=task.title,
+            task="\n".join(part for part in [task.title, task.brief, task.done_criteria] if part),
             scope=task.scope,
+            role=task.role,
+            skills=[
+                link.title
+                for link in self.team_skills(team.id)
+                if link.task_id is None or link.task_id == task.id
+            ],
         )
+        if session.worktree_path:
+            ensure_mcp_config(session.worktree_path)
         task.session_id = session.id
         task.status = "working"
         task.updated_at = utcnow()
@@ -1384,13 +1883,15 @@ class Repo:
         team = self._storage.get_team(team_id) if team_id else self.current_team()
         if team is None:
             raise TeamNotFound("no team to launch")
+        if team.state == "paused":
+            raise InvalidTaskTransition("resume the team before launching more work")
         tasks, deps = self._load_tasks(team.id)
         tasks_by_id = {task.id: task for task in tasks}
 
         ready: list[str] = []
         for task_id in topological_order(list(tasks_by_id), deps):
             task = tasks_by_id[task_id]
-            if task.status in {"done", "working", "review"}:
+            if task.status in {"done", "working", "review", "failed"}:
                 continue
             if blocked_by(task_id, tasks_by_id, deps):
                 self._set_task_status(task_id, "blocked")
@@ -1424,6 +1925,8 @@ class Repo:
                 break
         # Make the live channel available to MCP-capable agent CLIs.
         ensure_mcp_config(team.project_path)
+        if started or any(task.status == "working" for task in self.list_tasks(team.id)):
+            self.update_team_details(team.id, state="running")
         self.sync_team_board(team.id)
         return started
 
@@ -1438,6 +1941,9 @@ class Repo:
         team = self._storage.get_team(task.team_id)
         if task.status == "done":
             return self.get_task(task_id)
+        current_phase = task_phase(self.get_task(task_id))
+        if current_phase not in {"RUNNING", "IMPLEMENTED", "VERIFYING"}:
+            raise InvalidTaskTransition(f"cannot complete a task in phase {current_phase}")
         if task.session_id and self._gate_command_for(task, team, None):
             return self._queue_completed_task(self.run_task_gate(task_id))
         task.status = "review"
@@ -1515,6 +2021,8 @@ class Repo:
             dependent = tasks_by_id.get(dependent_id)
             if dependent is None or dependent.status not in {"todo", "blocked"}:
                 continue
+            if team.state == "paused":
+                continue
             if blocked_by(dependent_id, tasks_by_id, deps):
                 self._set_task_status(dependent_id, "blocked")
                 continue
@@ -1522,6 +2030,7 @@ class Repo:
                 self.start_task(dependent_id)
             except (ScopeConflict, WorkInProgressLimit):
                 self._set_task_status(dependent_id, "blocked")
+
         self.sync_team_board(team.id)
         return self.get_task(task_id)
 
@@ -1662,7 +2171,10 @@ class Repo:
             if task.status != "done" or not task.session_id:
                 continue
             session = self._storage.get_session(task.session_id)
-            if session.git_branch:
+            if session.git_branch and not any(
+                entry.session_id == task.session_id and entry.status in {"queued", "merged"}
+                for entry in self.merge_queue()
+            ):
                 queued.append(self.enqueue_merge(task.session_id))
         return queued
 
@@ -1686,7 +2198,9 @@ class Repo:
         """Remove an entry from the queue."""
         self._storage.delete_merge_entry(entry_id)
 
-    def run_merge_queue(self, target: str | None = None) -> list[MergeQueueEntry]:
+    def run_merge_queue(
+        self, target: str | None = None, *, team_id: str | None = None
+    ) -> list[MergeQueueEntry]:
         """Merge queued runs into the target one at a time, in order.
 
         Each branch is re-checked against the *current* target (which moves as
@@ -1694,10 +2208,21 @@ class Repo:
         Stops at the first blocked entry so later runs are not merged on top.
         """
         results: list[MergeQueueEntry] = []
+        team_sessions = None
+        if team_id is not None:
+            self.get_team(team_id)
+            team_sessions = {
+                session_id
+                for task in self.list_tasks(team_id)
+                for session_id in (task.session_id, task.verifier_session_id)
+                if session_id
+            }
         for entry in self._storage.list_merge_entries():
             if entry.status != "queued":
                 continue
             session = self._storage.get_session(entry.session_id)
+            if team_sessions is not None and session.id not in team_sessions:
+                continue
             if not session.git_branch or not session.worktree_path:
                 entry.status = "failed"
                 entry.conflicts = ["run has no worktree"]

@@ -77,6 +77,7 @@ export default function TerminalPane({
   theme,
   initialInput,
   taskId,
+  teamId,
   onStaged,
   onStatus,
   onActivate,
@@ -89,6 +90,8 @@ export default function TerminalPane({
   initialInput?: string;
   /** The team task this run owns, exported so the MCP tools know it. */
   taskId?: string;
+  /** The spatial team this run belongs to. Orchestrator MCP actions are scoped to it. */
+  teamId?: string;
   onStaged: () => void;
   /** Called when this pane changes the run's status (or checkpoints it). */
   onStatus?: () => void;
@@ -122,9 +125,11 @@ export default function TerminalPane({
     : role
       ? roleSkills(role).map((skill) => skill.label)
       : [];
-  const roleBriefing = initialInput ?? (role && loadedSkills.length > 0
-    ? `You are acting as a ${role.label} on "${session.name}". Apply these skills on this run: ${loadedSkills.join(", ")}. Read AGENTS.md for your file scope and the other runs.`
-    : undefined);
+  const roleBriefing = initialInput ?? (session.task
+    ? `You are acting as ${role?.label ?? session.role ?? "an implementation agent"} on "${session.name}". Your assignment is:\n${session.task}\nYour owned scope is: ${session.scope.join(", ") || "coordinate before editing"}.${loadedSkills.length ? ` Apply these skills: ${loadedSkills.join(", ")}.` : ""} Read AGENTS.md and use the ContextGit MCP team tools. Begin now.`
+    : role && loadedSkills.length > 0
+      ? `You are acting as a ${role.label} on "${session.name}". Apply these skills on this run: ${loadedSkills.join(", ")}. Read AGENTS.md for your file scope and the other runs.`
+      : undefined);
   /** True when this harness must be installed (npm) before its terminal starts. */
   const needsInstall = Boolean(harnessFor(command)?.npmPackage);
   const [nonce, setNonce] = useState(0);
@@ -381,6 +386,8 @@ export default function TerminalPane({
             ...(session.port ? { PORT: String(session.port) } : {}),
             CONTEXTGIT_RUN: session.name,
             ...(taskId ? { CONTEXTGIT_TASK: taskId } : {}),
+            ...(teamId ? { CONTEXTGIT_TEAM: teamId } : {}),
+            ...(session.role ? { CONTEXTGIT_ROLE: session.role } : {}),
           },
         });
         if (cancelled) {

@@ -17,7 +17,8 @@ if (python === venvPython && !fs.existsSync(python)) {
   throw new Error(`Python virtualenv not found at ${venvPython}. Create it and install the dev dependencies first.`);
 }
 
-execFileSync(python, ["-m", "pip", "install", "--quiet", "pyinstaller"], { cwd: root, stdio: "inherit" });
+try { execFileSync(python, ['-c', 'import PyInstaller'], { cwd: root, stdio: 'ignore' }); }
+catch { execFileSync(python, ["-m", "pip", "install", "--quiet", "pyinstaller"], { cwd: root, stdio: "inherit" }); }
 
 const args = [
   "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",

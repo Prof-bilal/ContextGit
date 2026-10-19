@@ -54,12 +54,16 @@ class TestSchema:
             "task_deps",
             "team_messages",
             "team_events",
+            "team_plan_revisions",
+            "canvas_layouts",
+            "canvas_viewports",
+            "skill_links",
             "usage_events",
         } <= tables
 
     def test_migration_recorded_once(self, storage: SqliteStorage) -> None:
         versions = [r[0] for r in storage._conn.execute("SELECT version FROM schema_version")]
-        assert versions == [*range(1, 30)]
+        assert versions == [*range(1, 31)]
 
     def test_reopen_does_not_reapply(self, tmp_path: Path) -> None:
         db = tmp_path / "again.db"
@@ -67,7 +71,18 @@ class TestSchema:
         s2 = SqliteStorage(db)
         versions = [r[0] for r in s2._conn.execute("SELECT version FROM schema_version")]
         s2.close()
-        assert versions == [*range(1, 30)]
+        assert versions == [*range(1, 31)]
+
+    def test_project_viewports_round_trip_without_sharing_projects(self, storage: SqliteStorage) -> None:
+        from contextgit.core.models import CanvasViewport
+
+        first = storage.save_canvas_viewport(CanvasViewport(project_path="/work/one", x=-23.5, y=90, zoom=0.7))
+        second = storage.save_canvas_viewport(CanvasViewport(project_path="/work/two", x=10, y=-4, zoom=1.2))
+        assert storage.canvas_viewport("/work/one") == first
+        assert storage.canvas_viewport("/work/two") == second
+        updated = storage.save_canvas_viewport(CanvasViewport(project_path="/work/one", x=4, y=5, zoom=1))
+        assert updated.x == 4
+        assert storage.canvas_viewport("/work/two") == second
 
 
 def test_failed_migration_rolls_back_ddl_and_version(

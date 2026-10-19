@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from contextgit.core.errors import ContextGitError, RepoNotFound
-from contextgit.core.models import Task
+from contextgit.core.models import Task, TeamBoard
 from contextgit.core.repo import Repo
 from contextgit.endpoints.discover import discover
 from contextgit.endpoints.provenance import graph_with_provenance
@@ -30,6 +30,8 @@ ResultT = TypeVar("ResultT")
 TASK_ENV = "CONTEXTGIT_TASK"
 # Where the repository lives, matching the API/CLI convention.
 REPO_ENV = "CONTEXTGIT_REPO"
+TEAM_ENV = "CONTEXTGIT_TEAM"
+ROLE_ENV = "CONTEXTGIT_ROLE"
 
 
 def open_repo(repo_path: str | None = None) -> Repo:
@@ -44,6 +46,60 @@ def open_repo(repo_path: str | None = None) -> Repo:
 def current_task_id() -> str | None:
     """The task this agent was started for, when the app launched it."""
     return os.getenv(TASK_ENV) or None
+
+
+def current_team_id(repo: Repo) -> str | None:
+    """Resolve the caller's team without falling back across team boundaries."""
+    explicit = os.getenv(TEAM_ENV)
+    if explicit:
+        return explicit
+    task_id = current_task_id()
+    if task_id:
+        try:
+            return repo.get_task(task_id).team_id
+        except ContextGitError:
+            return None
+    team = repo.current_team()
+    return team.id if team else None
+
+
+def _board(repo: Repo) -> TeamBoard | None:
+    team_id = current_team_id(repo)
+    return repo.team_board(team_id) if team_id else None
+
+
+def _task_permission(repo: Repo, task_id: str) -> dict[str, Any] | None:
+    scoped = os.getenv(TEAM_ENV)
+    own_task = current_task_id()
+    if scoped and repo.get_task(task_id).team_id != scoped:
+        return {"error": "The task belongs to another team", "type": "Forbidden"}
+    if own_task and task_id != own_task and os.getenv(ROLE_ENV) != "orchestrator":
+        return {"error": "Workers can only modify their assigned task", "type": "Forbidden"}
+    return None
+
+
+def _orchestrator_team(
+    repo: Repo, team_id: str | None = None
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Authorize an orchestrator-only operation and pin it to its own team."""
+    resolved = team_id or current_team_id(repo)
+    role = os.getenv(ROLE_ENV)
+    if role != "orchestrator":
+        return None, {
+            "error": "this tool is restricted to the team orchestrator",
+            "type": "Forbidden",
+        }
+    scoped = os.getenv(TEAM_ENV)
+    if not scoped or not resolved or scoped != resolved:
+        return None, {
+            "error": "the requested team is outside this orchestrator session",
+            "type": "Forbidden",
+        }
+    try:
+        repo.get_team(resolved)
+    except ContextGitError as exc:
+        return None, {"error": str(exc), "type": type(exc).__name__}
+    return resolved, None
 
 
 def _task_view(task: Task, titles: dict[str, str]) -> dict[str, Any]:
@@ -72,7 +128,7 @@ def _guard(call: Callable[[], ResultT]) -> ResultT | dict[str, Any]:
 
 def team_status(repo: Repo) -> dict[str, Any]:
     """Counts, blockers and what is waiting on review."""
-    board = repo.team_board()
+    board = _board(repo)
     if board is None:
         return {"team": None, "hint": "no team yet — create one in the Code tab"}
     tasks = board.tasks
@@ -98,7 +154,7 @@ def team_status(repo: Repo) -> dict[str, Any]:
 
 def list_tasks(repo: Repo, status: str | None = None) -> list[dict[str, Any]]:
     """Every task (or just one status), with its owner, scope and dependencies."""
-    board = repo.team_board()
+    board = _board(repo)
     if board is None:
         return []
     titles = {task.id: task.title for task in board.tasks}
@@ -110,7 +166,7 @@ def list_tasks(repo: Repo, status: str | None = None) -> list[dict[str, Any]]:
 
 def read_board(repo: Repo, since: int | None = None, limit: int = 20) -> list[dict[str, Any]]:
     """Recent board messages; pass the last id you saw to get only newer ones."""
-    board = repo.team_board()
+    board = _board(repo)
     if board is None:
         return []
     titles = {task.id: task.title for task in board.tasks}
@@ -134,6 +190,9 @@ def start_task(repo: Repo, task_id: str | None = None) -> dict[str, Any]:
     resolved = task_id or current_task_id()
     if not resolved:
         return {"error": f"no task given and ${TASK_ENV} is unset", "type": "NoTask"}
+    error = _task_permission(repo, resolved)
+    if error:
+        return error
     return _guard(lambda: _task_view(repo.start_task(resolved), _titles(repo)))
 
 
@@ -142,6 +201,9 @@ def finish_task(repo: Repo, task_id: str | None = None, evidence: str = "") -> d
     resolved = task_id or current_task_id()
     if not resolved:
         return {"error": f"no task given and ${TASK_ENV} is unset", "type": "NoTask"}
+    error = _task_permission(repo, resolved)
+    if error:
+        return error
 
     def run() -> dict[str, Any]:
         if evidence:
@@ -155,7 +217,11 @@ def finish_task(repo: Repo, task_id: str | None = None, evidence: str = "") -> d
 def post_update(repo: Repo, text: str, task_id: str | None = None) -> dict[str, Any]:
     """Post a line to the team board so the other runs can read it."""
     resolved = task_id or current_task_id()
-    board = repo.team_board()
+    if resolved:
+        error = _task_permission(repo, resolved)
+        if error:
+            return error
+    board = _board(repo)
     if board is None:
         return {"error": "no team yet", "type": "TeamNotFound"}
     message = repo.post_message(board.team.id, text, kind="update", task_id=resolved)
@@ -164,7 +230,7 @@ def post_update(repo: Repo, text: str, task_id: str | None = None) -> dict[str, 
 
 def check_ownership(repo: Repo, path: str) -> dict[str, Any]:
     """Which task owns a file path, or whether it is free."""
-    board = repo.team_board()
+    board = _board(repo)
     if board is None:
         return {"path": path, "owner": None, "free": True}
     for task in board.tasks:
@@ -175,7 +241,7 @@ def check_ownership(repo: Repo, path: str) -> dict[str, Any]:
 
 def peers(repo: Repo) -> list[dict[str, Any]]:
     """The other runs: what they own, their status and their latest message."""
-    board = repo.team_board()
+    board = _board(repo)
     if board is None:
         return []
     titles = {task.id: task.title for task in board.tasks}
@@ -199,6 +265,9 @@ def publish_contract(repo: Repo, path: str, task_id: str | None = None) -> dict[
     resolved = task_id or current_task_id()
     if not resolved:
         return {"error": f"no task given and ${TASK_ENV} is unset", "type": "NoTask"}
+    error = _task_permission(repo, resolved)
+    if error:
+        return error
     task = repo.get_task(resolved)
     scope = list(task.scope)
     if path not in scope:
@@ -214,8 +283,219 @@ def resolved_team(repo: Repo, task_id: str) -> str:
 
 
 def _titles(repo: Repo) -> dict[str, str]:
-    board = repo.team_board()
+    board = _board(repo)
     return {task.id: task.title for task in board.tasks} if board else {}
+
+
+# ---------- orchestrator-only team control ----------
+
+
+def propose_team_plan(
+    repo: Repo,
+    goal: str,
+    tasks: list[dict[str, Any]],
+    completion_criteria: list[str] | None = None,
+    quality_gates: list[str] | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    """Submit a structured plan for user review; this never launches workers."""
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    if not 1 <= len(tasks) <= 12:
+        return {"error": "a team plan must contain between 1 and 12 workers", "type": "InvalidPlan"}
+    plan = repo.save_team_plan(
+        resolved,
+        {
+            "goal": goal,
+            "tasks": tasks,
+            "completion_criteria": completion_criteria or [],
+            "quality_gates": quality_gates or [],
+        },
+    )
+    return plan.model_dump(mode="json")
+
+
+def revise_team_plan(
+    repo: Repo,
+    goal: str,
+    tasks: list[dict[str, Any]],
+    completion_criteria: list[str] | None = None,
+    quality_gates: list[str] | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    """Create another immutable plan revision for user review."""
+    return propose_team_plan(repo, goal, tasks, completion_criteria, quality_gates, team_id)
+
+
+def create_or_update_task(
+    repo: Repo,
+    title: str,
+    brief: str = "",
+    role: str = "implementer",
+    agent: str | None = None,
+    scope: list[str] | None = None,
+    done_criteria: str = "",
+    task_id: str | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    if task_id:
+        task = repo.get_task(task_id)
+        if task.team_id != resolved:
+            return {"error": "task belongs to another team", "type": "Forbidden"}
+        task = repo.update_task(
+            task_id,
+            title=title,
+            brief=brief,
+            role=role,
+            agent=agent,
+            scope=scope,
+            done_criteria=done_criteria,
+        )
+    else:
+        task = repo.create_task(
+            resolved,
+            title=title,
+            brief=brief,
+            role=role,
+            agent=agent,
+            scope=scope,
+            done_criteria=done_criteria,
+        )
+    return _task_view(task, _titles(repo))
+
+
+def assign_worker(
+    repo: Repo, task_id: str, agent: str, role: str, team_id: str | None = None
+) -> dict[str, Any]:
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    task = repo.get_task(task_id)
+    if task.team_id != resolved:
+        return {"error": "task belongs to another team", "type": "Forbidden"}
+    return _task_view(repo.update_task(task_id, agent=agent, role=role), _titles(repo))
+
+
+def attach_skill(
+    repo: Repo,
+    skill_id: str,
+    title: str,
+    instruction: str,
+    origin: str = "project",
+    task_id: str | None = None,
+    agent: str | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    return repo.attach_skill(
+        resolved,
+        skill_id=skill_id,
+        title=title,
+        instruction=instruction,
+        origin=origin,
+        task_id=task_id,
+        agent=agent,
+    ).model_dump(mode="json")
+
+
+def review_task(
+    repo: Repo,
+    task_id: str,
+    decision: str,
+    note: str = "",
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    if decision not in {"approve", "reject"}:
+        return {"error": "Review decision must be approve or reject", "type": "InvalidDecision"}
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    task = repo.get_task(task_id)
+    if task.team_id != resolved:
+        return {"error": "task belongs to another team", "type": "Forbidden"}
+    reviewed = (
+        repo.approve_task(task_id)
+        if decision == "approve"
+        else repo.reject_task(task_id, note or "changes requested")
+    )
+    return _task_view(reviewed, _titles(repo))
+
+
+def pause_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    return repo.update_team_details(resolved, state="paused").model_dump(mode="json")
+
+
+def resume_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    repo.update_team_details(resolved, state="running")
+    repo.launch_team(resolved)
+    return repo.get_team(resolved).model_dump(mode="json")
+
+
+def prepare_merge(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
+    """Report merge readiness. The final merge remains a user-only API action."""
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    tasks = repo.list_tasks(resolved)
+    unfinished = [task.title for task in tasks if task.status != "done"]
+    if not unfinished and tasks:
+        repo.update_team_details(resolved, state="merge_ready")
+    return {
+        "ready": bool(tasks) and not unfinished,
+        "unfinished": unfinished,
+        "requires_user_confirmation": True,
+    }
+
+
+def propose_skill(
+    repo: Repo,
+    title: str,
+    instruction: str,
+    evidence: str,
+    scope: list[str] | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    """Propose, but do not activate, a reusable skill backed by reviewed evidence."""
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    from contextgit.knowledge.skills import SkillDraft, SkillLibrary
+
+    team = repo.get_team(resolved)
+    tasks = repo.list_tasks(resolved)
+    if not evidence.strip() or not tasks or any(task.status != "done" for task in tasks):
+        return {
+            "error": "skill proposals require reviewed completed tasks and evidence",
+            "type": "InvalidSkill",
+        }
+    draft = (
+        SkillLibrary(team.project_path)
+        .propose(
+            SkillDraft(
+                title=title,
+                instruction=instruction,
+                evidence=evidence,
+                scope=scope or [],
+                source_team=resolved,
+                source_session=team.orchestrator_session_id,
+            )
+        )
+        .model_dump(mode="json")
+    )
+    repo.post_message(resolved, f"Skill proposed: {title}\nEvidence: {evidence}", kind="review")
+    return draft
 
 
 # ---------- scoped memory (derived from the runs, never hand-written) ----------

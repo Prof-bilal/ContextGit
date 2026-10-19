@@ -21,6 +21,8 @@ from contextgit.api.schemas import (
     AgentCommitRequest,
     AgentRunRequest,
     BranchRequest,
+    CanvasLayoutRequest,
+    CanvasViewportRequest,
     CheckoutRequest,
     ClaimCheckRequest,
     ClaimCheckResult,
@@ -35,6 +37,7 @@ from contextgit.api.schemas import (
     EndpointRunRequest,
     EndpointServeRequest,
     EnqueueMergeRequest,
+    GroupWorkersRequest,
     InitRequest,
     IntegrateRequest,
     IssueConfigRequest,
@@ -44,18 +47,25 @@ from contextgit.api.schemas import (
     PreflightRequest,
     ProjectMemoryApprovalRequest,
     ProjectMemorySynthesisRequest,
+    ReorderWorkersRequest,
     RepoSnapshot,
     RunMergeQueueRequest,
     SessionRequest,
     SessionUpdateRequest,
+    SkillLinkRequest,
+    SkillReviewRequest,
     StageRequest,
     TaskCreateRequest,
     TaskRejectRequest,
+    TaskStartRequest,
+    TaskStopRequest,
     TaskUpdateRequest,
     TaskVerifyRequest,
     TeamCreateRequest,
     TeamGateRequest,
     TeamMessageRequest,
+    TeamPlanRequest,
+    TeamUpdateRequest,
     TerminalTranscriptRequest,
 )
 from contextgit.apiclient.client import send_request
@@ -71,6 +81,7 @@ from contextgit.core.errors import (
     GateNotConfigured,
     InvalidMergeResolution,
     InvalidRefName,
+    InvalidTaskTransition,
     MergeConflict,
     MergeQueueEntryNotFound,
     ProviderConfigError,
@@ -108,6 +119,7 @@ from contextgit.core.models import (
     utcnow,
 )
 from contextgit.core.repo import Repo
+from contextgit.core.task_service import TaskService
 from contextgit.dbclient.store import ConnectionStore, registry
 from contextgit.endpoints.provenance import graph_with_provenance
 from contextgit.endpoints.serve import detect_run_command, fetch_live_openapi, supervisor
@@ -119,6 +131,8 @@ from contextgit.endpoints.tests import (
 )
 from contextgit.endpoints.why import why_for, why_history
 from contextgit.issues import install_osv_scanner, run_scan
+from contextgit.knowledge.models import Lesson
+from contextgit.knowledge.skills import SkillDraft, SkillLibrary
 from contextgit.limits.models import HarnessLimits
 from contextgit.limits.registry import all_limits
 from contextgit.llm import (
@@ -127,6 +141,7 @@ from contextgit.llm import (
     OpenAICompatibleProvider,
     build_for,
 )
+from contextgit.mcp.config import ensure_mcp_config
 from contextgit.memory.project import synthesize_project_memory
 from contextgit.verify.bisect import bisect_gate, oldest_commit
 from contextgit.verify.detect import detect_gate
@@ -259,6 +274,7 @@ def create_app(
                 StagingEmpty,
                 TaskDependencyError,
                 TaskNotReviewable,
+                InvalidTaskTransition,
                 WorkInProgressLimit,
                 ServerNotRunning,
                 DbError,
@@ -844,6 +860,536 @@ def create_app(
 
     # ---------- team mode (a task graph over parallel runs) ----------
 
+    @app.get("/api/v1/skills")
+    def library_skills(project_path: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        library = SkillLibrary(current.canonical_project_path(project_path))
+        # Existing approved lessons become reviewed project skills once, preserving evidence.
+        known_sources = {skill.source_lesson for skill in library.list(include_removed=True)}
+        for lesson in current.knowledge.records.list(project_path, "lesson"):
+            if (
+                isinstance(lesson, Lesson)
+                and lesson.status == "approved"
+                and lesson.id not in known_sources
+            ):
+                skill = library.propose(
+                    SkillDraft(
+                        title=lesson.title,
+                        instruction=lesson.instruction,
+                        evidence=lesson.evidence,
+                        scope=lesson.scope,
+                        source_session=lesson.session_id,
+                        source_lesson=lesson.id,
+                    )
+                )
+                library.review("project", skill.id, "approve")
+                known_sources.add(lesson.id)
+        return [skill.model_dump(mode="json") for skill in library.list()]
+
+    @app.post("/api/v1/skills", status_code=201)
+    def propose_library_skill(
+        body: SkillDraft, project_path: str, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        if body.source_team:
+            team = current.get_team(body.source_team)
+            if current.canonical_project_path(team.project_path) != current.canonical_project_path(
+                project_path
+            ):
+                raise HTTPException(
+                    status_code=400, detail="source team belongs to another project"
+                )
+        return (
+            SkillLibrary(current.canonical_project_path(project_path))
+            .propose(body)
+            .model_dump(mode="json")
+        )
+
+    @app.post("/api/v1/skills/{origin}/{skill_id}/review")
+    def review_library_skill(
+        origin: str,
+        skill_id: str,
+        body: SkillReviewRequest,
+        project_path: str,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        try:
+            return (
+                SkillLibrary(current.canonical_project_path(project_path))
+                .review(origin, skill_id, body.action, body.instruction)
+                .model_dump(mode="json")
+            )
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    def _spatial_team(current: Repo, team_id: str) -> dict[str, object]:
+        board = current.team_board(team_id)
+        if board is None:
+            raise TeamNotFound(f"team '{team_id[:12]}' not found")
+        plan = current.latest_team_plan(team_id)
+        return {
+            **board.model_dump(mode="json"),
+            "layout": current.team_layout(team_id).model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json") if plan else None,
+            "skills": [link.model_dump(mode="json") for link in current.team_skills(team_id)],
+        }
+
+    @app.get("/api/v1/teams")
+    def list_spatial_teams(
+        project_path: str | None = None, current: Repo = repo_dep
+    ) -> list[dict[str, object]]:
+        teams = current.list_teams(project_path=project_path)
+        return [_spatial_team(current, team.id) for team in teams if team.archived_at is None]
+
+    @app.post("/api/v1/canvas/import-sessions")
+    def import_canvas_sessions(
+        project_path: str, current: Repo = repo_dep
+    ) -> list[dict[str, object]]:
+        return [
+            _spatial_team(current, team.id)
+            for team in current.import_ungrouped_sessions(project_path)
+        ]
+
+    @app.post("/api/v1/canvas/group-workers", status_code=201)
+    def group_canvas_workers(
+        body: GroupWorkersRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        team = current.regroup_workers(body.project_path, body.name, body.task_ids)
+        return _spatial_team(current, team.id)
+
+    @app.put("/api/v1/teams/{team_id}/worker-order")
+    def reorder_canvas_workers(
+        team_id: str, body: ReorderWorkersRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        current.reorder_workers(team_id, body.task_ids)
+        return _spatial_team(current, team_id)
+
+    @app.get("/api/v1/teams/{team_id}")
+    def get_spatial_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return _spatial_team(current, team_id)
+
+    @app.patch("/api/v1/canvas/viewport")
+    def patch_canvas_viewport(
+        body: CanvasViewportRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return current.save_canvas_viewport(
+            body.project_path, x=body.x, y=body.y, zoom=body.zoom
+        ).model_dump(mode="json")
+
+    @app.get("/api/v1/canvas/viewport")
+    def get_canvas_viewport(project_path: str, current: Repo = repo_dep) -> dict[str, object]:
+        return current.canvas_viewport(project_path).model_dump(mode="json")
+
+    @app.put("/api/v1/canvas/viewport")
+    def put_canvas_viewport(
+        body: CanvasViewportRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return current.save_canvas_viewport(
+            body.project_path, x=body.x, y=body.y, zoom=body.zoom
+        ).model_dump(mode="json")
+
+    def _spatial_task(current: Repo, team_id: str, task_id: str) -> dict[str, object]:
+        task = current.get_task(task_id)
+        if task.team_id != team_id:
+            raise TaskNotFound(f"task '{task_id[:12]}' not found in this team")
+        view = TaskService(current).show(task_id)
+        return {**task.model_dump(mode="json"), **view.to_json()}
+
+    @app.get("/api/v1/teams/{team_id}/status")
+    def spatial_team_status(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        board = current.team_board(team_id)
+        if board is None:
+            raise TeamNotFound(f"team '{team_id[:12]}' not found")
+        tasks = board.tasks
+        return {
+            "team": board.team.model_dump(mode="json"),
+            "counts": {
+                status: sum(task.status == status for task in tasks)
+                for status in {task.status for task in tasks}
+            },
+            "blocked": [task.id for task in tasks if task.status == "blocked"],
+            "in_review": [task.id for task in tasks if task.status == "review"],
+        }
+
+    @app.get("/api/v1/teams/{team_id}/tasks")
+    def list_spatial_tasks(team_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        current.get_team(team_id)
+        return [_spatial_task(current, team_id, task.id) for task in current.list_tasks(team_id)]
+
+    @app.post("/api/v1/teams/{team_id}/tasks", status_code=201)
+    def create_spatial_task(
+        team_id: str, body: TaskCreateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        team = current.get_team(team_id)
+        if body.gate_command is not None and body.gate_command != detect_gate(
+            Path(team.project_path)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="gate_command must match the project's detected quality gate",
+            )
+        task = current.create_task(
+            team_id,
+            title=body.title,
+            brief=body.brief,
+            done_criteria=body.done_criteria,
+            role=body.role,
+            agent=body.agent,
+            scope=body.scope,
+            contract=body.contract,
+            depends_on=body.depends_on,
+            gate_command=body.gate_command,
+            parent_id=body.parent_id,
+        )
+        return _spatial_task(current, team_id, task.id)
+
+    @app.patch("/api/v1/teams/{team_id}/tasks/{task_id}")
+    def update_spatial_task(
+        team_id: str, task_id: str, body: TaskUpdateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        task = current.get_task(task_id)
+        if task.team_id != team_id:
+            raise TaskNotFound(f"task '{task_id[:12]}' not found in this team")
+        if body.gate_command is not None:
+            team = current.get_team(team_id)
+            if body.gate_command != detect_gate(Path(team.project_path)):
+                raise HTTPException(
+                    status_code=400,
+                    detail="gate_command must match the project's detected quality gate",
+                )
+        current.update_task(
+            task_id,
+            title=body.title,
+            brief=body.brief,
+            done_criteria=body.done_criteria,
+            role=body.role,
+            agent=body.agent,
+            scope=body.scope,
+            contract=body.contract,
+            status=body.status,
+            gate_command=body.gate_command,
+        )
+        if body.depends_on is not None:
+            current.set_task_deps(task_id, body.depends_on)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.delete("/api/v1/teams/{team_id}/tasks/{task_id}", status_code=204)
+    def delete_spatial_task(team_id: str, task_id: str, current: Repo = repo_dep) -> None:
+        _spatial_task(current, team_id, task_id)
+        current.delete_task(task_id)
+
+    @app.post("/api/v1/teams/{team_id}/launch")
+    def launch_spatial_team(team_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [task.model_dump(mode="json") for task in current.launch_team(team_id)]
+
+    @app.get("/api/v1/teams/{team_id}/tasks/{task_id}/events")
+    def spatial_task_events(
+        team_id: str, task_id: str, current: Repo = repo_dep
+    ) -> list[dict[str, object]]:
+        _spatial_task(current, team_id, task_id)
+        return TaskService(current).events(task_id)
+
+    @app.get("/api/v1/teams/{team_id}/messages")
+    def spatial_team_messages(
+        team_id: str, limit: int = 50, current: Repo = repo_dep
+    ) -> list[dict[str, object]]:
+        current.get_team(team_id)
+        return [
+            message.model_dump(mode="json")
+            for message in current.team_messages(team_id, limit=max(1, min(limit, 200)))
+        ]
+
+    @app.post("/api/v1/teams/{team_id}/messages", status_code=201)
+    def post_spatial_team_message(
+        team_id: str, body: TeamMessageRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        current.get_team(team_id)
+        for task_id in (body.task_id, body.from_task_id):
+            if task_id and current.get_task(task_id).team_id != team_id:
+                raise TaskNotFound(f"task '{task_id[:12]}' not found in this team")
+        return current.post_message(
+            team_id, body.body, kind=body.kind, task_id=body.task_id, from_task_id=body.from_task_id
+        ).model_dump(mode="json")
+
+    @app.post("/api/v1/teams", status_code=201)
+    def create_spatial_team(body: TeamCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        if body.gate_command is not None and body.gate_command != detect_gate(
+            Path(body.project_path)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="gate_command must match the project's detected quality gate",
+            )
+        team = current.create_team(
+            body.name,
+            project_path=body.project_path,
+            base_ref=body.base_ref,
+            goal=body.goal,
+            orchestrator_agent=body.orchestrator_agent,
+        )
+        if body.gate_command is not None:
+            team = current.set_team_gate(team.id, body.gate_command)
+        same_project = current.list_teams(project_path=team.project_path)
+        current.save_team_layout(team.id, x=80 + (len(same_project) - 1) * 1040, y=80)
+        return _spatial_team(current, team.id)
+
+    @app.patch("/api/v1/teams/{team_id}")
+    def update_spatial_team(
+        team_id: str, body: TeamUpdateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        current.update_team_details(team_id, **body.model_dump(exclude_none=True))
+        return _spatial_team(current, team_id)
+
+    @app.post("/api/v1/teams/{team_id}/orchestrator/start")
+    def start_team_orchestrator(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        team = current.get_team(team_id)
+        if team.orchestrator_session_id:
+            try:
+                return current.get_session(team.orchestrator_session_id).model_dump(mode="json")
+            except SessionNotFound:
+                pass
+        agent = team.orchestrator_agent or "claude"
+        ensure_mcp_config(team.project_path)
+        session = current.create_session(
+            f"{team.name} orchestrator",
+            kind="terminal",
+            agent=agent,
+            project_path=team.project_path,
+            worktree=False,
+            task=team.goal,
+            role="orchestrator",
+            category="orchestration",
+        )
+        current.update_team_details(team_id, orchestrator_session_id=session.id, state="planning")
+        return session.model_dump(mode="json")
+
+    @app.get("/api/v1/teams/{team_id}/plan")
+    def get_team_plan(team_id: str, current: Repo = repo_dep) -> dict[str, object] | None:
+        current.get_team(team_id)
+        plan = current.latest_team_plan(team_id)
+        return plan.model_dump(mode="json") if plan else None
+
+    @app.put("/api/v1/teams/{team_id}/plan")
+    def save_team_plan(
+        team_id: str, body: TeamPlanRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        current.update_team_details(team_id, goal=body.goal or None)
+        try:
+            return current.save_team_plan(team_id, body.model_dump(mode="json")).model_dump(
+                mode="json"
+            )
+        except InvalidTaskTransition as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/api/v1/teams/{team_id}/plan/approve")
+    def approve_spatial_team_plan(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        current.approve_team_plan(team_id)
+        if current.get_team(team_id).state != "paused":
+            current.launch_team(team_id)
+        return _spatial_team(current, team_id)
+
+    @app.post("/api/v1/teams/{team_id}/pause")
+    def pause_spatial_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        current.update_team_details(team_id, state="paused")
+        return _spatial_team(current, team_id)
+
+    @app.post("/api/v1/teams/{team_id}/resume")
+    def resume_spatial_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        current.update_team_details(team_id, state="running")
+        current.launch_team(team_id)
+        return _spatial_team(current, team_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/start")
+    def start_spatial_task(
+        team_id: str, task_id: str, body: TaskStartRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        TaskService(current).start(task_id, agent=body.agent if body else None)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/stop")
+    def stop_spatial_task(
+        team_id: str, task_id: str, body: TaskStopRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        TaskService(current).stop(task_id, body.note if body else "stopped by user")
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/retry")
+    def retry_spatial_task(
+        team_id: str, task_id: str, body: TaskStartRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        TaskService(current).retry(task_id, agent=body.agent if body else None)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/complete")
+    def complete_spatial_task(
+        team_id: str, task_id: str, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        current.complete_task(task_id)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/gate")
+    def gate_spatial_task(
+        team_id: str, task_id: str, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        current.run_task_gate(task_id)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/approve")
+    def approve_spatial_task(
+        team_id: str, task_id: str, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        current.approve_task(task_id)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/reject")
+    def reject_spatial_task(
+        team_id: str, task_id: str, body: TaskRejectRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        current.reject_task(task_id, body.note)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/verify")
+    def verify_spatial_task(
+        team_id: str, task_id: str, body: TaskVerifyRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        _spatial_task(current, team_id, task_id)
+        current.verify_task(task_id, agent=body.agent)
+        return _spatial_task(current, team_id, task_id)
+
+    @app.patch("/api/v1/teams/{team_id}/layout")
+    def patch_spatial_team_layout(
+        team_id: str, body: CanvasLayoutRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return current.update_canvas_layout(
+            team_id, **body.model_dump(exclude_unset=True)
+        ).model_dump(mode="json")
+
+    @app.put("/api/v1/teams/{team_id}/layout")
+    def put_spatial_team_layout(
+        team_id: str, body: CanvasLayoutRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        layout = current.team_layout(team_id)
+        updates = body.model_dump(exclude_unset=True)
+        complete = {
+            **layout.model_dump(),
+            **{key: value for key, value in updates.items() if value is not None},
+        }
+        return current.save_team_layout(
+            team_id,
+            **{key: complete[key] for key in ("x", "y", "width", "height", "collapsed", "z_index")},
+        ).model_dump(mode="json")
+
+    @app.post("/api/v1/teams/{team_id}/skills", status_code=201)
+    def attach_spatial_team_skill(
+        team_id: str, body: SkillLinkRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return current.attach_skill(team_id, **body.model_dump()).model_dump(mode="json")
+
+    @app.get("/api/v1/teams/{team_id}/skills")
+    def list_spatial_team_skills(team_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [link.model_dump(mode="json") for link in current.team_skills(team_id)]
+
+    @app.delete("/api/v1/teams/{team_id}/skills/{link_id}", status_code=204)
+    def detach_spatial_team_skill(team_id: str, link_id: str, current: Repo = repo_dep) -> None:
+        current.detach_skill(team_id, link_id)
+
+    @app.post("/api/v1/teams/{team_id}/merge/preview")
+    def preview_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        current.get_team(team_id)
+        tasks = current.list_tasks(team_id)
+        unfinished = [task.title for task in tasks if task.status != "done"]
+        team = current.get_team(team_id)
+        ready = bool(tasks) and not unfinished
+        changes: list[dict[str, object]] = []
+        for task in tasks:
+            session = current.get_session(task.session_id) if task.session_id else None
+            files: list[dict[str, str]] = []
+            conflicts: list[str] = []
+            dirty = False
+            uncommitted: list[str] = []
+            if session and session.worktree_path:
+                from contextgit.gitops.spatial import uncommitted_code
+
+                workspace = current.session_workspace(session.id, target=team.base_ref)
+                conflicts = workspace.conflicts
+                dirty = workspace.dirty
+                uncommitted = uncommitted_code(session.worktree_path)
+                if uncommitted:
+                    ready = False
+                    unfinished.append(f"{task.title}: commit outstanding files before merging")
+                if conflicts:
+                    ready = False
+                    unfinished.append(f"{task.title}: merge conflicts")
+            if (task.gate_command or team.gate_command) and task.gate_status != "pass":
+                ready = False
+                unfinished.append(f"{task.title}: quality gate has not passed")
+            if session and session.worktree_path:
+                try:
+                    from contextgit.gitops.repo import Git
+
+                    diff = Git(session.worktree_path).run(
+                        "diff", "--name-status", f"{team.base_ref or 'HEAD'}...HEAD"
+                    )
+                    files = [
+                        {"status": parts[0], "path": parts[1]}
+                        for line in diff.stdout.splitlines()
+                        if len(parts := line.split("\t", 1)) == 2
+                    ]
+                except Exception:
+                    files = []
+            changes.append(
+                {
+                    "task_id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "gate_status": task.gate_status,
+                    "gate_output": task.gate_output,
+                    "files": files,
+                    "conflicts": conflicts,
+                    "dirty": dirty,
+                    "uncommitted": uncommitted,
+                }
+            )
+        if ready:
+            current.update_team_details(team_id, state="merge_ready")
+        return {
+            "ready": ready,
+            "unfinished": unfinished,
+            "tasks": [task.model_dump(mode="json") for task in tasks],
+            "changes": changes,
+            "checks": [
+                {"task_id": task.id, "command": task.gate_command, "status": task.gate_status}
+                for task in tasks
+            ],
+            "requires_confirmation": True,
+        }
+
+    @app.post("/api/v1/teams/{team_id}/merge/confirm")
+    def confirm_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        current.get_team(team_id)
+        tasks = current.list_tasks(team_id)
+        if not tasks or any(task.status != "done" for task in tasks):
+            raise TaskNotReviewable("all team tasks must be approved before merging")
+        preview = preview_spatial_team_merge(team_id, current)
+        if not preview["ready"]:
+            raise TaskNotReviewable("Resolve merge conflicts and pass quality gates before merging")
+        current.queue_done_tasks(team_id)
+        entries = current.run_merge_queue(team_id=team_id)
+        session_ids = {task.session_id for task in tasks}
+        all_entries = [entry for entry in current.merge_queue() if entry.session_id in session_ids]
+        if any(entry.status != "merged" for entry in all_entries):
+            return {
+                "entries": [entry.model_dump(mode="json") for entry in entries],
+                "completed": False,
+            }
+        current.update_team_details(team_id, state="completed")
+        return {"entries": [entry.model_dump(mode="json") for entry in entries]}
+
     @app.get("/api/v1/team")
     def get_team(current: Repo = repo_dep) -> dict[str, object] | None:
         """The current board, or null when no team exists yet."""
@@ -860,7 +1406,11 @@ def create_app(
                     detail="gate_command must match the project's detected quality gate",
                 )
         team = current.create_team(
-            body.name, project_path=body.project_path, base_ref=body.base_ref
+            body.name,
+            project_path=body.project_path,
+            base_ref=body.base_ref,
+            goal=body.goal,
+            orchestrator_agent=body.orchestrator_agent,
         )
         if body.gate_command is not None:
             team = current.set_team_gate(team.id, body.gate_command)
@@ -871,8 +1421,9 @@ def create_app(
 
     @app.patch("/api/v1/team")
     def set_team_gate(body: TeamGateRequest, current: Repo = repo_dep) -> dict[str, object]:
-        """Set the team's default quality gate command."""
-        team = current.current_team()
+        """Set the team's default quality gate command (legacy shim)."""
+        project_path = current.root.parent if current.root.name == ".contextgit" else current.root
+        team = current.team_for_project(str(project_path)) or current.current_team()
         if team is None:
             raise TeamNotFound("no team yet")
         detected_gate = detect_gate(Path(team.project_path).expanduser())
@@ -883,21 +1434,24 @@ def create_app(
             )
         return current.set_team_gate(team.id, body.gate_command).model_dump(mode="json")
 
-    @app.post("/api/v1/team/tasks", status_code=201)
-    def create_task(body: TaskCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
-        team = current.current_team()
-        if team is None:
-            raise TeamNotFound("create a team first")
+    def _task_detail(current: Repo, task_id: str) -> dict[str, object]:
+        task = current.get_task(task_id)
+        view = TaskService(current).show(task_id)
+        return {**task.model_dump(mode="json"), **view.to_json()}
+
+    def _create_task(body: TaskCreateRequest, current: Repo) -> dict[str, object]:
+        project_path = current.root.parent if current.root.name == ".contextgit" else current.root
+        team = current.team_for_project(str(project_path))
+        project_path = Path(team.project_path).expanduser() if team else project_path
         if body.gate_command is not None:
-            detected_gate = detect_gate(Path(team.project_path).expanduser())
+            detected_gate = detect_gate(project_path)
             if body.gate_command != detected_gate:
                 raise HTTPException(
                     status_code=400,
                     detail="gate_command must match the project's detected quality gate",
                 )
-        task = current.create_task(
-            team.id,
-            title=body.title,
+        view = TaskService(current).create(
+            body.title,
             brief=body.brief,
             done_criteria=body.done_criteria,
             role=body.role,
@@ -906,8 +1460,34 @@ def create_app(
             contract=body.contract,
             depends_on=body.depends_on,
             gate_command=body.gate_command,
+            parent_id=body.parent_id,
         )
-        return task.model_dump(mode="json")
+        return _task_detail(current, view.id)
+
+    @app.get("/api/v1/tasks")
+    def list_tasks(current: Repo = repo_dep) -> list[dict[str, object]]:
+        return [_task_detail(current, view.id) for view in TaskService(current).list_tasks()]
+
+    @app.get("/api/v1/tasks/{task_id}")
+    def show_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        task = current.get_task(task_id)
+        project_path = current.root.parent if current.root.name == ".contextgit" else current.root
+        task_project = Path(current.get_team(task.team_id).project_path).expanduser().resolve()
+        if task_project != project_path.expanduser().resolve():
+            raise TaskNotFound(f"task '{task_id[:12]}' not found in this project")
+        return _task_detail(current, task_id)
+
+    @app.post("/api/v1/tasks", status_code=201)
+    def create_standalone_task(
+        body: TaskCreateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return _create_task(body, current)
+
+    @app.post("/api/v1/team/tasks", status_code=201)
+    def create_legacy_team_task(
+        body: TaskCreateRequest, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        return _create_task(body, current)
 
     @app.patch("/api/v1/team/tasks/{task_id}")
     def update_task(
@@ -936,7 +1516,7 @@ def create_app(
         )
         if body.depends_on is not None:
             task = current.set_task_deps(task_id, body.depends_on)
-        return task.model_dump(mode="json")
+        return _task_detail(current, task.id)
 
     @app.delete("/api/v1/team/tasks/{task_id}", status_code=204)
     def delete_task(task_id: str, current: Repo = repo_dep) -> None:
@@ -948,8 +1528,29 @@ def create_app(
         return [task.model_dump(mode="json") for task in current.launch_team()]
 
     @app.post("/api/v1/team/tasks/{task_id}/start")
-    def start_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:
-        return current.start_task(task_id).model_dump(mode="json")
+    def start_task(
+        task_id: str, body: TaskStartRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        TaskService(current).start(task_id, agent=body.agent if body else None)
+        return _task_detail(current, task_id)
+
+    @app.post("/api/v1/team/tasks/{task_id}/stop")
+    def stop_task(
+        task_id: str, body: TaskStopRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        TaskService(current).stop(task_id, body.note if body else "stopped by user")
+        return _task_detail(current, task_id)
+
+    @app.post("/api/v1/team/tasks/{task_id}/retry")
+    def retry_task(
+        task_id: str, body: TaskStartRequest | None = None, current: Repo = repo_dep
+    ) -> dict[str, object]:
+        TaskService(current).retry(task_id, agent=body.agent if body else None)
+        return _task_detail(current, task_id)
+
+    @app.get("/api/v1/team/tasks/{task_id}/events")
+    def task_events(task_id: str, current: Repo = repo_dep) -> list[dict[str, object]]:
+        return TaskService(current).events(task_id)
 
     @app.post("/api/v1/team/tasks/{task_id}/complete")
     def complete_task(task_id: str, current: Repo = repo_dep) -> dict[str, object]:

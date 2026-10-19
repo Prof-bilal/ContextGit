@@ -33,6 +33,8 @@ from contextgit.core.models import (
     AgentStep,
     AuthStyle,
     Branch,
+    CanvasLayout,
+    CanvasViewport,
     Commit,
     CommitKind,
     EnvEntry,
@@ -53,6 +55,7 @@ from contextgit.core.models import (
     Session,
     SessionKind,
     SessionStatus,
+    SkillLink,
     Tag,
     Task,
     TaskStatus,
@@ -60,6 +63,7 @@ from contextgit.core.models import (
     TeamEvent,
     TeamMessage,
     TeamMessageKind,
+    TeamPlanRevision,
     UsageEvent,
     UsageSource,
     UsageSurface,
@@ -67,8 +71,6 @@ from contextgit.core.models import (
 )
 
 _MIGRATIONS_DIR = "migrations"
-
-
 
 
 class SqliteStorage:
@@ -1214,6 +1216,11 @@ class SqliteStorage:
             project_path=row["project_path"],
             base_ref=row["base_ref"],
             gate_command=row["gate_command"],
+            goal=row["goal"],
+            state=row["state"],
+            orchestrator_agent=row["orchestrator_agent"],
+            orchestrator_session_id=row["orchestrator_session_id"],
+            archived_at=row["archived_at"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -1222,14 +1229,20 @@ class SqliteStorage:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO teams"
-                " (id, name, project_path, base_ref, gate_command, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " (id, name, project_path, base_ref, gate_command, goal, state,"
+                " orchestrator_agent, orchestrator_session_id, archived_at, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     team.id,
                     team.name,
                     team.project_path,
                     team.base_ref,
                     team.gate_command,
+                    team.goal,
+                    team.state,
+                    team.orchestrator_agent,
+                    team.orchestrator_session_id,
+                    team.archived_at.isoformat() if team.archived_at else None,
                     team.created_at.isoformat(),
                     team.updated_at.isoformat(),
                 ),
@@ -1249,18 +1262,168 @@ class SqliteStorage:
         with self._conn:
             cur = self._conn.execute(
                 "UPDATE teams SET name = ?, project_path = ?, base_ref = ?, gate_command = ?,"
-                " updated_at = ? WHERE id = ?",
+                " goal = ?, state = ?, orchestrator_agent = ?, orchestrator_session_id = ?,"
+                " archived_at = ?, updated_at = ? WHERE id = ?",
                 (
                     team.name,
                     team.project_path,
                     team.base_ref,
                     team.gate_command,
+                    team.goal,
+                    team.state,
+                    team.orchestrator_agent,
+                    team.orchestrator_session_id,
+                    team.archived_at.isoformat() if team.archived_at else None,
                     team.updated_at.isoformat(),
                     team.id,
                 ),
             )
             if cur.rowcount == 0:
                 raise TeamNotFound(f"team '{team.id[:12]}' not found")
+
+    def insert_team_plan(self, plan: TeamPlanRevision) -> TeamPlanRevision:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO team_plan_revisions"
+                " (id, team_id, revision, status, plan, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    plan.id,
+                    plan.team_id,
+                    plan.revision,
+                    plan.status,
+                    json.dumps(plan.plan),
+                    plan.created_at.isoformat(),
+                    plan.updated_at.isoformat(),
+                ),
+            )
+        return plan
+
+    def latest_team_plan(self, team_id: str) -> TeamPlanRevision | None:
+        row = self._conn.execute(
+            "SELECT * FROM team_plan_revisions WHERE team_id = ? ORDER BY revision DESC LIMIT 1",
+            (team_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return TeamPlanRevision(
+            id=row["id"],
+            team_id=row["team_id"],
+            revision=row["revision"],
+            status=row["status"],
+            plan=json.loads(row["plan"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def update_team_plan(self, plan: TeamPlanRevision) -> TeamPlanRevision:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE team_plan_revisions SET status = ?, plan = ?, updated_at = ? WHERE id = ?",
+                (plan.status, json.dumps(plan.plan), plan.updated_at.isoformat(), plan.id),
+            )
+        return plan
+
+    def canvas_layout(self, team_id: str) -> CanvasLayout | None:
+        row = self._conn.execute(
+            "SELECT * FROM canvas_layouts WHERE team_id = ?", (team_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return CanvasLayout(
+            team_id=row["team_id"],
+            x=row["x"],
+            y=row["y"],
+            width=row["width"],
+            height=row["height"],
+            collapsed=bool(row["collapsed"]),
+            z_index=row["z_index"],
+            updated_at=row["updated_at"],
+        )
+
+    def canvas_viewport(self, project_path: str) -> CanvasViewport | None:
+        row = self._conn.execute(
+            "SELECT * FROM canvas_viewports WHERE project_path = ?", (project_path,)
+        ).fetchone()
+        if row is None:
+            return None
+        return CanvasViewport(
+            project_path=row["project_path"],
+            x=row["x"],
+            y=row["y"],
+            zoom=row["zoom"],
+            updated_at=row["updated_at"],
+        )
+
+    def save_canvas_viewport(self, viewport: CanvasViewport) -> CanvasViewport:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO canvas_viewports (project_path, x, y, zoom, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_path) DO UPDATE SET "
+                "x=excluded.x, y=excluded.y, zoom=excluded.zoom, updated_at=excluded.updated_at",
+                (
+                    viewport.project_path,
+                    viewport.x,
+                    viewport.y,
+                    viewport.zoom,
+                    viewport.updated_at.isoformat(),
+                ),
+            )
+        return viewport
+
+    def save_canvas_layout(self, layout: CanvasLayout) -> CanvasLayout:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO canvas_layouts"
+                " (team_id, x, y, width, height, collapsed, z_index, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(team_id) DO UPDATE SET x=excluded.x, y=excluded.y,"
+                " width=excluded.width, height=excluded.height, collapsed=excluded.collapsed,"
+                " z_index=excluded.z_index, updated_at=excluded.updated_at",
+                (
+                    layout.team_id,
+                    layout.x,
+                    layout.y,
+                    layout.width,
+                    layout.height,
+                    int(layout.collapsed),
+                    layout.z_index,
+                    layout.updated_at.isoformat(),
+                ),
+            )
+        return layout
+
+    def insert_skill_link(self, link: SkillLink) -> SkillLink:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO skill_links (id, team_id, task_id, agent, skill_id, origin, "
+                "title, instruction, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    link.id,
+                    link.team_id,
+                    link.task_id,
+                    link.agent,
+                    link.skill_id,
+                    link.origin,
+                    link.title,
+                    link.instruction,
+                    link.created_at.isoformat(),
+                ),
+            )
+        return link
+
+    def list_skill_links(self, team_id: str) -> list[SkillLink]:
+        rows = self._conn.execute(
+            "SELECT * FROM skill_links WHERE team_id = ? ORDER BY created_at", (team_id,)
+        ).fetchall()
+        return [SkillLink(**dict(row)) for row in rows]
+
+    def delete_skill_link(self, link_id: str, team_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM skill_links WHERE id = ? AND team_id = ?", (link_id, team_id)
+            )
 
     def delete_team(self, team_id: str) -> None:
         with self._conn:
@@ -1560,7 +1723,8 @@ class SqliteStorage:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO learning_settings VALUES (1, ?) "
-                "ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id", (provider_id,),
+                "ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id",
+                (provider_id,),
             )
 
     def list_provider_rows(self) -> list[ProviderRecord]:
