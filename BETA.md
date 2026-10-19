@@ -1,7 +1,7 @@
-# ContextGit `0.2.0-beta.5`
+# ContextGit `0.2.0-beta.6`
 
-This revision fixes Windows release validation with CRLF checkouts and adds
-cross-platform regression checks for release metadata.
+This revision adds model context-window meters and a project learning loop:
+conversation checkpoints, editable lesson drafts, and a per-project AI connection.
 
 This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
 and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
@@ -16,7 +16,17 @@ For Omarchy and other Arch-based systems, use the **Linux x86_64 `.pacman`**
 package, or the x86_64 AppImage. Do not use an arm64/aarch64 package unless
 your machine reports `aarch64` or `arm64`.
 
-This beta includes the embedded VS Code workbench and native browser, reduced
+Each agent tab now shows the model context window and an estimated token usage
+meter, resolved from a built-in model catalog. Closing an agent saves a
+checkpoint for review: rate it, tag the reason, and export redacted Markdown
+under `.contextgit/knowledge/conversations/`. Generate a learning draft from the
+selected provider, then approve or reject it; approved lessons are written as
+`SKILL.md` files under `.contextgit/knowledge/skills/` and indexed in the managed
+`AGENTS.md` block. Drafts and ratings alone never activate guidance. Structured
+capture is currently verified for OpenCode; other agents use a bounded terminal
+recording labeled partial.
+
+This beta also includes the embedded VS Code workbench and native browser, reduced
 background polling and idle cleanup, the command palette, square-corner UI,
 and a direct project shell terminal. Update app now checks GitHub releases,
 shows clear status and errors, and opens the matching release's downloads.
@@ -29,6 +39,10 @@ The Why analysis surface is not exposed.
 - Usage reporting is available only for agents with a working local parser.
 - Native transcript capture is verified per agent. OpenCode is the first fully
   verified integration; other agents may work as terminals without capture.
+- AI cleaning and learning require a configured provider. Ollama works without an
+  API key; a custom OpenAI-compatible endpoint is also supported.
+- Learning is isolated per project. Markdown and skills live under the ignored
+  `.contextgit/` folder and are local artifacts, not automatically committed.
 - Use **Code → Diagnostics** when reporting a problem. Include the platform,
   architecture, shell, backend state, and agent detection results.
 
