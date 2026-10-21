@@ -9,7 +9,7 @@ export function useWorkbenchState() {
   // for older consumers while ensuring stale localStorage cannot reopen it.
   const mode = "single" as "single" | "team";
 
-  const { sessions, loaded: sessionsLoaded, loadedProjects, removedIds, error: sessionsError, refresh, create, remove, setAutoCommit, stop } = useSessionResource();
+  const { sessions, loaded: sessionsLoaded, loadedProjects, removedIds, error: sessionsError, refresh, create, addSession, remove, setAutoCommit, stop } = useSessionResource();
 
   const { board: teamBoard, error: teamError, refresh: refreshTeam, act: teamAct } = useTeamResource();
 
@@ -118,5 +118,5 @@ export function useWorkbenchState() {
     if (!activePath || !restoredProjects.current.has(activePath)) return;
     saveOpenPanes(openIds.filter(id => sessions.some(session => session.id === id && session.project_path === activePath)), activePath);
   }, [openIds, activePath, sessions]);
-  return { checkpointSession, setCheckpointSession, finishCloseAgentTab, mode, sessions, tabSessions, closeAgentTab, sessionsLoaded, removedIds, sessionsError, refresh, create, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, removeStoredSession, removeStoredBranch, clearStored, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
+  return { checkpointSession, setCheckpointSession, finishCloseAgentTab, mode, sessions, tabSessions, closeAgentTab, sessionsLoaded, removedIds, sessionsError, refresh, create, addSession, remove, setAutoCommit, stop, teamBoard, teamError, refreshTeam, teamAct, workspace, projects, activePath, workspaceError, choose, pickLocation, createWorkspace, useProject, forgetProject, projectOpen, setProjectOpen, openIds, setOpenIds, activeId, setActiveId, revision, setRevision, kickoff, setKickoff, trashSessions, trashBranches, trashError, refreshTrash, removeStoredSession, removeStoredBranch, clearStored, closedPanes, setClosedPanes, snapshot, repoLoading, repoError, refreshRepo, openSession, closeTerminal, restoredPanes };
 }

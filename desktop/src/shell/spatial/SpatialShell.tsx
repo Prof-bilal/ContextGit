@@ -13,6 +13,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./spatial.css";
 import {
+  type CSSProperties,
   lazy,
   memo,
   Suspense,
@@ -31,8 +32,8 @@ import {
   LuGrip,
   LuMemoryStick,
   LuPause,
+  LuPlus,
   LuPlay,
-  LuSend,
   LuSparkles,
   LuUsers,
   LuX,
@@ -49,8 +50,11 @@ import { harnessFor } from "@/shared/harnesses";
 import { SKILLS } from "@/shared/roles";
 import { terminalRuntime } from "../terminal/runtime";
 import EmbeddedTerminal from "../terminal/EmbeddedTerminal";
+import { AgentMark } from "../primitives";
 import { useWorkbenchState } from "../useWorkbenchState";
 import SkillsPanel from "./SkillsPanel";
+import AgentPicker from "./AgentPicker";
+import ProjectMenu from "./ProjectMenu";
 import VoiceInput from "./VoiceInput";
 import PlanReview from "./PlanReview";
 import FilesPanel from "./FilesPanel";
@@ -382,9 +386,10 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
       onClick={() => data.onOpen(session)}
     >
       <NodeResizer
-        isVisible
-        lineStyle={{ borderWidth: 2 }}
-        handleStyle={{ width: 12, height: 12, borderRadius: 3 }}
+        isVisible={data.selected}
+        color="#a77b60"
+        lineStyle={{ borderWidth: 1 }}
+        handleStyle={{ width: 7, height: 7, borderRadius: 2 }}
         minWidth={430}
         minHeight={360}
         maxWidth={1500}
@@ -397,7 +402,7 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
         }
       />
       <header className="sp-worker-head">
-        <span className="sp-agent-pixel">✣</span>
+        <AgentMark agent={session.agent ?? "shell"} label={harnessFor(session.agent)?.monogram ?? "$"} />
         <span className="sp-agent-project" title={projectPath}>
           {projectLabel(projectPath)}
         </span>
@@ -421,9 +426,14 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
         </button>
       </header>
       <span className="sp-worker-meta">
-        {task.agent ?? "unassigned"} · {task.role}
+        <span>{harnessFor(session.agent)?.label ?? session.agent ?? "Terminal"} <span aria-hidden="true">/</span> {task.role}</span>
+        <span title={session.worktree_path ?? projectPath}>{session.worktree_path ? "Worktree" : "Project root"}</span>
       </span>
       <EmbeddedTerminal sessionId={session.id} />
+      <footer className="sp-agent-footer">
+        <span>Interactive terminal</span>
+        <span>Click to type · Drag edges to resize</span>
+      </footer>
     </section>
   );
 });
@@ -1452,12 +1462,38 @@ export default function SpatialShell({
             }
           />
           <Controls showInteractive={false} />
-          <Panel position="top-right" className="sp-canvas-hint">
-            Drag agents · Scroll to zoom · Select a project in the command bar
+          <Panel position="top-right" className="sp-utilities"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button onClick={() => { setRunMode("agent"); setComposerOpen(true); }}>
+              <LuBot /> New agent
+            </button>
+            <button onClick={() => setPresetsOpen((value) => !value)}>Presets</button>
+            <button onClick={() => void openFiles()}><LuFile /> Files</button>
+              <button
+                disabled={!shared.workspace}
+                onClick={() =>
+                  void projectApi(selected?.team.project_path ?? shared.workspace!.path)
+                    .projectMemory(selected?.team.project_path ?? shared.workspace!.path)
+                    .then((result) =>
+                      setMemory(
+                        result.text ||
+                          "No reviewed project memory yet. Completed teams can propose reusable skills.",
+                      ),
+                    )
+                    .catch((cause) => setError(String(cause)))
+                }
+              >
+                <LuMemoryStick /> Memory
+              </button>
+              <button onClick={() => setSkillsOpen((value) => !value)}>
+                <LuSparkles /> Skills
+              </button>
+
           </Panel>
           {canvasTabs.length > 0 && (
             <Panel
-              position="top-center"
+              position="top-left"
               className="sp-tabs"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
@@ -1493,161 +1529,83 @@ export default function SpatialShell({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="sp-actions">
-              <button
-                onClick={() => {
-                  setRunMode("agent");
-                  setComposerOpen(true);
-                }}
-              >
-                <LuBot /> New agent
-              </button>
-              <button onClick={() => setPresetsOpen((value) => !value)}>
-                Presets
-              </button>
-              <button
-                disabled={
-                  !selected ||
-                  selected.tasks.length >= 12 ||
-                  busy ||
-                  selected.plan?.status !== "approved"
-                }
-                className="sp-orchestration-only"
-                onClick={() => setWorkerDialog(true)}
-              >
-                <LuUsers /> Spawn agent
-              </button>
-              {selected?.team.state === "ready" &&
-                selected.plan?.status === "approved" && (
-                  <button className="sp-orchestration-only"
-                    onClick={() =>
-                      void api
-                        .launchSpatialTeam(selected.team.id)
-                        .then(async () => {
-                          await shared.refresh();
-                          await loadTeams();
-                        })
-                        .catch((cause) => setError(String(cause)))
-                    }
+            <nav className="sp-project-dock" aria-label="Projects">
+              {shared.projects.map((project, index) => {
+                const active = shared.workspace?.path === project.path;
+                const running = shared.sessions.some((session) =>
+                  session.project_path === project.path && session.status === "running",
+                );
+                return (
+                  <div key={project.path} className="sp-dock-item">
+                    <button type="button" className="sp-dock-run"
+                      aria-label={`Run agent in ${project.name}`}
+                      title={`Run agent in ${project.name}`}
+                      onClick={() => {
+                        setCommandProjectPath(project.path);
+                        void shared.useProject(project.path).then(() => {
+                          setRunMode("agent");
+                          setComposerOpen(true);
+                        }).catch((cause) => setError(String(cause)));
+                      }}
+                    >
+                      <LuPlay aria-hidden="true" />
+                    </button>
+                  <button type="button" className="sp-dock-project"
+                    aria-label={project.name} aria-current={active ? "page" : undefined}
+                    data-active={active} data-running={running}
+                    style={{ "--dock-hue": (index * 67 + 18) % 360 } as CSSProperties}
+                    title={project.path}
+                    onClick={() => {
+                      setCommandProjectPath(project.path);
+                      void shared.useProject(project.path).catch((cause) => setError(String(cause)));
+                    }}
                   >
-                    Run team
+                    <span className="sp-dock-icon" aria-hidden="true">{project.name.slice(0, 2).toUpperCase()}</span>
+                    <span className="sp-dock-label">{project.name}</span>
+                    <span className="sp-dock-indicator" aria-hidden="true" />
                   </button>
-                )}
-              <button
-                disabled={!selectedWorkers.length}
-                className="sp-orchestration-only"
-                onClick={() => setGroupDialog(true)}
-              >
-                Group ({selectedWorkers.length})
-              </button>
-              <button
-                className="sp-orchestration-only"
-                disabled={!selected}
-                onClick={() =>
-                  selected &&
-                  void (
-                    selected.team.state === "paused"
-                      ? projectApi(selected.team.project_path).resumeSpatialTeam(selected.team.id)
-                      : projectApi(selected.team.project_path).pauseSpatialTeam(selected.team.id)
-                  ).then(loadTeams)
-                }
-              >
-                {selected?.team.state === "paused" ? <LuPlay /> : <LuPause />}{" "}
-                {selected?.team.state === "paused" ? "Resume" : "Pause"}
-              </button>
-              <button onClick={() => void openFiles()}>
-                <LuFile /> Files
-              </button>
-              <button
-                disabled={!shared.workspace}
-                onClick={() =>
-                  void projectApi(selected?.team.project_path ?? shared.workspace!.path)
-                    .projectMemory(selected?.team.project_path ?? shared.workspace!.path)
-                    .then((result) =>
-                      setMemory(
-                        result.text ||
-                          "No reviewed project memory yet. Completed teams can propose reusable skills.",
-                      ),
-                    )
-                    .catch((cause) => setError(String(cause)))
-                }
-              >
-                <LuMemoryStick /> Memory
-              </button>
-              <button onClick={() => setSkillsOpen((value) => !value)}>
-                <LuSparkles /> Skills
-              </button>
-              <button
-                className="sp-orchestration-only"
-                disabled={
-                  !selected ||
-                  !selected.tasks.length ||
-                  !selected.tasks.every((task) => task.status === "done")
-                }
-                onClick={() => void openMergeReview()}
-              >
-                Review merge
-              </button>
-            </div>
-            <div className="sp-command">
-              <VoiceInput onTranscript={setCommand} />
-              <select
-                className="sp-command-project"
-                aria-label="Run project"
-                value={commandProjectPath}
-                onChange={(event) => setCommandProjectPath(event.target.value)}
-                disabled={!shared.projects.length}
-              >
-                {shared.projects.map((project) => (
-                  <option key={project.path} value={project.path}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="sp-command-mode"
-                aria-label="Run configuration"
-                onClick={() => setComposerOpen((value) => !value)}
-              >
-                {runMode === "team" ? <LuUsers /> : <LuBot />}{" "}
-                {runMode === "team" ? "Team" : "Agent"}
-              </button>
-              <input
-                value={command}
-                onChange={(event) => setCommand(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter")
-                    void runFromComposer();
+                  </div>
+                );
+              })}
+              <button type="button" className="sp-dock-project sp-dock-add"
+                aria-label="Add project" title="Open a project folder"
+                onClick={() => {
+                  void shared.choose().then((project) => {
+                    if (project) setCommandProjectPath(project.path);
+                  }).catch((cause) => setError(String(cause)));
                 }}
-                placeholder={
-                  composerOpen
-                    ? "Describe the goal for this run…"
-                    : selected
-                      ? `Direct ${commandTarget === "orchestrator" ? `${selected.team.name}'s orchestrator` : "selected worker"}…`
-                      : "Describe a goal to start a new run…"
-                }
-                disabled={!shared.workspace}
-              />
-              <button
-                className="sp-send"
-                disabled={!shared.workspace || !command.trim()}
-                onClick={() =>
-                  void runFromComposer()
-                }
               >
-                <LuSend />
+                <span className="sp-dock-icon"><LuPlus /></span>
+                <span className="sp-dock-label">Add project</span>
               </button>
-            </div>
-            {composerOpen && (
+            </nav>
+
+          </Panel>
+        </ReactFlow>
+      )}
+
+      {composerOpen && (
+        <div className="sp-modal-backdrop sp-agent-modal" onClick={(event) => {
+          if (event.target === event.currentTarget && !busy) setComposerOpen(false);
+        }}>
               <div
                 className="sp-composer"
                 role="dialog"
+                aria-modal="true"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !busy) { event.stopPropagation(); setComposerOpen(false); }
+                  if (event.key !== "Tab") return;
+                  const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)")];
+                  const first = controls[0], last = controls[controls.length - 1];
+                  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                  if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+                }}
                 aria-label="Run configuration"
               >
                 <div className="sp-composer-heading">
                   <div>
-                    <strong>New run</strong>
-                    <small>Choose how this prompt should run</small>
+                    <strong>New agent</strong>
+                    <small>Give your agent a task and a place to work.</small>
                   </div>
                   <button
                     className="sp-icon"
@@ -1657,52 +1615,48 @@ export default function SpatialShell({
                     <LuX />
                   </button>
                 </div>
+                <div className="sp-run-project">
+                  <span className="sp-run-project-icon"><LuFolderOpen aria-hidden="true" /></span>
+                  <div className="sp-run-project-details">
+                    <span className="sp-project-menu-label">Project</span>
+                    <ProjectMenu projects={shared.projects} value={commandProjectPath}
+                      onChange={setCommandProjectPath} disabled={busy} />
+                    <small title={commandProjectPath}>{commandProjectPath}</small>
+                  </div>
+                </div>
+                <div className="sp-run-task">
+                  <label htmlFor="sp-agent-task">What should the agent do?</label>
+                  <textarea id="sp-agent-task" aria-label="Agent task" autoFocus
+                    value={command} onChange={(event) => setCommand(event.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && command.trim() && !busy) {
+                        event.preventDefault();
+                        void runFromComposer();
+                      }
+                    }}
+                    placeholder="Describe the task, the changes you need, or a problem to investigate…"
+                    disabled={busy || !shared.workspace}
+                    rows={4}
+                  />
+                  <div className="sp-run-task-tools">
+                    <VoiceInput onTranscript={setCommand} />
+                    <span>Be as specific as you like.</span>
+                  </div>
+                </div>
                 <div className="sp-composer-grid">
-                  <label>
-                    Mode
-                    <select
-                      value={runMode}
-                      onChange={(event) =>
-                        setRunMode(event.target.value as "team" | "agent")
-                      }
-                    >
-                      <option value="agent">Single agent</option>
-                    </select>
-                  </label>
-                  <label>
-                    Project root
-                    <input
-                      value={commandProjectPath || "Choose a project"}
-                      readOnly
-                    />
-                  </label>
-                  <label>
-                    Execution
-                    <select
-                      value={worktreeMode}
-                      onChange={(event) =>
-                        setWorktreeMode(
-                          event.target.value as "root" | "worktree",
-                        )
-                      }
-                    >
-                      <option value="root">Project root</option>
-                      <option value="worktree">Fresh worktree</option>
-                    </select>
-                  </label>
-                  <label>
-                    CLI
-                    <select
-                      value={orchestrator}
-                      onChange={(event) => setOrchestrator(event.target.value)}
-                    >
-                      {HARNESSES.map((harness) => (
-                        <option key={harness.id} value={harness.id}>
-                          {harness.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="sp-run-agent-field">
+                    <span>Agent CLI</span>
+                    <AgentPicker value={orchestrator} onChange={setOrchestrator} disabled={busy} />
+                  </div>
+                  <div className="sp-run-execution">
+                    <span>Run location</span>
+                    <div role="group" aria-label="Execution">
+                      <button type="button" aria-pressed={worktreeMode === "root"}
+                        disabled={busy} onClick={() => setWorktreeMode("root")}>Project root</button>
+                      <button type="button" aria-pressed={worktreeMode === "worktree"}
+                        disabled={busy} onClick={() => setWorktreeMode("worktree")}>New worktree</button>
+                    </div>
+                  </div>
                   {runMode === "team" && (
                     <>
                       <label>
@@ -1770,15 +1724,16 @@ export default function SpatialShell({
                 </div>
                 <div className="sp-composer-footer">
                   <span>
-                    {runMode === "team"
-                      ? `${agentCount} workers · ${worktreeMode === "worktree" ? "isolated worktree" : "shared project root"}`
-                      : `${worktreeMode === "worktree" ? "isolated worktree" : "project root"}`}
+                    {worktreeMode === "worktree" ? "Changes stay in a separate worktree." : "Works directly in your project folder."}
                   </span>
+                  <button type="button" className="sp-run-cancel" disabled={busy}
+                    onClick={() => setComposerOpen(false)}>Cancel</button>
                   <button
                     className="sp-primary"
                     disabled={!shared.workspace || !command.trim() || busy}
                     onClick={() => void runFromComposer()}
                   >
+                    <LuPlay aria-hidden="true" />
                     {busy
                       ? "Starting…"
                       : runMode === "team"
@@ -1787,9 +1742,7 @@ export default function SpatialShell({
                   </button>
                 </div>
               </div>
-            )}
-          </Panel>
-        </ReactFlow>
+        </div>
       )}
 
       {error && (

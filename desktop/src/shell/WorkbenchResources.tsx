@@ -10,7 +10,7 @@ const unavailable = async (): Promise<never> => { throw new Error("This data sou
 const refreshUnavailable = async () => { };
 const useSessionsSource = createIsolatedResource<ReturnType<typeof useSessions>>("Sessions", useSessions, {
   sessions: [], loaded: false, loadedProjects: [], removedIds: [], error: null, refresh: refreshUnavailable,
-  create: unavailable, remove: unavailable, setAutoCommit: unavailable, stop: unavailable,
+  create: unavailable, addSession: () => {}, remove: unavailable, setAutoCommit: unavailable, stop: unavailable,
 });
 // Team mode is retired. Keep a typed compatibility value for old Code panels,
 // but do not poll or expose the old board as an active resource.

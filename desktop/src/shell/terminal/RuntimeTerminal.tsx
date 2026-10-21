@@ -50,20 +50,15 @@ export default function RuntimeTerminal({ sessionId }: { sessionId: string }) {
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current);
-    let previous = "";
-    const paint = () => {
+    const offOutput = terminalRuntime.subscribeOutput(sessionId, (data) => terminal.write(data));
+    let previousError: string | undefined;
+    const paintStatus = () => {
       const next = terminalRuntime.snapshot(sessionId);
-      if (next.output.startsWith(previous))
-        terminal.write(next.output.slice(previous.length));
-      else {
-        terminal.reset();
-        terminal.write(next.output);
-      }
-      previous = next.output;
-      if (next.error) terminal.write(`\r\n${next.error}\r\n`);
+      if (next.error && next.error !== previousError) terminal.write(`\r\n${next.error}\r\n`);
+      previousError = next.error;
     };
-    paint();
-    const off = terminalRuntime.subscribe(sessionId, paint);
+    paintStatus();
+    const off = terminalRuntime.subscribe(sessionId, paintStatus);
     const input = terminal.onData((text) => {
       void terminalRuntime.send(sessionId, text).catch(() => {});
     });
@@ -80,6 +75,7 @@ export default function RuntimeTerminal({ sessionId }: { sessionId: string }) {
     terminal.focus();
     return () => {
       off();
+      offOutput();
       input.dispose();
       resize.disconnect();
       terminal.dispose();

@@ -153,39 +153,57 @@
   background: linear-gradient(180deg, #241b1af5, #121011fa);
   box-shadow: 0 18px 55px #000a, inset 0 1px #ffffff10;
 }
-.sp-agent-node {
+.sp-worker.sp-agent-node {
   width: 100%;
   height: 100%;
-  min-height: 480px;
+  min-height: 360px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   position: relative;
-  padding: 14px;
-  border-color: #82412d;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #241b1af5, #121011fa);
+  gap: 0;
+  padding: 0;
+  border-color: #594239;
+  border-radius: 14px;
+  background: #1c1817;
   box-shadow:
     0 18px 55px #000a,
     inset 0 1px #ffffff10;
   cursor: default;
 }
 .sp-agent-node[data-selected="true"] {
-  border-color: var(--sp-orange);
+  border-color: #a77b60;
   box-shadow:
-    0 0 0 1px #ff6a324d,
+    0 0 0 1px #a77b6030,
     0 18px 55px #000a,
-    0 0 32px #ff5b2517;
+    0 0 32px #a77b6010;
 }
+.sp-agent-node:hover { transform: none; border-color: #8a6551; }
 .sp-agent-node .sp-worker-head {
-  min-height: 30px;
+  flex-shrink: 0;
+  min-height: 54px;
+  gap: 10px;
+  padding: 10px 14px;
+  border-color: #ffffff08;
   cursor: grab;
 }
+.sp-agent-node .sp-worker-head .cg-mark { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; background: #ffffff07; }
+.sp-agent-node .sp-agent-project { border: 0; padding: 0; color: #b8a294; font-size: 11px; font-weight: 400; }
+.sp-agent-node .sp-worker-head em { display: flex; align-items: center; gap: 5px; font-size: 9px; padding: 4px 7px; border-radius: 6px; background: #ffffff04; color: #bca99a; }
+.sp-agent-node .sp-worker-head em::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #a08973; }
+.sp-agent-node[data-status="working"] .sp-worker-head em::before { background: #9fbd85; }
+.sp-agent-node .sp-worker-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; color: #9e8b7f; font-size: 10px; flex-shrink: 0; }
+.sp-agent-node .sp-worker-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-agent-node .sp-worker-meta > span:last-child { flex-shrink: 0; color: #807167; }
+.sp-agent-node .sp-worker-meta span[aria-hidden] { padding: 0 6px; color: #604d42; }
+.sp-agent-footer { display: flex; justify-content: space-between; gap: 14px; padding: 9px 15px; font-size: 9px; color: #8e7e72; flex-shrink: 0; }
+.sp-agent-footer > span:last-child { color: #716259; }
 .sp-agent-node .sp-worker-head:active {
   cursor: grabbing;
 }
 .sp-agent-node .sp-worker-head strong {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
 }
 .sp-agent-node .sp-embedded-terminal,
 .sp-agent-node .sp-term-placeholder {
@@ -195,10 +213,12 @@
   bottom: auto;
   left: auto;
   flex: 1 1 auto;
-  width: 100%;
+  width: calc(100% - 20px);
+  margin: 0 10px;
   height: auto;
-  min-height: 380px;
-  border-color: #4a3029;
+  min-height: 180px;
+  border-color: #ffffff09;
+  border-radius: 9px;
 }
 .sp-team[data-standalone="true"] .sp-worker-head {
   min-height: 30px;
@@ -489,16 +509,13 @@
   height: 132px;
   border-color: #4d3565;
 }
-.sp-embedded-terminal .xterm,
-.sp-embedded-terminal .xterm-screen,
-.sp-embedded-terminal .xterm-viewport {
-  width: 100% !important;
-  height: 100% !important;
-}
 .sp-embedded-terminal .xterm {
-  padding: 5px;
+  height: 100%;
+  padding: 10px;
+  background: #151112;
 }
 .sp-embedded-terminal .xterm-viewport {
+  background-color: #151112;
   overflow-y: auto !important;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -537,14 +554,100 @@
   font-size: 10px;
 }
 .sp-bottom {
-  width: min(980px, calc(100vw - 32px));
+  width: max-content;
+  max-width: calc(100% - 32px);
   margin: 0 0 17px !important;
+}
+.sp-project-dock {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 100%;
+  padding: 14px 18px 10px;
+  overflow-x: auto;
+  border: 0;
+  background: transparent;
+  scrollbar-width: none;
+}
+.sp-project-dock::-webkit-scrollbar { display: none; }
+.sp-dock-item { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 10px; }
+.sp-shell .sp-dock-run {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 5px;
+  border: 1px solid #775443;
+  border-radius: 50%;
+  background: #2c211ee8;
+  color: #efbb99;
+  cursor: pointer;
+}
+.sp-shell .sp-dock-run:hover { background: #5a3526; border-color: var(--sp-orange); }
+.sp-shell .sp-dock-run:focus-visible { outline: 2px solid var(--sp-orange); outline-offset: 3px; }
+.sp-dock-run svg { width: 12px; height: 12px; }
+.sp-dock-project {
+  display: flex;
+  flex: 0 0 auto;
+  width: 76px;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: #c8bdb7;
+  cursor: pointer;
+}
+.sp-dock-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid hsl(var(--dock-hue, 20) 35% 42% / 0.6);
+  border-radius: 50%;
+  background: linear-gradient(145deg, hsl(var(--dock-hue, 20) 28% 28%), hsl(var(--dock-hue, 20) 20% 14%));
+  color: hsl(var(--dock-hue, 20) 60% 78%);
+  font-size: 17px;
+  font-weight: 600;
+  box-shadow: inset 0 1px #ffffff12, 0 5px 12px #0004;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.sp-dock-project:hover .sp-dock-icon,
+.sp-dock-project[data-active="true"] .sp-dock-icon {
+  transform: translateY(-5px) scale(1.1);
+  box-shadow: 0 0 0 2px #e58c5755, 0 8px 22px #0006;
+}
+.sp-dock-project:focus-visible { outline: 2px solid var(--sp-orange); outline-offset: 4px; border-radius: 12px; }
+.sp-dock-label { max-width: 82px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.sp-dock-indicator { width: 4px; height: 4px; border-radius: 50%; background: #74635b; }
+.sp-dock-project[data-running="true"] .sp-dock-indicator { background: var(--sp-green); }
+.sp-dock-project[data-active="true"] .sp-dock-indicator { background: var(--sp-orange); box-shadow: 0 0 8px #f9731680; }
+.sp-dock-add { padding-bottom: 14px; }
+.sp-dock-add .sp-dock-icon { background: #302727; color: #ebdcd5; border-color: #665049; font-size: 24px; }
+.sp-utilities { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: calc(100% - 32px); }
+.sp-utilities button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; border: 1px solid #5b4036; border-radius: 999px; background: #211a1bea; color: #d9c9c0; cursor: pointer; font-size: 11px; }
+.sp-utilities button:hover { background: #392824; border-color: #b16e4c; }
+.sp-utilities button:focus-visible { outline: 2px solid var(--sp-orange); outline-offset: 2px; }
+.sp-agent-modal .sp-composer { margin: 0; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.sp-composer .sp-command { margin: 14px 0; }
+.sp-composer .sp-command-project { flex: 0 1 140px; width: 140px; }
+.sp-composer .sp-command input { flex: 1 1 0; width: 0; min-width: 60px; }
+.sp-composer .sp-command > button { flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .sp-dock-icon { transition: none; } }
+@media (max-width: 760px) {
+  .sp-dock-project { width: 60px; }
+  .sp-project-dock { gap: 6px; padding: 10px; }
+  .sp-dock-icon { width: 44px; height: 44px; }
+  .sp-utilities { gap: 4px; }
+  .sp-utilities button { padding: 7px 9px; font-size: 10px; }
+  .sp-shell .sp-tabs { margin-top: 64px !important; max-width: calc(100vw - 32px); }
 }
 .sp-tabs {
   display: flex !important;
   align-items: center;
   gap: 6px;
-  max-width: min(880px, calc(100vw - 420px));
+  max-width: min(880px, calc(100vw - 540px));
   margin-top: 20px !important;
   padding: 6px 8px !important;
   overflow-x: auto;
@@ -823,6 +926,103 @@
   justify-content: center;
   padding: 9px 13px;
   border-radius: 9px;
+}
+.sp-agent-modal .sp-composer {
+  width: min(620px, calc(100vw - 32px));
+  padding: 26px;
+  border-color: #4b3731;
+  border-radius: 20px;
+  background: linear-gradient(155deg, #241d1c, #191617);
+  box-shadow: 0 28px 100px #000b, inset 0 1px #ffffff08;
+}
+.sp-agent-modal .sp-composer-heading { border: 0; padding: 0; margin-bottom: 24px; align-items: flex-start; }
+.sp-agent-modal .sp-composer-heading strong { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; }
+.sp-agent-modal .sp-composer-heading small { margin-top: 5px; font-size: 12px; color: #b1a29b; }
+.sp-run-project { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #ffffff09; background: #ffffff02; border-radius: 12px; margin-bottom: 24px; }
+.sp-run-project-icon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; background: #a5683520; color: #d5a47c; font-size: 19px; }
+.sp-run-project-details { flex: 1; min-width: 0; }
+.sp-agent-modal .sp-run-project-details label { font-size: 10px; color: #9f9087; text-transform: none; letter-spacing: 0; }
+.sp-run-project-picker { position: relative; margin-top: 4px; }
+.sp-run-project-picker > svg { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: #a89589; pointer-events: none; }
+.sp-agent-modal .sp-run-project-details select {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0 28px 0 0;
+  height: 28px;
+  line-height: 28px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #eee2d9;
+  box-shadow: none;
+  text-overflow: ellipsis;
+  color-scheme: dark;
+}
+.sp-agent-modal .sp-run-project-details select:focus-visible { outline: 2px solid #bd7e5470; outline-offset: 3px; }
+.sp-run-project-details select option { background: #211b19; color: #eee2d9; }
+.sp-run-project-details small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8d807b; font-size: 10px; line-height: 1.5; margin-top: 3px; }
+.sp-agent-modal .sp-run-task > label { text-transform: none; letter-spacing: 0; color: #ddd3cd; font-size: 13px; margin-bottom: 10px; }
+.sp-agent-modal .sp-run-task textarea { display: block; width: 100%; min-height: 126px; resize: vertical; padding: 14px; background: #131112; color: #eee3dc; border: 1px solid #534037; border-radius: 12px; font-size: 13px; line-height: 1.6; outline: none; }
+.sp-agent-modal .sp-run-task textarea::placeholder { color: #82746d; }
+.sp-agent-modal .sp-run-task textarea:focus { border-color: #bd7e54; box-shadow: 0 0 0 3px #bd7e5412; }
+.sp-run-task-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: #8d807b; font-size: 11px; }
+.sp-run-task-tools > button { width: 28px; height: 28px; padding: 6px; border: 1px solid #49362e; border-radius: 8px; background: #ffffff03; cursor: pointer; }
+.sp-agent-modal .sp-composer-grid { gap: 18px; margin: 22px 0 24px; }
+.sp-agent-modal .sp-composer-grid > label,
+.sp-run-execution > span { font-size: 12px; letter-spacing: 0; text-transform: none; color: #bfaea4; }
+.sp-agent-modal .sp-composer-grid > label { gap: 9px; }
+.sp-run-select { display: flex; align-items: center; gap: 8px; border: 1px solid #4b3830; border-radius: 10px; background: #171314; padding: 0 11px; }
+.sp-run-select > svg { flex-shrink: 0; color: #a99588; width: 15px; }
+.sp-agent-modal .sp-run-select select { appearance: none; border: 0; box-shadow: none; padding: 0; height: 40px; font-size: 12px; background: transparent; }
+.sp-run-select:focus-within { outline: 2px solid #bd7e5470; outline-offset: 1px; }
+.sp-run-execution { display: flex; flex-direction: column; gap: 9px; }
+.sp-run-agent-field { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.sp-run-agent-field > span { font-size: 12px; color: #bfaea4; }
+.sp-agent-picker { position: relative; min-width: 0; }
+.sp-agent-picker-trigger { display: flex; align-items: center; gap: 9px; width: 100%; height: 42px; padding: 0 12px; border: 1px solid #574034; border-radius: 10px; background: #1b1615; cursor: pointer; text-align: left; }
+.sp-agent-picker-trigger > span:not(.cg-mark) { flex: 1; font-size: 12px; }
+.sp-agent-picker-trigger > svg { width: 14px; color: #b99e8a; }
+.sp-agent-picker-trigger:hover, .sp-agent-picker-trigger[aria-expanded="true"] { border-color: #ac7750; background: #2b201a; }
+.sp-agent-picker-trigger:disabled { opacity: 0.5; cursor: default; }
+.sp-agent-picker-menu { position: absolute; bottom: calc(100% + 8px); left: 0; width: 100%; min-width: 220px; z-index: 5; padding: 6px; border: 1px solid #70503c; border-radius: 14px; background: #211b18; box-shadow: 0 12px 40px #000a, inset 0 1px #ffffff09; }
+.sp-agent-picker-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 8px 10px; font-size: 11px; color: #d0bcae; border-bottom: 1px solid #ffffff09; }
+.sp-agent-picker-heading > span { color: #8f7b6f; font-size: 10px; }
+.sp-agent-picker-list { max-height: min(280px, 38dvh); overflow-y: auto; outline: 0; padding-top: 4px; scrollbar-width: thin; scrollbar-color: #70503c transparent; }
+.sp-agent-picker-option { display: flex; align-items: center; gap: 11px; min-height: 49px; padding: 8px 10px; margin: 2px 0; border-radius: 9px; border: 1px solid transparent; cursor: pointer; }
+.sp-agent-picker-option[data-highlighted="true"] { background: #493025; border-color: #7e523b; }
+.sp-agent-picker-option[aria-selected="true"] { background: #392b21; }
+.sp-agent-picker-option > span:not(.cg-mark) { flex: 1; min-width: 0; }
+.sp-agent-picker-option strong { display: block; color: #efded2; font-size: 12px; font-weight: 500; }
+.sp-agent-picker-option small { display: block; margin-top: 3px; font-size: 10px; color: #ae9483; }
+.sp-agent-picker-check { flex-shrink: 0; color: #e6ab78; width: 15px; }
+.sp-agent-picker .cg-mark { display: grid; place-items: center; flex: 0 0 27px; width: 27px; height: 27px; border-radius: 8px; background: #ffffff06; }
+.sp-project-menu-label { display: block; font-size: 10px; color: #9f9087; }
+.sp-project-menu-trigger { height: 30px; padding: 0; background: transparent; border-color: transparent; }
+.sp-project-menu-trigger > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sp-project-menu-trigger:hover, .sp-project-menu-trigger[aria-expanded="true"] { background: transparent; border-color: transparent; color: #f0c7a7; }
+.sp-project-menu .sp-agent-picker-menu { top: calc(100% + 8px); bottom: auto; }
+.sp-project-menu .sp-agent-picker-option > .sp-project-menu-icon { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 8px; color: #d5a47c; background: #b9753320; }
+.sp-project-menu .sp-agent-picker-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; }
+.sp-project-menu .sp-agent-picker-list { max-height: min(240px, 30dvh); }
+.sp-run-execution > div { display: flex; gap: 3px; padding: 3px; height: 42px; border: 1px solid #4b3830; background: #141112; border-radius: 10px; }
+.sp-run-execution button { flex: 1; min-width: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; font-size: 11px; color: #a89388; cursor: pointer; }
+.sp-run-execution button[aria-pressed="true"] { background: #362a24; border-color: #70513e; color: #f1cdb2; box-shadow: 0 2px 6px #0003; }
+.sp-agent-modal .sp-composer-footer { gap: 10px; padding-top: 18px; border-color: #ffffff0b; }
+.sp-agent-modal .sp-composer-footer > span { flex: 1; font-size: 10px; line-height: 1.5; color: #99897f; }
+.sp-run-cancel { padding: 10px 12px; border: 0; background: transparent; color: #c6b5aa; cursor: pointer; font-size: 12px; }
+.sp-agent-modal .sp-composer-footer .sp-primary { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; font-size: 12px; background: #cb8558; color: #1c120c !important; }
+.sp-agent-modal .sp-primary:disabled { opacity: 0.4; cursor: default; }
+.sp-agent-modal button:focus-visible { outline: 2px solid #d19368; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .sp-agent-modal .sp-composer { padding: 20px; }
+  .sp-agent-modal .sp-composer-grid { grid-template-columns: 1fr; }
+  .sp-agent-modal .sp-composer-footer { flex-wrap: wrap; }
+  .sp-agent-modal .sp-composer-footer > span { flex-basis: 100%; }
+  .sp-agent-modal .sp-run-cancel { margin-left: auto; }
 }
 @media (max-width: 700px) {
   .sp-composer-grid {

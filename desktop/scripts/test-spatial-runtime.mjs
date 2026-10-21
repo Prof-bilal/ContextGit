@@ -76,6 +76,19 @@ try {
   onData("pty-worker-0", "survives closing terminal\r\n");
   assert.equal(renders, 1);
   assert.match(runtime.snapshot("worker-0").tail, /survives closing/);
+  const chunks = [];
+  const offOutput = runtime.subscribeOutput("worker-0", (data) => chunks.push(data));
+  assert.equal(chunks.shift(), runtime.snapshot("worker-0").output, "New views replay retained output once");
+  const longOutput = "x".repeat(100_000);
+  onData("pty-worker-0", longOutput);
+  onData("pty-worker-0", longOutput);
+  onData("pty-worker-0", "\x1b[2;1HIncremental frame");
+  assert.equal(chunks.join(""), longOutput + longOutput + "\x1b[2;1HIncremental frame", "Live views receive original bytes across history rollover");
+  assert.equal(runtime.snapshot("worker-0").output.length, 180_000);
+  offOutput();
+  const delivered = chunks.length;
+  onData("pty-worker-0", "after unsubscribe");
+  assert.equal(chunks.length, delivered, "Disposed views stop receiving output");
   assert.equal(
     kills.length,
     0,

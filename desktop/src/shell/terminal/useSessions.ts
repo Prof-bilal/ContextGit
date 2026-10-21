@@ -123,6 +123,14 @@ export function useSessions() {
     setSessions((current) => current.filter((session) => session.id !== id));
   }, []);
 
+  const addSession = useCallback((session: Session) => {
+    revision.current.changed();
+    setSessions((current) =>
+      current.some((entry) => entry.id === session.id) ? current : [...current, session],
+    );
+    setLoaded(true);
+  }, []);
+
   const setAutoCommit = useCallback(async (id: string, autoCommit: boolean) => {
     const updated = await api.updateSession(id, { auto_commit: autoCommit });
     revision.current.changed();
@@ -137,5 +145,5 @@ export function useSessions() {
     return updated;
   }, []);
 
-  return { sessions, loaded, loadedProjects, removedIds, error, refresh, create, remove, setAutoCommit, stop };
+  return { sessions, loaded, loadedProjects, removedIds, error, refresh, create, addSession, remove, setAutoCommit, stop };
 }

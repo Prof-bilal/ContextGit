@@ -26,6 +26,7 @@ type Entry = {
 export class TerminalRuntime {
   private entries = new Map<string, Entry>();
   private listeners = new Map<string, Set<() => void>>();
+  private outputListeners = new Map<string, Set<(data: string) => void>>();
   private connected = false;
   private connect() {
     if (this.connected) return;
@@ -44,6 +45,9 @@ export class TerminalRuntime {
         tail: readableTerminalOutput(output.slice(-8000)).slice(-1400),
       };
       entry.pending += data;
+      // Live emulators need every byte in order. The capped history is only
+      // a replay/tail buffer; trimming it must never reset a running TUI.
+      this.outputListeners.get(entry.session.id)?.forEach((listener) => listener(data));
       if (!entry.timer)
         entry.timer = setTimeout(() => {
           entry.timer = undefined;
@@ -218,6 +222,7 @@ export class TerminalRuntime {
         tail: readableTerminalOutput(output).slice(-1400),
         state: "exited",
       };
+      this.outputListeners.get(session.id)?.forEach((listener) => listener(output));
     } catch (cause) {
       entry.snapshot = {
         ...entry.snapshot,
@@ -253,6 +258,17 @@ export class TerminalRuntime {
       await api.stage(id, [{ role: "tool", content: entry.snapshot.tail }]);
     if ((await api.staging(id)).length)
       await api.commitStaged(id, `checkpoint: ${entry.session.name}`);
+  }
+  subscribeOutput(id: string, listener: (data: string) => void) {
+    const listeners = this.outputListeners.get(id) ?? new Set<(data: string) => void>();
+    this.outputListeners.set(id, listeners);
+    listeners.add(listener);
+    const output = this.snapshot(id).output;
+    if (output) listener(output);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.outputListeners.delete(id);
+    };
   }
   subscribe(id: string, listener: () => void) {
     const listeners = this.listeners.get(id) ?? new Set<() => void>();
