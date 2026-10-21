@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -10,9 +10,13 @@ const TERMINAL_FONT =
   "'JetBrains Mono', 'Cascadia Mono', 'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 /** A real, interactive xterm view embedded inside a team worker card. */
-export default function EmbeddedTerminal({ sessionId }: { sessionId: string }) {
+export default function EmbeddedTerminal({ sessionId, onResume }: { sessionId: string; onResume?: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const state = useSyncExternalStore(
+    listener => terminalRuntime.subscribe(sessionId, listener),
+    () => terminalRuntime.snapshot(sessionId),
+  );
 
   useEffect(() => {
     if (!host.current) return;
@@ -137,7 +141,7 @@ export default function EmbeddedTerminal({ sessionId }: { sessionId: string }) {
   return (
     <div
       ref={host}
-      className="sp-embedded-terminal nodrag nowheel"
+      className="sp-embedded-terminal nodrag nopan nowheel"
       aria-label="Interactive agent terminal. Click to focus, wheel to scroll."
       title="Click to type · Scroll inside the terminal"
       onPointerDown={(event) => event.stopPropagation()}
@@ -146,12 +150,23 @@ export default function EmbeddedTerminal({ sessionId }: { sessionId: string }) {
         termRef.current?.focus();
       }}
       onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      onKeyUp={(event) => event.stopPropagation()}
       onWheel={(event) => {
-        // Keep wheel inside xterm: stop ReactFlow zoom/pan from hijacking
-        // opencode's scrollback and alt-screen scrolling.
+        // Bubble only: capture would stop the event before xterm receives it,
+        // breaking scrollback and TUI mouse reporting. The nowheel class also
+        // keeps ReactFlow's native zoom/pan handlers out of the terminal.
         event.stopPropagation();
       }}
-      onWheelCapture={(event) => event.stopPropagation()}
-    />
+    >
+      {onResume && ["idle", "error", "exited"].includes(state.state) && (
+        <div className="sp-terminal-resume">
+          {state.error && <span role="alert">{state.error}</span>}
+          <button type="button" onClick={event => {event.stopPropagation();onResume();}}>
+            {state.state === "idle" ? "Resume terminal" : "Restart terminal"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

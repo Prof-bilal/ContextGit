@@ -1562,6 +1562,11 @@ fn pty_start(
     // desktop app was launched from a graphical session without TERM set.
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    // Agent launchers may set NO_COLOR for their own captured output. Native
+    // interactive PTYs must advertise their own capabilities instead.
+    command.env_remove("NO_COLOR");
+    command.env_remove("CLICOLOR");
+    command.env_remove("CLICOLOR_FORCE");
     if let Some(cwd) = options.cwd.as_deref() {
         command.cwd(cwd);
     }

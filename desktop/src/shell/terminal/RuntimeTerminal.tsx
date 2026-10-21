@@ -124,7 +124,18 @@ export default function RuntimeTerminal({ sessionId }: { sessionId: string }) {
           }}
         />
       )}
-      <div ref={host} style={{ flex: 1, minHeight: 0, padding: 10 }} />
+      <div
+        ref={host}
+        className="nodrag nopan nowheel"
+        style={{ flex: 1, minHeight: 0, padding: 10 }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        onKeyUp={(event) => event.stopPropagation()}
+        // Bubble only: xterm must receive wheel events before the canvas.
+        onWheel={(event) => event.stopPropagation()}
+      />
     </div>
   );
 }

@@ -55,7 +55,6 @@ import { useWorkbenchState } from "../useWorkbenchState";
 import SkillsPanel from "./SkillsPanel";
 import AgentPicker from "./AgentPicker";
 import ProjectMenu from "./ProjectMenu";
-import VoiceInput from "./VoiceInput";
 import PlanReview from "./PlanReview";
 import FilesPanel from "./FilesPanel";
 import PresetsPanel, { type TeamPreset } from "./PresetsPanel";
@@ -64,6 +63,9 @@ import { useCanvasPreference } from "./useCanvasPreference";
 const RuntimeTerminal = lazy(() => import("../terminal/RuntimeTerminal"));
 
 type TeamNodeData = {
+  batchId?: string;
+  batchName?: string;
+  batchSessionIds?: string[];
   team: SpatialTeam;
   sessions: Session[];
   taskId?: string;
@@ -147,7 +149,7 @@ function savedAgentPosition(projectPath: string, sessionId: string) {
 function saveAgentLayout(
   projectPath: string,
   sessionId: string,
-  layout: { width?: number; height?: number },
+  layout: { width?: number; height?: number; x?: number; y?: number },
 ) {
   const key = agentPositionKey(projectPath, sessionId);
   let current: Record<string, number> = {};
@@ -407,8 +409,7 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
           {projectLabel(projectPath)}
         </span>
         <strong>
-          {harnessFor(session.agent)?.label ?? session.agent ?? "Agent"} ·{" "}
-          {task.title.replace(/^Agent · /, "")}
+          {session.name.replace(/^Agent · /, "")}
         </strong>
         <em>{task.status}</em>
         <button
@@ -425,20 +426,32 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
           <LuX />
         </button>
       </header>
-      <span className="sp-worker-meta">
-        <span>{harnessFor(session.agent)?.label ?? session.agent ?? "Terminal"} <span aria-hidden="true">/</span> {task.role}</span>
-        <span title={session.worktree_path ?? projectPath}>{session.worktree_path ? "Worktree" : "Project root"}</span>
-      </span>
-      <EmbeddedTerminal sessionId={session.id} />
-      <footer className="sp-agent-footer">
-        <span>Interactive terminal</span>
-        <span>Click to type · Drag edges to resize</span>
-      </footer>
+      <EmbeddedTerminal sessionId={session.id} onResume={() => data.onOpen(session)} />
     </section>
   );
 });
 
-const nodeTypes = { team: TeamNode, agent: AgentNode };
+const BatchNode = memo(function BatchNode({ data }: NodeProps<Node<TeamNodeData>>) {
+  const sessions = data.batchSessionIds?.flatMap(id => data.sessions.filter(session => session.id === id)) ?? [];
+  return <section className="sp-batch nopan" aria-label={data.batchName}>
+    <NodeResizer isVisible={data.selected} minWidth={880} minHeight={400}
+      color="#9d603e" onResizeEnd={(_event, params) => saveAgentLayout(data.team.team.project_path, data.batchId!, {width:params.width,height:params.height})} />
+    <header className="sp-batch-head"><LuGrip /><strong>{data.batchName}</strong><span>{sessions.length} agents</span></header>
+    <div className="sp-batch-grid nodrag" style={{gridTemplateColumns:`repeat(${Math.min(2, sessions.length)}, minmax(0, 1fr))`}}>
+      {sessions.map(session => <section className="sp-batch-terminal" key={session.id}>
+        <header><AgentMark agent={session.agent ?? "shell"} label={harnessFor(session.agent)?.monogram ?? "$"} />
+          <strong>{session.name}</strong><span>{session.status}</span>
+          <button className="sp-agent-close" aria-label={`Close ${session.name}`} onClick={() => data.onCloseAgent(session)}><LuX /></button>
+        </header>
+        <EmbeddedTerminal sessionId={session.id} onResume={() => data.onOpen(session)} />
+      </section>)}
+    </div>
+  </section>;
+});
+
+type CanvasBatch = {id:string; name:string; projectPath:string; sessionIds:string[]};
+const BATCH_STORAGE = "contextgit:canvas-batches:v1";
+const nodeTypes = { team: TeamNode, agent: AgentNode, batch: BatchNode };
 
 export default function SpatialShell({
   backendAvailable = true,
@@ -447,6 +460,13 @@ export default function SpatialShell({
 }) {
   const shared = useWorkbenchState();
   const [teams, setTeams] = useState<SpatialTeam[]>([]);
+  const [batches, setBatches] = useState<CanvasBatch[]>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(BATCH_STORAGE) ?? "[]");
+      return Array.isArray(stored) ? stored.filter(batch => typeof batch.id === "string" && typeof batch.name === "string" && typeof batch.projectPath === "string" && Array.isArray(batch.sessionIds)) : [];
+    } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem(BATCH_STORAGE, JSON.stringify(batches)); }, [batches]);
   const [nodes, setNodes] = useState<Node<TeamNodeData>[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [closedAgentIds, setClosedAgentIds] = useState<string[]>([]);
@@ -468,15 +488,14 @@ export default function SpatialShell({
   const [terminalSession, setTerminalSession] = useState<Session | null>(null);
   const [name, setName] = useState("Team 01");
   const [goal, setGoal] = useState("");
-  const [orchestrator, setOrchestrator] = useState("claude");
+  const [orchestrator, setOrchestrator] = useCanvasPreference<string>(undefined, "agent-cli", "codex");
   const [planTasks, setPlanTasks] = useState<TeamPlanTask[]>([]);
-  const [command, setCommand] = useState("");
   const [commandProjectPath, setCommandProjectPath] = useState(
     shared.workspace?.path ?? "",
   );
-  const [commandTarget, setCommandTarget] = useState("orchestrator");
+  const [spawnCount, setSpawnCount] = useState(1);
+  const [spawnProgress, setSpawnProgress] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [runMode, setRunMode] = useState<"team" | "agent">("agent");
   const [worktreeMode, setWorktreeMode] = useState<"root" | "worktree">("root");
   const [agentCount, setAgentCount] = useState(4);
   const [teamRoles, setTeamRoles] = useState(
@@ -636,6 +655,7 @@ export default function SpatialShell({
     setNodes((current) => {
       const target = current.find(
         (node) =>
+          (node.type === "batch" && node.data.batchSessionIds?.includes(sessionId)) ||
           (node.type === "agent" &&
             node.data.team.tasks.some((task) => task.session_id === sessionId)) ||
           (node.type === "team" &&
@@ -643,9 +663,11 @@ export default function SpatialShell({
       );
       if (target)
         window.requestAnimationFrame(() => {
+          const width = Number(target.style?.width) || 760;
+          const height = Number(target.style?.height) || 520;
           void flow
-            .setCenter(target.position.x + 380, target.position.y + 260, {
-              zoom: 0.95,
+            .setCenter(target.position.x + width / 2, target.position.y + height / 2, {
+              zoom: Math.min(0.95, (window.innerWidth - 100) / width, (window.innerHeight - 180) / height),
               duration: 250,
             })
             .catch(() => {});
@@ -671,9 +693,16 @@ export default function SpatialShell({
       setAttachedIds((current) =>
         current.includes(session.id) ? current : [...current, session.id],
       );
-      setTerminalSession(session);
+      // An inline terminal already owns this PTY's grid. Mounting a second
+      // preview with a different size makes the two views resize each other.
+      const inline = teams.some(team => team.tasks.some(task => task.session_id === session.id));
+      setTerminalSession(inline ? null : session);
       focusAgentNode(session.id);
-      if (terminalRuntime.session(session.id)) return;
+      if (terminalRuntime.session(session.id)) {
+        if (["exited", "error"].includes(terminalRuntime.snapshot(session.id).state))
+          void terminalRuntime.retry(session.id).catch(cause => setError(String(cause)));
+        return;
+      }
       const owner = teams.find(
         (team) =>
           team.team.orchestrator_session_id === session.id ||
@@ -702,7 +731,7 @@ export default function SpatialShell({
     ];
     setNodes((current) =>
       teams
-        .flatMap((team) => {
+        .flatMap<Node<TeamNodeData>>((team) => {
           const projectOffset = Math.max(
             0,
             projectPaths.indexOf(team.team.project_path),
@@ -867,7 +896,22 @@ export default function SpatialShell({
             .slice()
             .reverse();
 
-          return visibleTasks.map((task, index) => {
+          const projectBatches = batches.filter(batch => batch.projectPath === team.team.project_path);
+          const batchNodes = projectBatches.flatMap((batch, index) => {
+            const ids = batch.sessionIds.filter(id => visibleTasks.some(task => task.session_id === id));
+            if (!ids.length) return [];
+            const previous = current.find(node => node.id === batch.id);
+            const layout = (() => { try { return JSON.parse(localStorage.getItem(agentPositionKey(batch.projectPath, batch.id)) ?? "{}"); } catch { return {}; } })();
+            return [{
+              id: batch.id, type: "batch",
+              position: previous?.position ?? {x:layout.x ?? team.layout.x + projectOffset, y:layout.y ?? team.layout.y + index * 1040},
+              data: {...baseNode.data, batchId:batch.id, batchName:batch.name, batchSessionIds:ids},
+              draggable:true, dragHandle:".sp-batch-head",
+              style:{width:layout.width ?? 1320, height:layout.height ?? 48 + Math.ceil(ids.length / 2) * 450},
+            } satisfies Node<TeamNodeData>];
+          });
+          const batchedIds = new Set(projectBatches.flatMap(batch => batch.sessionIds));
+          return [...batchNodes, ...visibleTasks.filter(task => !batchedIds.has(task.session_id!)).map((task, index) => {
             const session = visibleSessions.find(
               (entry) => entry.id === task.session_id,
             )!;
@@ -923,7 +967,7 @@ export default function SpatialShell({
                 zIndex: team.layout.z_index + index,
               },
             } satisfies Node<TeamNodeData>;
-          });
+          })];
         }),
     );
   }, [
@@ -939,6 +983,7 @@ export default function SpatialShell({
     shared.activeId,
     shared.workspace?.path,
     teams,
+    batches,
   ]);
 
   const selected =
@@ -974,7 +1019,6 @@ export default function SpatialShell({
   useEffect(() => {
     setPlanOpen(false);
     setMergeOpen(false);
-    setCommandTarget("orchestrator");
   }, [selectedId]);
   const viewportProjectPath = shared.workspace?.path;
   const viewportSaveTimer = useRef<number | null>(null);
@@ -1003,8 +1047,10 @@ export default function SpatialShell({
     if (centeredAgents.current === signature) return;
     centeredAgents.current = signature;
     window.requestAnimationFrame(() => {
-      void flow.setCenter(focus.position.x + 380, focus.position.y + 260, {
-        zoom: 0.9,
+      const width = Number(focus.style?.width) || 760;
+      const height = Number(focus.style?.height) || 520;
+      void flow.setCenter(focus.position.x + width / 2, focus.position.y + height / 2, {
+        zoom: Math.min(0.9, (window.innerWidth - 100) / width, (window.innerHeight - 180) / height),
         duration: 250,
       });
     });
@@ -1045,45 +1091,13 @@ export default function SpatialShell({
   ]);
 
   useEffect(() => {
-    if (document.hidden) return;
-    for (const team of teams) {
-      // Collapsed teams and closed agents hold no live xterm; skip them so
-      // background ensure() calls don't resurrect hidden terminals.
-      if (team.layout.collapsed) continue;
-      const ids = [
-        team.team.orchestrator_session_id,
-        ...team.tasks.flatMap((task) => [
-          task.session_id,
-          task.verifier_session_id,
-        ]),
-      ];
-      for (const id of ids) {
-        if (!id || closedAgentIds.includes(id)) continue;
-        const session = shared.sessions.find((entry) => entry.id === id);
-        if (!session) continue;
-        if (["done", "error"].includes(session.status)) {
-          void terminalRuntime.restore(session);
-          continue;
-        }
-        if (team.team.name === "Ungrouped runs" && session.status !== "running")
-          continue;
-        const task = team.tasks.find(
-          (entry) =>
-            entry.session_id === id || entry.verifier_session_id === id,
-        );
-        if (task && !["working", "review"].includes(task.status)) continue;
-        const skills = team.skills
-          .filter((link) => !link.task_id || link.task_id === task?.id)
-          .map((link) => `${link.title}: ${link.instruction}`)
-          .join("\n");
-        const briefing =
-          session.role === "orchestrator"
-            ? `You are the orchestrator for team ${team.team.name}. Goal: ${team.team.goal}. ${team.plan?.status === "approved" ? "The user has approved the existing plan. Read team_status and list_tasks to coordinate its workers." : "Use propose_team_plan to submit 3-6 workers with roles, CLI, scopes, dependencies, completion criteria and gates. Wait for user approval before launching work."} Monitor the team and review completed tasks. Use prepare_merge when ready; only the user can confirm integration. After completion, you may propose_skill with reviewed evidence; drafts require user review.\n${skills}`
-            : `Role: ${session.role ?? "worker"}. Task: ${task?.brief ?? session.task ?? ""}\nCompletion criteria: ${task?.done_criteria ?? ""}\nOwned files: ${task?.scope.join(", ") ?? ""}\nRead AGENTS.md. Test and commit implementation changes before calling complete_task. Use team tools to report progress. Never merge into the target branch yourself.\n${skills}`;
-        void terminalRuntime.ensure(session, team.team.id, task?.id, briefing);
-      }
+    // Loading saved canvas data is read-only. Only explicit launch/resume
+    // actions may create a process; opening the app must not start old CLIs.
+    for (const session of shared.sessions) {
+      if (["done", "error"].includes(session.status) && !terminalRuntime.session(session.id))
+        void terminalRuntime.restore(session);
     }
-  }, [teams, shared.sessions, closedAgentIds]);
+  }, [shared.sessions]);
 
   useEffect(() => {
     if (!selected?.plan || selected.plan.status !== "draft" || planOpen) return;
@@ -1124,6 +1138,10 @@ export default function SpatialShell({
 
   const savePosition = useCallback(
     async (_event: unknown, node: Node<TeamNodeData>) => {
+      if (node.type === "batch" && node.data.batchId) {
+        saveAgentLayout(node.data.team.team.project_path, node.data.batchId, node.position);
+        return;
+      }
       if (node.type === "agent" && node.data.taskId) {
         const task = node.data.team.tasks.find(
           (entry) => entry.id === node.data.taskId,
@@ -1183,6 +1201,7 @@ export default function SpatialShell({
           });
       }
       const session = await api.startOrchestrator(created.team.id);
+      await terminalRuntime.ensure(session, created.team.id, undefined, requestedGoal.trim());
       if (draftPreset)
         await api.saveTeamPlan(created.team.id, goal.trim(), draftPreset.tasks);
       shared.setKickoff((current) => ({
@@ -1209,38 +1228,51 @@ export default function SpatialShell({
   };
 
   const runFromComposer = async () => {
-    const text = command.trim();
     const projectPath = commandProjectPath || shared.workspace?.path;
-    if (!projectPath || !text) return;
-    setGoal(text);
-    if (runMode === "team") {
-      await createTeam(text);
-      return;
-    }
+    if (!projectPath || busy) return;
     setBusy(true);
+    setSpawnProgress(0);
     setError(null);
+    let created = 0;
+    const batchId = `batch-${crypto.randomUUID()}`;
+    const batchName = `Batch ${String(batches.filter(batch => batch.projectPath === projectPath).length + 1).padStart(2, "0")}`;
     try {
       const targetApi = projectApi(projectPath);
-      const session = await targetApi.createSession({
-        name: `Agent · ${text.slice(0, 42)}`,
-        kind: "terminal",
-        agent: orchestrator,
-        projectPath,
-        worktree: worktreeMode === "worktree",
-        baseRef: worktreeMode === "worktree" ? "HEAD" : undefined,
-        task: text,
-        role: teamRoles.split(",")[0]?.trim() || "generalist",
-      });
-      shared.addSession(session);
-      await terminalRuntime.ensure(session);
+      for (let index = 0; index < spawnCount; index++) {
+        const session = await targetApi.createSession({
+          name: `${harnessFor(orchestrator)?.label ?? orchestrator}${spawnCount > 1 ? ` · ${index + 1}` : ""}`,
+          kind: "terminal",
+          agent: orchestrator,
+          projectPath,
+          worktree: worktreeMode === "worktree",
+          baseRef: worktreeMode === "worktree" ? "HEAD" : undefined,
+        });
+        shared.addSession(session);
+        created++;
+        if (spawnCount > 1) setBatches(current => {
+          const existing = current.find(batch => batch.id === batchId);
+          return existing
+            ? current.map(batch => batch.id === batchId ? {...batch, sessionIds:[...batch.sessionIds, session.id]} : batch)
+            : [...current, {id:batchId, name:batchName, projectPath, sessionIds:[session.id]}];
+        });
+        await terminalRuntime.ensure(session);
+        const state = terminalRuntime.snapshot(session.id);
+        if (state.state === "error") throw new Error(state.error ?? "Agent launch failed");
+        setSpawnProgress(index + 1);
+      }
       await targetApi.importCanvasSessions(projectPath);
       await shared.refresh();
       await loadTeams();
-      setCommand("");
       setComposerOpen(false);
     } catch (cause) {
+      if (created) {
+        // Preserve and reveal successful runs if a later launch fails.
+        await projectApi(projectPath).importCanvasSessions(projectPath).catch(() => {});
+        await shared.refresh().catch(() => {});
+        await loadTeams();
+      }
       setError(
-        cause instanceof Error ? cause.message : "Could not start agent",
+        `${created ? `${created} of ${spawnCount} agents created. ` : ""}${cause instanceof Error ? cause.message : "Could not start agents"}`,
       );
     } finally {
       setBusy(false);
@@ -1331,7 +1363,11 @@ export default function SpatialShell({
           .filter(Boolean),
       });
       if (selected.team.state !== "paused" && selected.team.state !== "draft") {
-        await ownerApi.startSpatialTask(selected.team.id, task.id);
+        const started = await ownerApi.startSpatialTask(selected.team.id, task.id);
+        if (started.session_id) {
+          const session = await ownerApi.session(started.session_id);
+          await terminalRuntime.ensure(session, selected.team.id, task.id);
+        }
       }
       await shared.refresh();
       await loadTeams();
@@ -1342,35 +1378,6 @@ export default function SpatialShell({
       );
     } finally {
       setBusy(false);
-    }
-  };
-
-  const sendCommand = async () => {
-    if (!selected || !command.trim()) return;
-    const ownerApi = projectApi(selected.team.project_path);
-    try {
-      const targetTask =
-        commandTarget === "orchestrator"
-          ? undefined
-          : selected.tasks.find((task) => task.id === commandTarget);
-      if (commandTarget !== "orchestrator" && !targetTask?.session_id)
-        throw new Error("The selected worker is unavailable.");
-      let session = shared.sessions.find(
-        (entry) =>
-          entry.id ===
-          (targetTask?.session_id ?? selected.team.orchestrator_session_id),
-      );
-      if (!session && commandTarget !== "orchestrator")
-        throw new Error("Wait for the worker session to load.");
-      if (!session) session = await ownerApi.startOrchestrator(selected.team.id);
-      const text = command.trim();
-      await terminalRuntime.ensure(session, selected.team.id, targetTask?.id);
-      await terminalRuntime.send(session.id, `${text}\r`);
-      shared.openSession(session);
-      setTerminalSession(session);
-      setCommand("");
-    } catch (cause) {
-      setError(String(cause));
     }
   };
 
@@ -1465,7 +1472,7 @@ export default function SpatialShell({
           <Panel position="top-right" className="sp-utilities"
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <button onClick={() => { setRunMode("agent"); setComposerOpen(true); }}>
+            <button onClick={() => setComposerOpen(true)}>
               <LuBot /> New agent
             </button>
             <button onClick={() => setPresetsOpen((value) => !value)}>Presets</button>
@@ -1543,7 +1550,6 @@ export default function SpatialShell({
                       onClick={() => {
                         setCommandProjectPath(project.path);
                         void shared.useProject(project.path).then(() => {
-                          setRunMode("agent");
                           setComposerOpen(true);
                         }).catch((cause) => setError(String(cause)));
                       }}
@@ -1604,8 +1610,8 @@ export default function SpatialShell({
               >
                 <div className="sp-composer-heading">
                   <div>
-                    <strong>New agent</strong>
-                    <small>Give your agent a task and a place to work.</small>
+                    <strong>New agents</strong>
+                    <small>Choose a CLI, how many agents to open, and where they run.</small>
                   </div>
                   <button
                     className="sp-icon"
@@ -1624,23 +1630,17 @@ export default function SpatialShell({
                     <small title={commandProjectPath}>{commandProjectPath}</small>
                   </div>
                 </div>
-                <div className="sp-run-task">
-                  <label htmlFor="sp-agent-task">What should the agent do?</label>
-                  <textarea id="sp-agent-task" aria-label="Agent task" autoFocus
-                    value={command} onChange={(event) => setCommand(event.target.value)}
-                    onKeyDown={(event) => {
-                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && command.trim() && !busy) {
-                        event.preventDefault();
-                        void runFromComposer();
-                      }
-                    }}
-                    placeholder="Describe the task, the changes you need, or a problem to investigate…"
-                    disabled={busy || !shared.workspace}
-                    rows={4}
-                  />
-                  <div className="sp-run-task-tools">
-                    <VoiceInput onTranscript={setCommand} />
-                    <span>Be as specific as you like.</span>
+                <div className="sp-run-count">
+                  <div><label htmlFor="sp-agent-count">Number of agents</label>
+                    <small>Each agent opens its own interactive terminal.</small></div>
+                  <div className="sp-run-stepper">
+                    <button type="button" aria-label="Fewer agents" disabled={busy || spawnCount <= 1}
+                      onClick={() => setSpawnCount(value => value - 1)}>−</button>
+                    <input id="sp-agent-count" type="number" min={1} max={12} value={spawnCount}
+                      disabled={busy} autoFocus
+                      onChange={event => setSpawnCount(Math.max(1, Math.min(12, Math.trunc(Number(event.target.value)) || 1)))} />
+                    <button type="button" aria-label="More agents" disabled={busy || spawnCount >= 12}
+                      onClick={() => setSpawnCount(value => value + 1)}>+</button>
                   </div>
                 </div>
                 <div className="sp-composer-grid">
@@ -1657,88 +1657,22 @@ export default function SpatialShell({
                         disabled={busy} onClick={() => setWorktreeMode("worktree")}>New worktree</button>
                     </div>
                   </div>
-                  {runMode === "team" && (
-                    <>
-                      <label>
-                        Worker agents
-                        <input
-                          type="number"
-                          min={1}
-                          max={12}
-                          value={agentCount}
-                          onChange={(event) =>
-                            setAgentCount(
-                              Math.max(
-                                1,
-                                Math.min(12, Number(event.target.value) || 1),
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className="sp-composer-wide">
-                        Roles
-                        <input
-                          value={teamRoles}
-                          onChange={(event) => setTeamRoles(event.target.value)}
-                          placeholder="frontend, backend, tests, docs"
-                        />
-                        <small>
-                          Comma-separated roles proposed to the orchestrator
-                        </small>
-                      </label>
-                      <div className="sp-composer-wide sp-agent-assignments">
-                        <div className="sp-assignment-heading">
-                          <span>Worker AI assignments</span>
-                          <small>
-                            The parent orchestrator coordinates and reviews
-                            every worker.
-                          </small>
-                        </div>
-                        <div className="sp-assignment-grid">
-                          {Array.from({ length: agentCount }, (_, index) => (
-                            <label key={index}>
-                              Agent {index + 1}
-                              <select
-                                value={workerAgents[index] ?? "claude"}
-                                onChange={(event) =>
-                                  setWorkerAgents((current) => {
-                                    const next = [...current];
-                                    next[index] = event.target.value;
-                                    return next;
-                                  })
-                                }
-                              >
-                                {HARNESSES.map((harness) => (
-                                  <option key={harness.id} value={harness.id}>
-                                    {harness.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
                 </div>
                 <div className="sp-composer-footer">
                   <span>
-                    {worktreeMode === "worktree" ? "Changes stay in a separate worktree." : "Works directly in your project folder."}
+                    {worktreeMode === "worktree" ? "Each agent gets a separate worktree." : spawnCount > 1 ? "Agents share your project folder." : "Works directly in your project folder."}
                   </span>
                   <button type="button" className="sp-run-cancel" disabled={busy}
                     onClick={() => setComposerOpen(false)}>Cancel</button>
                   <button
                     className="sp-primary"
-                    disabled={!shared.workspace || !command.trim() || busy}
+                    disabled={!(commandProjectPath || shared.workspace?.path) || busy}
                     onClick={() => void runFromComposer()}
                   >
                     <LuPlay aria-hidden="true" />
                     {busy
-                      ? "Starting…"
-                      : runMode === "team"
-                        ? "Create team"
-                        : "Start agent"}
+                      ? `Starting ${spawnProgress} / ${spawnCount}…`
+                      : spawnCount > 1 ? `Start ${spawnCount} agents` : "Start agent"}
                   </button>
                 </div>
               </div>

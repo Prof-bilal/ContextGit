@@ -6,7 +6,7 @@ import { ptyIdForSession } from "./pty";
 export type RuntimeSnapshot = {
   output: string;
   tail: string;
-  state: "starting" | "running" | "exited" | "error";
+  state: "idle" | "starting" | "running" | "exited" | "error";
   error?: string;
 };
 type Entry = {
@@ -28,6 +28,7 @@ export class TerminalRuntime {
   private listeners = new Map<string, Set<() => void>>();
   private outputListeners = new Map<string, Set<(data: string) => void>>();
   private connected = false;
+  private sizes = new Map<string, {cols:number; rows:number}>();
   private connect() {
     if (this.connected) return;
     const bridge = window.contextgit;
@@ -141,6 +142,7 @@ export class TerminalRuntime {
       launch: Promise.resolve(),
     };
     this.entries.set(session.id, entry);
+    entry.listeners.forEach(listener => listener());
     registerTranscriptFlush(session.id, async () => {
       await this.flush(entry);
       if (entry.pending)
@@ -156,13 +158,14 @@ export class TerminalRuntime {
       const resume =
         localStorage.getItem(resumeKey) === "1" &&
         !(session.role === "orchestrator" && command === "codex");
+      const size = this.sizes.get(session.id) ?? {cols:100, rows:30};
       await bridge.ptyStart({
         id: ptyIdForSession(session.id),
         sessionId: session.id,
         command,
         resume,
-        cols: 100,
-        rows: 30,
+        cols: size.cols,
+        rows: size.rows,
         cwd: session.worktree_path ?? session.project_path ?? undefined,
         input: resume ? undefined : (instruction ?? session.task ?? undefined),
         env: {
@@ -176,6 +179,10 @@ export class TerminalRuntime {
           ...(session.port ? { PORT: String(session.port) } : {}),
         },
       });
+      // A mounted view can resize while harness discovery / ptyStart is in
+      // flight. Reapply after creation so that resize can never be lost.
+      const latestSize = this.sizes.get(session.id);
+      if (latestSize) bridge.ptyResize(ptyIdForSession(session.id), latestSize.cols, latestSize.rows);
       localStorage.setItem(resumeKey, "1");
       if (entry.snapshot.state === "starting")
         entry.snapshot = { ...entry.snapshot, state: "running" };
@@ -287,7 +294,9 @@ export class TerminalRuntime {
     window.contextgit?.ptyWrite(ptyIdForSession(id), text);
   }
   resize(id: string, cols: number, rows: number) {
-    window.contextgit?.ptyResize(ptyIdForSession(id), cols, rows);
+    this.sizes.set(id, {cols, rows});
+    if (this.entries.get(id)?.snapshot.state === "running")
+      window.contextgit?.ptyResize(ptyIdForSession(id), cols, rows);
   }
   async stop(id: string) {
     const entry = this.entries.get(id);
@@ -296,5 +305,5 @@ export class TerminalRuntime {
     window.contextgit?.ptyKill(ptyIdForSession(id));
   }
 }
-const EMPTY: RuntimeSnapshot = { output: "", tail: "", state: "starting" };
+const EMPTY: RuntimeSnapshot = { output: "", tail: "", state: "idle" };
 export const terminalRuntime = new TerminalRuntime();

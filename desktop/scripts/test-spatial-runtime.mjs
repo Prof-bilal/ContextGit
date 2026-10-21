@@ -6,6 +6,7 @@ const writes = [],
   starts = [],
   kills = [],
   transcripts = [];
+const resizes = [];
 let onData, onExit;
 globalThis.localStorage = { getItem: () => null, setItem() {} };
 globalThis.window = {
@@ -24,7 +25,7 @@ globalThis.window = {
     },
     ptyKill: (id) => kills.push(id),
     ptyWrite: (id, data) => writes.push({ id, data }),
-    ptyResize() {},
+    ptyResize(id, cols, rows) {resizes.push({id,cols,rows});},
   },
 };
 globalThis.__transcripts = transcripts;
@@ -68,6 +69,24 @@ try {
   for (const session of sessions)
     await runtime.ensure({ ...session }, "ignored");
   assert.equal(starts.length, 24, "polling must not duplicate CLIs");
+  const delayed = {...sessions[0], id:'delayed-codex', agent:'codex'};
+  runtime.resize(delayed.id, 65, 24);
+  const originalStart = window.contextgit.ptyStart;
+  let finishStart;
+  window.contextgit.ptyStart = async options => {
+    starts.push(options);
+    await new Promise(resolve => {finishStart=resolve;});
+  };
+  const launching = runtime.ensure(delayed);
+  await new Promise(resolve => setTimeout(resolve,0));
+  assert.equal(starts.at(-1).command,'codex');
+  assert.equal(starts.at(-1).input,undefined,'A bare CLI must not receive a generated prompt');
+  assert.equal(starts.at(-1).cols,65,'Use the view size measured before PTY creation');
+  runtime.resize(delayed.id, 72, 28);
+  finishStart();
+  await launching;
+  assert.deepEqual(resizes.at(-1),{id:'pty-delayed-codex',cols:72,rows:28},'Reapply resize that arrived during PTY creation');
+  window.contextgit.ptyStart = originalStart;
   let renders = 0;
   const closeView = runtime.subscribe(sessions[0].id, () => renders++);
   onData("pty-worker-0", "running\r\n");
