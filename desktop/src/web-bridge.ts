@@ -122,6 +122,7 @@ export function installWebBridge(): void {
     ptyPresets: async () => ["shell", "codex", "claude", "opencode", "commandcode"],
     harnessCheck: async () => ({ installed: true }),
     harnessInstall: async () => ({ started: false }),
+    harnessCancel: () => {},
     onHarnessProgress: () => () => {}, onPtyData: (callback: (id: string, data: string) => void) => { ptyDataListeners.add(callback); return () => ptyDataListeners.delete(callback); }, onPtyExit: (callback: (id: string, code: number | undefined) => void) => { ptyExitListeners.add(callback); return () => ptyExitListeners.delete(callback); },
     onUpdateStatus: () => () => {}, getUpdateStatus: () => ({ state: "unsupported" }),
     checkForUpdates: async () => ({ state: "unsupported" }),
