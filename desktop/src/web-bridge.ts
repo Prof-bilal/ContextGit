@@ -49,15 +49,16 @@ export function installWebBridge(): void {
     return next;
   };
   const bridge = new Proxy({
+    mode: "web",
     apiBase,
     apiToken,
     getStatus: () => ({ status, apiBase }),
     runtimeInfo: async () => ({ platform: navigator.platform.toLowerCase().includes("win") ? "win32" : navigator.platform.toLowerCase().includes("mac") ? "darwin" : "linux", arch: "browser", shell: "browser terminal" }),
-    voiceModelStatus: async () => ({ modelReady: false, sidecarReady: false, busy: false, modelBytes: 0, version: "Browser voice is not installed" }),
-    voiceModelDownload: async () => { throw new Error("Local voice transcription is available in the desktop app only."); },
+    voiceModelStatus: async () => ({ modelReady: true, sidecarReady: true, busy: false, modelBytes: 0, version: "Browser speech recognition" }),
+    voiceModelDownload: async () => {},
     voiceModelRemove: async () => {},
     voiceCancel: async () => {},
-    voiceTranscribe: async () => { throw new Error("Local voice transcription is available in the desktop app only."); },
+    voiceTranscribe: async () => { throw new Error("Browser speech recognition did not return a transcript."); },
     onVoiceProgress: () => () => {},
     refreshBackendStatus: async () => ({ status, apiBase }),
     restartBackend: async () => ({ status, apiBase }),

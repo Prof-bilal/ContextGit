@@ -34,6 +34,14 @@ export function encodeWav(samples: Float32Array, inputRate: number): number[] {
   return Array.from(new Uint8Array(buffer));
 }
 
+type BrowserRecognition = {
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+};
+
 export default function VoiceInput({
   onTranscript,
 }: {
@@ -56,7 +64,10 @@ export default function VoiceInput({
     count: number;
   } | null>(null);
   const held = useRef(false);
+  const browserRecognition = useRef<BrowserRecognition | null>(null);
+  const browserTranscript = useRef("");
   const mounted = useRef(true);
+  const browserMode = window.contextgit?.mode === "web";
   const refresh = () =>
     window.contextgit
       ?.voiceModelStatus()
@@ -71,6 +82,7 @@ export default function VoiceInput({
       mounted.current = false;
       off?.();
       held.current = false;
+      browserRecognition.current?.stop();
       const active = recording.current;
       active?.stream.getTracks().forEach((track) => track.stop());
       active?.processor.disconnect();
@@ -83,6 +95,28 @@ export default function VoiceInput({
     held.current = true;
     setError("");
     setPhase("permission");
+    if (browserMode) {
+      const SpeechRecognition = (window as Window & { webkitSpeechRecognition?: new () => BrowserRecognition; SpeechRecognition?: new () => BrowserRecognition }).SpeechRecognition
+        ?? (window as Window & { webkitSpeechRecognition?: new () => BrowserRecognition }).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setPhase("idle");
+        setError("Speech recognition is not supported by this browser. Use Chrome or Edge, or type the command instead.");
+        return;
+      }
+      browserTranscript.current = "";
+      const recognition = new SpeechRecognition();
+      browserRecognition.current = recognition;
+      recognition.onresult = (event: any) => {
+        browserTranscript.current = Array.from(event.results as ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>)
+          .filter(result => result.isFinal)
+          .map(result => result[0].transcript)
+          .join(" ");
+      };
+      recognition.onerror = (event: any) => { if (mounted.current) { setPhase("idle"); setError(`Speech recognition failed: ${String(event.error ?? "unknown error")}`); } };
+      recognition.onend = () => { if (mounted.current && held.current) recognition.start(); };
+      try { recognition.start(); setPhase("recording"); } catch (cause) { setPhase("idle"); setError(String(cause)); }
+      return;
+    }
     let stream: MediaStream | undefined;
     let context: AudioContext | undefined;
     try {
@@ -137,6 +171,16 @@ export default function VoiceInput({
   };
   const finish = async () => {
     held.current = false;
+    if (browserMode) {
+      browserRecognition.current?.stop();
+      browserRecognition.current = null;
+      const result = browserTranscript.current.trim();
+      browserTranscript.current = "";
+      setPhase("idle");
+      if (result) setTranscript(result);
+      else setError("No speech detected. Hold the microphone button and try again.");
+      return;
+    }
     const active = recording.current;
     if (!active) return;
     recording.current = null;

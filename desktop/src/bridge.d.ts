@@ -1,5 +1,6 @@
 /** Bridge exposed by the Tauri renderer adapter. */
 export interface ContextGitBridge {
+  mode?: "desktop" | "web";
   voiceModelStatus: () => Promise<{ modelReady: boolean; sidecarReady: boolean; busy: boolean; modelBytes: number; version: string }>;
   voiceModelDownload: () => Promise<void>;
   voiceModelRemove: () => Promise<void>;
