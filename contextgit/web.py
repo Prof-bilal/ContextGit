@@ -25,6 +25,8 @@ def run(*, port: int = 0, api_port: int = 0, project: Path | None = None) -> Non
     root = Path(__file__).resolve().parents[1]
     renderer = root / "desktop" / "dist"
     if not (renderer / "index.html").exists():
+        renderer = Path(__file__).resolve().parent / "webui"
+    if not (renderer / "index.html").exists():
         raise SystemExit(
             f"Web renderer is missing at {renderer}. Run `npm run desktop:web:build` first."
         )

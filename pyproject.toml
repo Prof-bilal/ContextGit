@@ -53,6 +53,7 @@ include = ["contextgit*"]
 [tool.setuptools.package-data]
 "contextgit.storage" = ["migrations/*.sql"]
 "contextgit.merge" = ["prompts/*.txt"]
+"contextgit" = ["webui/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
