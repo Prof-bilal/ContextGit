@@ -9,6 +9,7 @@
     "desktop:tauri:dev": "bun run --cwd desktop tauri:dev",
     "desktop:tauri:build": "bun run --cwd desktop tauri:build",
     "desktop:tauri:check": "bun run --cwd desktop tauri:check",
+    "desktop:web:build": "npm run build:renderer --prefix desktop",
     "check:structure": "node scripts/check-structure.mjs",
     "check:release": "node scripts/check-release-metadata.mjs",
     "test:release": "node --test scripts/test-release-metadata.mjs",
