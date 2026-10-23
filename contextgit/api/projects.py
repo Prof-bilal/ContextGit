@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TypedDict
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -119,6 +119,108 @@ def create_desktop_app(token: str) -> ASGIApp:
     @root.post("/api/v1/projects/open")
     async def open_project(body: OpenProject) -> dict[str, str]:
         return await registry.open(body.path)
+
+    @root.websocket("/api/v1/terminal")
+    async def terminal(websocket: WebSocket) -> None:
+        """Stream one browser terminal without exposing an arbitrary shell API."""
+        supplied = websocket.query_params.get("token", "")
+        if not secrets.compare_digest(supplied, token):
+            await websocket.close(code=4401)
+            return
+        project_id = websocket.query_params.get("project", "")
+        entry = registry.entries.get(project_id)
+        if entry is None:
+            await websocket.close(code=4409)
+            return
+        await websocket.accept()
+        process: asyncio.subprocess.Process | None = None
+        try:
+            message = await websocket.receive_json()
+            if message.get("type") != "start":
+                await websocket.close(code=4400)
+                return
+            project_root = Path(entry["repo"].root).parent.resolve()
+            requested_cwd = Path(str(message.get("cwd") or project_root)).expanduser().resolve()
+            allowed_roots = (project_root, project_root / ".contextgit")
+            if not any(requested_cwd == root or root in requested_cwd.parents for root in allowed_roots):
+                await websocket.send_json({"type": "error", "message": "Terminal directory is outside the selected project."})
+                await websocket.close(code=4403)
+                return
+            command = str(message.get("command") or "shell")
+            commands = {
+                "shell": os.environ.get("SHELL", "sh"),
+                "terminal": os.environ.get("SHELL", "sh"),
+                "codex": "codex",
+                "claude": "claude",
+                "opencode": "opencode",
+                "commandcode": "commandcode",
+            }
+            executable = commands.get(command, "")
+            if not executable:
+                await websocket.send_json({"type": "error", "message": "Unknown terminal command."})
+                await websocket.close(code=4400)
+                return
+            env = os.environ.copy()
+            supplied_env = message.get("env")
+            if isinstance(supplied_env, dict):
+                for key, value in supplied_env.items():
+                    if isinstance(key, str) and key.startswith("CONTEXTGIT_") and isinstance(value, str):
+                        env[key] = value
+            process = await asyncio.create_subprocess_exec(
+                executable,
+                cwd=str(requested_cwd),
+                env=env,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            initial = message.get("input")
+            if isinstance(initial, str) and initial and process.stdin:
+                process.stdin.write(initial.encode())
+                await process.stdin.drain()
+
+            async def send_output() -> None:
+                assert process and process.stdout
+                while True:
+                    chunk = await process.stdout.read(4096)
+                    if not chunk:
+                        break
+                    await websocket.send_json({"type": "data", "data": chunk.decode(errors="replace")})
+
+            output_task = asyncio.create_task(send_output())
+            wait_task = asyncio.create_task(process.wait())
+            try:
+                while not wait_task.done():
+                    receive_task = asyncio.create_task(websocket.receive_json())
+                    done, _ = await asyncio.wait({receive_task, wait_task}, return_when=asyncio.FIRST_COMPLETED)
+                    if wait_task in done:
+                        receive_task.cancel()
+                        break
+                    incoming = receive_task.result()
+                    kind = incoming.get("type")
+                    if kind == "write" and process.stdin and isinstance(incoming.get("data"), str):
+                        process.stdin.write(str(incoming["data"]).encode())
+                        await process.stdin.drain()
+                    elif kind == "kill":
+                        process.terminate()
+                        break
+            except WebSocketDisconnect:
+                if process.returncode is None:
+                    process.terminate()
+            finally:
+                await output_task
+            code = await wait_task
+            await websocket.send_json({"type": "exit", "code": code})
+        except WebSocketDisconnect:
+            if process and process.returncode is None:
+                process.terminate()
+        except Exception as exc:
+            if process and process.returncode is None:
+                process.terminate()
+            try:
+                await websocket.send_json({"type": "error", "message": str(exc)})
+            except Exception:
+                pass
 
     class Dispatch:
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

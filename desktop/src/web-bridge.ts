@@ -20,6 +20,9 @@ export function installWebBridge(): void {
   const apiToken = query("token") || "";
   const status: BackendStatus = { state: "ready", apiBase };
   const listeners = new Set<(next: BackendStatus) => void>();
+  const terminalSockets = new Map<string, WebSocket>();
+  const ptyDataListeners = new Set<(id: string, data: string) => void>();
+  const ptyExitListeners = new Set<(id: string, code: number | undefined) => void>();
   const projectsKey = "contextgit:web-projects";
   const activeKey = "contextgit:web-active-project";
   const savedProjects = (): Workspace[] => {
@@ -50,12 +53,31 @@ export function installWebBridge(): void {
     pickWorkspaceLocation: async () => window.prompt("Parent folder path") || null,
     createWorkspace: async (parent: string, name: string) => open(`${parent.replace(/[\\/]$/, "")}/${name}`),
     forgetProject: async (path: string) => { const remaining = savedProjects().filter(item => item.path !== path); localStorage.setItem(projectsKey, JSON.stringify(remaining)); if (localStorage.getItem(activeKey) === path) { localStorage.removeItem(activeKey); projectRuntime.select(null); } return remaining; },
-    ptyStart: async () => { throw new Error("Browser terminal transport is not available in this build yet."); },
-    ptyWrite: () => {}, ptyResize: () => {}, ptyKill: () => {},
+    ptyStart: async (options: { id: string; command: string; cwd?: string; input?: string; env?: Record<string, string> }) => {
+      const project = localStorage.getItem(activeKey);
+      if (!project) throw new Error("Open a project before starting a terminal.");
+      const projectId = await fetch(`${apiBase}/api/v1/projects/open`, { method: "POST", headers: headers(), body: JSON.stringify({ path: project }) }).then(response => response.json()).then(value => String(value.projectId));
+      const socket = new WebSocket(`${apiBase.replace(/^http/, "ws")}/api/v1/terminal?token=${encodeURIComponent(apiToken)}&project=${encodeURIComponent(projectId)}`);
+      terminalSockets.set(options.id, socket);
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => { socket.send(JSON.stringify({ type: "start", ...options })); resolve(); }, { once: true });
+        socket.addEventListener("error", () => reject(new Error("Could not connect to the browser terminal.")), { once: true });
+      });
+      socket.addEventListener("message", event => {
+        let message: { type?: string; data?: string; code?: number; message?: string };
+        try { message = JSON.parse(String(event.data)); } catch { return; }
+        if (message.type === "data" && typeof message.data === "string") ptyDataListeners.forEach(callback => callback(options.id, message.data!));
+        if (message.type === "exit") ptyExitListeners.forEach(callback => callback(options.id, message.code));
+        if (message.type === "error") ptyExitListeners.forEach(callback => callback(options.id, undefined));
+      });
+    },
+    ptyWrite: (id: string, data: string) => terminalSockets.get(id)?.send(JSON.stringify({ type: "write", data })),
+    ptyResize: (id: string, cols: number, rows: number) => terminalSockets.get(id)?.send(JSON.stringify({ type: "resize", cols, rows })),
+    ptyKill: (id: string) => { terminalSockets.get(id)?.send(JSON.stringify({ type: "kill" })); terminalSockets.get(id)?.close(); terminalSockets.delete(id); },
     ptyPresets: async () => ["shell", "codex", "claude", "opencode", "commandcode"],
     harnessCheck: async () => ({ installed: true }),
     harnessInstall: async () => ({ started: false }),
-    onHarnessProgress: () => () => {}, onPtyData: () => () => {}, onPtyExit: () => () => {},
+    onHarnessProgress: () => () => {}, onPtyData: (callback: (id: string, data: string) => void) => { ptyDataListeners.add(callback); return () => ptyDataListeners.delete(callback); }, onPtyExit: (callback: (id: string, code: number | undefined) => void) => { ptyExitListeners.add(callback); return () => ptyExitListeners.delete(callback); },
     onUpdateStatus: () => () => {}, getUpdateStatus: () => ({ state: "unsupported" }),
     checkForUpdates: async () => ({ state: "unsupported" }),
     usageActivity: () => {}, onUsage: () => () => {},
