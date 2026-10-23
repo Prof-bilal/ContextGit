@@ -55,18 +55,33 @@ def choose_folder() -> str | None:
             continue
         if result.returncode == 0 and result.stdout.strip():
             return str(Path(result.stdout.strip()).expanduser().resolve())
+    # Keep Tk out of the API process. On Linux, creating a Tk root from a
+    # worker thread can take over the interpreter's event loop and make the
+    # browser appear frozen. Running it as a short-lived child also gives the
+    # dialog a real GUI main thread and lets cancellation return cleanly.
+    tkinter_script = (
+        "import tkinter as tk\n"
+        "from tkinter import filedialog\n"
+        "root = tk.Tk()\n"
+        "root.withdraw()\n"
+        "root.attributes('-topmost', True)\n"
+        "selected = filedialog.askdirectory(title='Choose a ContextGit project folder')\n"
+        "root.destroy()\n"
+        "print(selected, flush=True)\n"
+    )
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected = filedialog.askdirectory(title="Choose a ContextGit project folder")
-        root.destroy()
-        return str(Path(selected).expanduser().resolve()) if selected else None
-    except Exception:
+        result = subprocess.run(
+            [sys.executable, "-c", tkinter_script],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+    except (OSError, subprocess.TimeoutExpired):
         return None
+    if result.returncode == 0 and result.stdout.strip():
+        return str(Path(result.stdout.strip()).expanduser().resolve())
+    return None
 
 
 class ProjectEntry(TypedDict):
