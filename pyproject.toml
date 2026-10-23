@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 ctx = "contextgit.cli.main:main"
+contextgit = "contextgit.cli.main:main"
 ctx-api = "contextgit.api.server:main"
 contextgit-mcp = "contextgit.mcp.main:main"
 
