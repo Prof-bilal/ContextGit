@@ -26,7 +26,7 @@ async function waitForBackend(cancellation: Promise<never>): Promise<string | nu
   const bridge = typeof window !== "undefined" ? window.contextgit : undefined;
   if (!bridge) return null;
   try {
-    // A mutation may be the first request after a project switch or a Tauri
+    // A mutation may be the first request after a project switch or a browser
     // backend restart. Ask the native supervisor for the address again before
     // relying on the renderer's one-second status poll.
     await Promise.race([bridge.refreshBackendStatus(), cancellation]);
@@ -97,7 +97,7 @@ export async function apiRequest<T>(url: string, options: RequestOptions = {}, f
       return await Promise.race([operation(url), cancellation]);
     } catch (cause) {
       // Startup and project switching can invalidate the selected port between
-      // requests. Wait for the Tauri bridge to publish the new healthy address,
+      // requests. Wait for the browser bridge to publish the new healthy address,
       // then retry this idempotent/read or mutation request once. This keeps a
       // transient restart from becoming a permanent "backend unreachable"
       // banner in the workbench.

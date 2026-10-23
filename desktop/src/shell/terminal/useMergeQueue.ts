@@ -6,7 +6,7 @@ import { useTransientError } from "../useTransientError";
 import { useProjectState } from "../useProjectState";
 import { useShellActivity } from "../activity";
 
-/** In a plain browser there is no Tauri bridge and no local API to poll. */
+/** Browser mode polls the local API for merge state. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The ordered merge queue (`GET /api/v1/merge-queue`), polled while merging. */

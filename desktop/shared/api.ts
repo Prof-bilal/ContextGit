@@ -151,9 +151,9 @@ export interface Diff {
   b_token_count: number;
 }
 
-// The Tauri runtime installs its bridge during
+// The browser launcher installs its bridge during
 // application startup, after this module has been evaluated. Resolve it per
-// request so Tauri does not get stuck on the browser fallback port.
+// request so calls use the authenticated local API port.
 type ApiBridge = { apiBase?: string; apiToken?: string; getStatus?: () => { apiBase?: string } };
 function getBridge(): ApiBridge | undefined {
   return typeof window !== "undefined"
@@ -518,7 +518,7 @@ function repositoryHeaders(): Record<string, string> {
     return {};
   }
   if (status?.state === "ready" && status.repoId) {
-    // The Tauri runtime rebinds the local backend when the active
+    // The launcher rebinds the local backend when the active
     // project changes. Adopt the new identity in the existing renderer
     // instead of treating a normal project switch as a stale workspace.
     if (expectedRepository !== status.repoId) expectedRepository = status.repoId;

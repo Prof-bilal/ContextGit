@@ -33,7 +33,7 @@ export interface BrowserState {
 export function browserAddress(input: string): string {
   const text = input.trim();
   if (!text) throw new Error("Enter a website address or search.");
-  if (/^(javascript|data|file|tauri|ftp|mailto|about):/i.test(text)) throw new Error("This browser supports HTTP and HTTPS website addresses.");
+  if (/^(javascript|data|file|chrome|ftp|mailto|about):/i.test(text)) throw new Error("This browser supports HTTP and HTTPS website addresses.");
   if (/^https?:\/\//i.test(text)) return new URL(text).toString();
   const loopback = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(text);
   if (!loopback && /^[a-z][a-z0-9+.-]*:/i.test(text) && !/^[^\s/:]+:\d+(?:[/?#]|$)/.test(text)) {

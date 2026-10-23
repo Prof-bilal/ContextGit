@@ -1,7 +1,7 @@
 # Testing
 
 ## Tools
-Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Desktop: Tauri typecheck, renderer build, Rust checks, and installed-artifact smoke tests.
+Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Workbench: TypeScript typecheck, renderer build, and browser/API smoke tests.
 
 ## Layers
 | Layer | What | Notes |
@@ -9,7 +9,7 @@ Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Desktop: Tauri t
 | Unit | hashing, commit building, branch ops, token counting | Fast, no I/O, no network |
 | Integration | Repo + SQLite, API routes via `TestClient` | Use temp DB per test |
 | Merge evals | probe-question retention before/after merge | Separate, may use a real LLM, not run in CI by default |
-| Desktop smoke | backend readiness, project selection, terminal lifecycle, and window ownership | Tauri packaged application |
+| Browser smoke | backend readiness, project selection, terminal lifecycle, and file access | Local browser launcher |
 
 ## Rules
 - **Never call a real LLM in unit or integration tests.** Use `FakeProvider`.
@@ -23,8 +23,8 @@ Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Desktop: Tauri t
 pytest -q                    # backend
 pytest --cov=contextgit      # with coverage
 npm run build --prefix website # Next.js marketing build + TS check
-npm run build --prefix desktop  # desktop renderer + backend bundle
-npm run tauri:build --prefix desktop  # installed Tauri artifacts
+npm run build --prefix desktop  # browser renderer
+.venv/bin/contextgit web       # manual launcher smoke test
 ```
 
 ## Definition of done

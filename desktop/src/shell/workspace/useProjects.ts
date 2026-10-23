@@ -3,7 +3,7 @@ import { projectRuntime } from "../../../shared/projectRuntime";
 
 import type { Workspace } from "../../../shared/workspace";
 
-/** In a plain browser there is no Tauri bridge and no project picker. */
+/** Browser mode uses the API-backed project picker. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**

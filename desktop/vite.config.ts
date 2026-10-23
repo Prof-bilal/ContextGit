@@ -30,10 +30,7 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     strictPort: true,
     fs: { allow: [here, path.resolve(here, "../website/app/globals.css")] },
-    // Tauri copies packaged resources (including the code-server sidecar)
-    // under src-tauri/target during dev. Watching that generated tree causes
-    // Vite reload storms and can race the Tauri resource copier.
-    watch: { ignored: ["**/src-tauri/target/**", "**/build/**"] },
+    watch: { ignored: ["**/build/**"] },
   },
   build: {
     outDir: "dist",

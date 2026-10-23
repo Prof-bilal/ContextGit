@@ -5,7 +5,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import { useProjectState } from "../useProjectState";
 import { useShellActivity } from "../activity";
 
-/** In a plain browser there is no Tauri bridge and no local API to read. */
+/** Browser mode reads repository state through the local API. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /** The real repository snapshot (`GET /api/v1/repo`) — the Git tab's data. */

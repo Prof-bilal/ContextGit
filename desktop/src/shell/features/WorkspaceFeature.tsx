@@ -11,7 +11,7 @@ function WorkspaceFeature({ mode }: { mode: "editor" | "browser" }) {
   if (active) { visited.current = true; lastWorkspace.current = workspace; }
   // Feature controllers are kept mounted by the shell for error isolation,
   // but their workbench surface must not render into an inactive portal. A
-  // Tauri child webview is positioned relative to the window, so CSS hiding
+  // Browser panels are positioned by normal document layout, so CSS hiding
   // the parent is not sufficient; it can otherwise leak into the Code tab.
   const target = slots.views[mode];
   if (!visited.current || !target) return null;

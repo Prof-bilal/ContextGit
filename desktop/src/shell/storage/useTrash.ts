@@ -6,7 +6,7 @@ import { useTransientError } from "../useTransientError";
 import { useProjectState } from "../useProjectState";
 import { useShellActivity } from "../activity";
 
-/** In a plain browser there is no Tauri bridge and no local API to poll. */
+/** Browser mode polls the local API for trash state. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**

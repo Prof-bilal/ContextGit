@@ -140,8 +140,8 @@ npm run test:spatial-canvas --prefix desktop
 npm run build:voice --prefix desktop
 npm run build:renderer --prefix desktop
 npm run build:backend --prefix desktop
-cargo check --manifest-path desktop/src-tauri/Cargo.toml
-cargo test --manifest-path desktop/src-tauri/Cargo.toml voice::tests
+npm run typecheck --prefix desktop
+npm run build --prefix desktop
 ```
 
 The browser check verifies two teams with twelve workers each, real pointer

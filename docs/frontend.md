@@ -2,12 +2,12 @@
 
 **Stack:** React 19 + TypeScript, Vite (renderer), React Flow (commit graph), xterm.js (terminals), plain fetch client in `desktop/shared/api.ts`.
 
-The UI ships as a **Tauri desktop app** (`desktop/`). The Next.js app in
+The UI ships as a **browser workbench** (`desktop/`). The Next.js app in
 `website/` serves the marketing pages only — no workbench route.
 
 ## Layout
 1. **Sessions sidebar (left):** parallel AI runs — terminal sessions (any agent CLI) and chat sessions; live status dot, branch chip, delete. New session creates a branch.
-2. **Main area:** tabbed — History (list/graph toggle) or terminal tabs (one xterm.js per session, PTY owned by the Tauri backend/runtime).
+2. **Main area:** tabbed — History (list/graph toggle) or terminal tabs (one xterm.js per session, PTY owned by the local API runtime).
 3. **Commit bar (bottom):** staging buffer for the selected session — stage, undo, clear, commit on demand.
 4. **Inspector panel (right, History view):** tokens, model, summary, diff view, health warnings.
 

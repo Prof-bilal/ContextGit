@@ -4,16 +4,16 @@ Version control for LLM conversations: branch, diff, merge, and roll back contex
 
 AI assistants: start with `docs/AGENTS.md`.
 
-## Desktop app (primary UI)
+## Browser workbench (primary UI)
 
-The workbench ships as a Tauri desktop app in `desktop/`. It spawns its own
+The workbench ships as a browser app in `desktop/`. The launcher starts its
 local API backend — no separate servers to run:
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 npm install --prefix desktop
-npm run tauri:dev --prefix desktop
+.venv/bin/contextgit web
 ```
 
 The API uses a local SQLite repository and the deterministic `FakeProvider` unless
@@ -21,13 +21,6 @@ The API uses a local SQLite repository and the deterministic `FakeProvider` unle
 `CTX_LLM_API_KEY`, and optionally `CTX_LLM_BASE_URL` and `CTX_LLM_MODEL`. The API
 binds to localhost by default; do not expose it to untrusted networks because it
 has no authentication.
-
-Packaged builds:
-
-```bash
-npm run build:backend --prefix desktop   # PyInstaller API binary
-npm run tauri:build --prefix desktop    # Tauri installers
-```
 
 See `docs/desktop.md` for architecture and commands.
 
@@ -41,7 +34,7 @@ npm run dev --prefix website
 
 ## Tests
 
-Installed-artifact smoke tests drive the desktop app after `tauri:build`.
+Browser smoke tests drive the workbench through its local launcher and API.
 
 ## Docs
 
@@ -53,7 +46,7 @@ Installed-artifact smoke tests drive the desktop app after `tauri:build`.
 | `docs/data-model.md` | Commits, branches, sessions, team tables |
 | `docs/merge-engine.md` | Semantic merge and conflict handling |
 | `docs/frontend.md` | UI architecture |
-| `docs/desktop.md` | Desktop app (Tauri) architecture and commands |
+| `docs/desktop.md` | Browser workbench architecture and commands |
 | `docs/testing.md` | Test strategy and how to run the suites |
 | `docs/codestyle.md` | Style and review rules |
 | `docs/roadmap.md` | What is planned and what shipped |

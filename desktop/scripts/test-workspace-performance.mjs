@@ -45,10 +45,10 @@ try {
   await page.clock.runFor(100);
   assert.equal(await page.getByRole("textbox", { name: "Browser URL" }).inputValue(), "https://example.org/");
   assert.equal((await get()).created, publicViewCount, "address navigation must preserve the native view and history");
-  await page.getByRole("textbox", { name: "Browser URL" }).fill("tauri webview");
+  await page.getByRole("textbox", { name: "Browser URL" }).fill("browser workbench");
   await page.getByRole("button", { name: "Go", exact: true }).click();
   await page.clock.runFor(100);
-  assert.equal(await page.getByRole("textbox", { name: "Browser URL" }).inputValue(), "https://duckduckgo.com/?q=tauri%20webview");
+  assert.equal(await page.getByRole("textbox", { name: "Browser URL" }).inputValue(), "https://duckduckgo.com/?q=browser%20workbench");
   await page.evaluate(() => window.workspaceTest.nativeUrl("http://example.com/after-navigation"));
   await page.clock.runFor(50);
   assert.equal(await page.getByRole("textbox", { name: "Browser URL" }).inputValue(), "http://example.com/after-navigation");

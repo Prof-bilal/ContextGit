@@ -1,5 +1,5 @@
 /**
- * Canonical CLI harness registry, shared by the Tauri host process (which
+ * Canonical CLI harness registry, shared by the local API process (which
  * spawns the process) and the renderer (which draws the picker and brands it).
  *
  * `id` is triple-duty: the `Session.agent` value stored by the backend, the

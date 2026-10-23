@@ -191,7 +191,7 @@ def create_app(
             )
         return await call_next(request)
 
-    # Tauri supplies a fresh token on each launch. Standalone API deployments
+    # The browser launcher supplies a fresh token on each launch. Standalone API deployments
     # may opt in with the same environment variable; tests remain injectable.
     launch_token = api_token if api_token is not None else os.getenv("CONTEXTGIT_API_TOKEN")
 

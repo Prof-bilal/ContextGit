@@ -1,6 +1,6 @@
 # Team Mode browser prototype
 
-This is the first, reviewable delivery of the Team Mode plan. It is a local browser sandbox, separate from the Tauri app. It never calls the production API, starts a CLI, modifies a worktree, merges a Git branch, or pushes to a remote. All activity, checks, commits, and installation statuses are simulated and explicitly labeled in the UI.
+This is the first, reviewable delivery of the Team Mode plan. It is a local browser sandbox, separate from the production workbench. It never calls the production API, starts a CLI, modifies a worktree, merges a Git branch, or pushes to a remote. All activity, checks, commits, and installation statuses are simulated and explicitly labeled in the UI.
 
 From `desktop/`:
 

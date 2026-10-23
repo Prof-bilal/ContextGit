@@ -7,7 +7,7 @@ import { useBackendPolling } from "../useBackendPolling";
 import { useTransientError } from "../useTransientError";
 import { useShellActivity } from "../activity";
 
-/** In a plain browser there is no Tauri bridge and no local API to poll. */
+/** Browser mode polls the local API for session state. */
 const hasBridge = () => typeof window !== "undefined" && Boolean(window.contextgit);
 
 /**

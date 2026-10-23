@@ -2,7 +2,7 @@
 
 ## Layers
 ```
-  Tauri Desktop        CLI (typer)       Next.js Website
+  Browser Workbench     CLI (typer)       Next.js Website
           \              /                    |
            FastAPI (HTTP/SSE)                 |
                     |                         |
@@ -24,7 +24,7 @@ contextgit/
   health/        # contradiction / staleness checks (later phase)
   api/           # FastAPI app, routes, schemas
   cli/           # typer commands
-desktop/         # Tauri workbench and desktop-owned API client
+desktop/         # Browser workbench and API client
 website/         # Next.js marketing site
 tests/            # Python unit and integration tests
 docs/             # Architecture, contributor, product, and engineering docs

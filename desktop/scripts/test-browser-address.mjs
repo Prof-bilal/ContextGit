@@ -19,5 +19,5 @@ test("searches are encoded without treating words as hostnames", () => {
   assert.equal(browserAddress("typescript"), "https://duckduckgo.com/?q=typescript");
 });
 test("non-web protocols are rejected", () => {
-  for (const value of ["", "javascript:alert(1)", "javascript:123", "data:text/html,hello", "file:///etc/passwd", "tauri://localhost", "ftp://example.com"]) assert.throws(() => browserAddress(value));
+  for (const value of ["", "javascript:alert(1)", "javascript:123", "data:text/html,hello", "file:///etc/passwd", "chrome://localhost", "ftp://example.com"]) assert.throws(() => browserAddress(value));
 });
