@@ -45,6 +45,7 @@ export function installWebBridge(): void {
     apiBase,
     apiToken,
     getStatus: () => ({ status, apiBase }),
+    runtimeInfo: async () => ({ platform: navigator.platform.toLowerCase().includes("win") ? "win32" : navigator.platform.toLowerCase().includes("mac") ? "darwin" : "linux", arch: "browser", shell: "browser terminal" }),
     refreshBackendStatus: async () => ({ status, apiBase }),
     restartBackend: async () => ({ status, apiBase }),
     onStatus: (callback: (next: BackendStatus) => void) => { listeners.add(callback); callback(status); return () => listeners.delete(callback); },
@@ -107,6 +108,15 @@ export function installWebBridge(): void {
     onUpdateStatus: () => () => {}, getUpdateStatus: () => ({ state: "unsupported" }),
     checkForUpdates: async () => ({ state: "unsupported" }),
     usageActivity: () => {}, onUsage: () => () => {},
+    saveFile: async (options: { defaultName: string; data: ArrayBuffer }) => {
+      const blob = new Blob([options.data]);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = options.defaultName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      return options.defaultName;
+    },
   } as Record<string, unknown>, {
     get(target, property, receiver) {
       if (Reflect.has(target, property)) return Reflect.get(target, property, receiver);
