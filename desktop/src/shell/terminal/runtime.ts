@@ -158,7 +158,7 @@ export class TerminalRuntime {
       const resumeKey = `contextgit:launched-session:${session.id}`;
       const resume =
         localStorage.getItem(resumeKey) === "1" &&
-        !(session.role === "orchestrator" && command === "codex");
+        session.role !== "orchestrator";
       const size = this.sizes.get(session.id) ?? {cols:100, rows:30};
       await bridge.ptyStart({
         id: ptyIdForSession(session.id),

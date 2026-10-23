@@ -33,6 +33,21 @@ class CreateProject(BaseModel):
     name: str
 
 
+def terminal_arguments(command: str, message: dict) -> list[str]:
+    """Supply the initial task through the CLI, before its interactive UI starts."""
+    args: list[str] = []
+    model = message.get("model")
+    if isinstance(model, str) and model and command in {"codex", "claude", "commandcode"}:
+        args.extend(["--model", model])
+    initial = message.get("input")
+    if isinstance(initial, str) and initial and command in {"codex", "claude", "opencode", "commandcode"}:
+        if command == "opencode":
+            args.extend(["--prompt", initial])
+        else:
+            args.extend(["--", initial])
+    return args
+
+
 def choose_folder() -> str | None:
     """Open the host OS folder picker for the localhost browser app."""
     commands: list[list[str]] = []
@@ -246,7 +261,17 @@ def create_desktop_app(token: str) -> ASGIApp:
                 for key, value in supplied_env.items():
                     if isinstance(key, str) and key.startswith("CONTEXTGIT_") and isinstance(value, str):
                         env[key] = value
-            env.setdefault("TERM", "xterm-256color")
+            # The desktop PTY is a real interactive terminal. Some launchers
+            # inherit TERM=dumb, which makes Codex refuse to start its TUI
+            # even though the browser terminal supports cursor control.
+            if env.get("TERM", "").lower() in {"", "dumb"}:
+                env["TERM"] = "xterm-256color"
+            # The host may set NO_COLOR for its own command output, but that
+            # would also disable ANSI styling inside the interactive browser
+            # terminal. Advertise the capabilities of the PTY instead.
+            env.pop("NO_COLOR", None)
+            if not env.get("COLORTERM"):
+                env["COLORTERM"] = "truecolor"
             slave: int | None = None
             if os.name != "nt":
                 import pty
@@ -256,14 +281,15 @@ def create_desktop_app(token: str) -> ASGIApp:
                 import termios
                 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", int(message.get("rows", 30)), int(message.get("cols", 100)), 0, 0))
             try:
-                launch = [executable]
+                arguments = terminal_arguments(command, message)
+                launch = [executable, *arguments]
                 if slave is not None:
                     # A session alone does not give the child a controlling
                     # terminal. TUIs need its foreground process group to
                     # receive SIGWINCH and redraw after resizing.
                     launch = [sys.executable, "-c",
                               "import os,sys,fcntl,termios; fcntl.ioctl(0,termios.TIOCSCTTY,0); os.execvpe(sys.argv[1],sys.argv[1:],os.environ)",
-                              executable]
+                              executable, *arguments]
                 process = await asyncio.create_subprocess_exec(
                     *launch,
                     cwd=str(requested_cwd),
@@ -278,7 +304,7 @@ def create_desktop_app(token: str) -> ASGIApp:
                     os.close(slave)
             await websocket.send_json({"type": "ready"})
             initial = message.get("input")
-            if isinstance(initial, str) and initial:
+            if command in {"shell", "terminal"} and isinstance(initial, str) and initial:
                 if master is not None:
                     os.write(master, (initial + "\n").encode())
                 elif process.stdin:

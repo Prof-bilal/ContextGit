@@ -33,55 +33,85 @@ export default function PresetsPanel({
     setPresets(next);
   };
   return (
-    <aside className="sp-float">
+    <aside
+      className="sp-float sp-presets"
+      role="dialog"
+      aria-labelledby="team-presets-title"
+    >
       <header>
-        <h2>Team presets</h2>
+        <div>
+          <small>Reusable team plans</small>
+          <h2 id="team-presets-title">Team presets</h2>
+        </div>
         <button onClick={close} aria-label="Close presets">
           <LuX />
         </button>
       </header>
-      <p>
+      <p className="sp-presets-intro">
         Load a reusable team plan, edit its goal and review before launching.
       </p>
-      {presets.map((preset) => (
-        <article className="sp-library-skill" key={preset.id}>
-          <strong>{preset.name}</strong>
-          <p>
-            {preset.tasks.length} workers · {preset.orchestrator}
-          </p>
-          <button onClick={() => load(preset)}>Load draft</button>
+      {presets.length > 0 ? (
+        <div className="sp-presets-list">
+          {presets.map((preset) => (
+            <article className="sp-preset-card" key={preset.id}>
+              <div>
+                <strong>{preset.name}</strong>
+                <small>
+                  {preset.tasks.length} workers · {preset.orchestrator}
+                </small>
+              </div>
+              <div className="sp-preset-actions">
+                <button onClick={() => load(preset)}>Load draft</button>
+                <button
+                  className="sp-danger-button"
+                  onClick={() =>
+                    update(presets.filter((item) => item.id !== preset.id))
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="sp-presets-empty">
+          <span aria-hidden="true">✦</span>
+          <strong>No saved presets yet</strong>
+          <small>Save this team plan below to reuse it in a future run.</small>
+        </div>
+      )}
+      <div className="sp-preset-save">
+        <label htmlFor="team-preset-name">Save the current plan</label>
+        <div>
+          <input
+            id="team-preset-name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="e.g. Full-stack review"
+          />
           <button
-            onClick={() =>
-              update(presets.filter((item) => item.id !== preset.id))
-            }
+            className="sp-primary"
+            disabled={!team?.plan || !name.trim()}
+            onClick={() => {
+              if (!team?.plan) return;
+              update([
+                ...presets,
+                {
+                  id: crypto.randomUUID(),
+                  name: name.trim(),
+                  orchestrator: team.team.orchestrator_agent ?? "claude",
+                  goal: team.team.goal,
+                  tasks: team.plan.plan.tasks ?? [],
+                },
+              ]);
+            }}
           >
-            Remove preset
+            Save preset
           </button>
-        </article>
-      ))}
-      <label>
-        Preset name
-        <input value={name} onChange={(event) => setName(event.target.value)} />
-      </label>
-      <button
-        className="sp-primary"
-        disabled={!team?.plan || !name.trim()}
-        onClick={() => {
-          if (!team?.plan) return;
-          update([
-            ...presets,
-            {
-              id: crypto.randomUUID(),
-              name,
-              orchestrator: team.team.orchestrator_agent ?? "claude",
-              goal: team.team.goal,
-              tasks: team.plan.plan.tasks ?? [],
-            },
-          ]);
-        }}
-      >
-        Save selected team
-      </button>
+        </div>
+        {!team?.plan && <small>Approve a team plan before saving it.</small>}
+      </div>
     </aside>
   );
 }
