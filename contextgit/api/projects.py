@@ -5,6 +5,8 @@ import asyncio
 import hashlib
 import os
 import secrets
+import subprocess
+import sys
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -24,6 +26,47 @@ from contextgit.core.repo import Repo
 
 class OpenProject(BaseModel):
     path: str
+
+
+class CreateProject(BaseModel):
+    parent: str
+    name: str
+
+
+def choose_folder() -> str | None:
+    """Open the host OS folder picker for the localhost browser app."""
+    commands: list[list[str]] = []
+    if os.name == "nt":
+        commands.append([
+            "powershell", "-NoProfile", "-Command",
+            "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.FolderBrowserDialog; if($d.ShowDialog() -eq 'OK'){ $d.SelectedPath }",
+        ])
+    elif sys.platform == "darwin":
+        commands.append(["osascript", "-e", "POSIX path of (choose folder with prompt \"Choose a ContextGit project folder\")"])
+    else:
+        commands.extend([
+            ["zenity", "--file-selection", "--directory", "--title=Choose a ContextGit project folder"],
+            ["kdialog", "--getexistingdirectory", str(Path.home())],
+        ])
+    for command in commands:
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0 and result.stdout.strip():
+            return str(Path(result.stdout.strip()).expanduser().resolve())
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title="Choose a ContextGit project folder")
+        root.destroy()
+        return str(Path(selected).expanduser().resolve()) if selected else None
+    except Exception:
+        return None
 
 
 class ProjectEntry(TypedDict):
@@ -119,6 +162,23 @@ def create_desktop_app(token: str) -> ASGIApp:
     @root.post("/api/v1/projects/open")
     async def open_project(body: OpenProject) -> dict[str, str]:
         return await registry.open(body.path)
+
+    @root.post("/api/v1/projects/choose")
+    async def choose_project() -> dict[str, str | None]:
+        return {"path": await asyncio.to_thread(choose_folder)}
+
+    @root.post("/api/v1/projects/create")
+    async def create_project(body: CreateProject) -> dict[str, str]:
+        parent = Path(body.parent).expanduser().resolve()
+        name = body.name.strip()
+        if not parent.is_dir() or not name or Path(name).name != name or name in {".", ".."}:
+            raise HTTPException(400, "Choose a valid parent folder and project name.")
+        path = parent / name
+        try:
+            path.mkdir()
+        except FileExistsError as exc:
+            raise HTTPException(409, "That project folder already exists.") from exc
+        return await registry.open(str(path))
 
     @root.websocket("/api/v1/terminal")
     async def terminal(websocket: WebSocket) -> None:
@@ -232,7 +292,7 @@ def create_desktop_app(token: str) -> ASGIApp:
                 if not secrets.compare_digest(supplied, f"Bearer {token}"):
                     return await JSONResponse({"error": "Unauthorized"}, 401)(scope, receive, send)
             if (
-                scope["path"] in {"/api/v1/health", "/api/v1/projects/open"}
+                scope["path"] in {"/api/v1/health", "/api/v1/projects/open", "/api/v1/projects/choose", "/api/v1/projects/create"}
                 or scope["method"] == "OPTIONS"
             ):
                 return await root(scope, receive, send)

@@ -95,9 +95,24 @@ export function installWebBridge(): void {
     editorStatus: async () => editorRequest("/api/v1/editor/status"),
     editorSuspend: async () => editorRequest("/api/v1/editor/suspend", "POST"),
     editorStop: async () => { await editorRequest("/api/v1/editor/stop", "POST"); },
-    chooseWorkspace: async () => { const value = window.prompt("Project folder path"); return value ? open(value) : null; },
-    pickWorkspaceLocation: async () => window.prompt("Parent folder path") || null,
-    createWorkspace: async (parent: string, name: string) => open(`${parent.replace(/[\\/]$/, "")}/${name}`),
+    chooseWorkspace: async () => {
+      const response = await fetch(`${apiBase}/api/v1/projects/choose`, { method: "POST", headers: headers() });
+      if (!response.ok) throw new Error((await response.text()) || "Could not open the folder picker.");
+      const result = await response.json() as { path?: string | null };
+      return result.path ? open(result.path) : null;
+    },
+    pickWorkspaceLocation: async () => {
+      const response = await fetch(`${apiBase}/api/v1/projects/choose`, { method: "POST", headers: headers() });
+      if (!response.ok) throw new Error((await response.text()) || "Could not open the folder picker.");
+      const result = await response.json() as { path?: string | null };
+      return result.path ?? null;
+    },
+    createWorkspace: async (parent: string, name: string) => {
+      const response = await fetch(`${apiBase}/api/v1/projects/create`, { method: "POST", headers: headers(), body: JSON.stringify({ parent, name }) });
+      if (!response.ok) throw new Error((await response.text()) || "Could not create the project folder.");
+      const result = await response.json() as { path: string };
+      return open(result.path);
+    },
     forgetProject: async (path: string) => { const remaining = savedProjects().filter(item => item.path !== path); localStorage.setItem(projectsKey, JSON.stringify(remaining)); if (localStorage.getItem(activeKey) === path) { localStorage.removeItem(activeKey); projectRuntime.select(null); } return remaining; },
     ptyStart: async (options: { id: string; command: string; cwd?: string; input?: string; env?: Record<string, string> }) => {
       const project = localStorage.getItem(activeKey);
