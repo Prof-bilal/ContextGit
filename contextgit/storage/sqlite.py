@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from contextgit.core.events import AgentEvent
 from contextgit.storage.connection import _GuardedConnection
@@ -1280,6 +1280,22 @@ class SqliteStorage:
             )
             if cur.rowcount == 0:
                 raise TeamNotFound(f"team '{team.id[:12]}' not found")
+
+    def team_execution(self, team_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute("SELECT settings FROM team_execution WHERE team_id = ?", (team_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_team_execution(self, team_id: str, settings: dict[str, Any]) -> None:
+        with self._conn:
+            self._conn.execute("INSERT OR REPLACE INTO team_execution VALUES (?, ?)", (team_id, json.dumps(settings)))
+
+    def team_integrations(self, team_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute("SELECT payload FROM team_integrations WHERE team_id = ?", (team_id,)).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def save_team_integration(self, team_id: str, task_id: str, payload: dict[str, Any]) -> None:
+        with self._conn:
+            self._conn.execute("INSERT OR REPLACE INTO team_integrations VALUES (?, ?, ?)", (task_id, team_id, json.dumps(payload)))
 
     def insert_team_plan(self, plan: TeamPlanRevision) -> TeamPlanRevision:
         with self._conn:

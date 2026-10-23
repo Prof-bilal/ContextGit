@@ -140,7 +140,6 @@ export default function EmbeddedTerminal({ sessionId, onResume }: { sessionId: s
 
   return (
     <div
-      ref={host}
       className="sp-embedded-terminal nodrag nopan nowheel"
       aria-label="Interactive agent terminal. Click to focus, wheel to scroll."
       title="Click to type · Scroll inside the terminal"
@@ -159,6 +158,9 @@ export default function EmbeddedTerminal({ sessionId, onResume }: { sessionId: s
         event.stopPropagation();
       }}
     >
+      {/* Keep React controls outside the DOM owned by xterm. Its mouse
+          handlers must never receive a Resume button's events. */}
+      <div ref={host} className="sp-terminal-screen" />
       {onResume && ["idle", "error", "exited"].includes(state.state) && (
         <div className="sp-terminal-resume">
           {state.error && <span role="alert">{state.error}</span>}

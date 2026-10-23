@@ -89,6 +89,7 @@ struct ProjectSelection(Mutex<()>);
 struct PtyStartOptions {
     id: String,
     command: String,
+    model: Option<String>,
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
     #[serde(default)]
@@ -1530,6 +1531,28 @@ fn pty_start(
     let executable = find_harness(&options.command).path.unwrap_or(program);
     let mut command = CommandBuilder::new(executable);
     command.args(args);
+    if let Some(model) = options.model.as_deref().filter(|value| !value.is_empty()) {
+        if ["codex", "claude", "commandcode"].contains(&options.command.as_str()) {
+            command.args(["--model", model]);
+        }
+    }
+    if options.command == "commandcode" {
+        command.arg("--no-auto-update");
+    }
+    if options.command == "opencode" {
+        if let Some(cwd) = options.cwd.as_deref() {
+            let config = Path::new(cwd).join(".contextgit/opencode.json");
+            if config.is_file() {
+                if let Ok(source) = fs::read_to_string(&config) {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&source) {
+                        if value.pointer("/mcp/servers").is_some() { command.arg("--standalone"); }
+                    }
+                }
+                command.env("OPENCODE_CONFIG", config);
+            }
+        }
+        command.env("OPENCODE_DISABLE_AUTOUPDATE", "true");
+    }
     // Reopening a stored run resumes its native CLI session instead of
     // starting a second conversation. The PTY remains disposable; the
     // backend session and worktree are the durable identity.
@@ -1545,6 +1568,7 @@ fn pty_start(
             // interactive picker.
             "codex" => command.args(["resume", "--last"]),
             "opencode" => command.args(["--continue"]),
+            "commandcode" => command.args(["--continue"]),
             _ => {}
         }
     } else {
@@ -1554,8 +1578,11 @@ fn pty_start(
                 command.args(["--session-id", &native_id]);
             }
         }
-        if ["claude", "codex"].contains(&options.command.as_str()) {
+        if ["claude", "codex", "commandcode"].contains(&options.command.as_str()) {
             if let Some(input) = options.input.as_deref().filter(|value| !value.trim().is_empty()) { command.arg(input); }
+        }
+        if options.command == "opencode" {
+            if let Some(input) = options.input.as_deref().filter(|value| !value.trim().is_empty()) { command.args(["--prompt", input]); }
         }
     }
     // Give shells and full-screen CLIs a predictable terminal even when the
@@ -1647,7 +1674,7 @@ fn pty_start(
         }
     });
 
-    if let Some(input) = options.input.filter(|value| !value.trim().is_empty() && !["claude", "codex"].contains(&options.command.as_str())) {
+    if let Some(input) = options.input.filter(|value| !value.trim().is_empty() && !["claude", "codex", "opencode", "commandcode"].contains(&options.command.as_str())) {
         let input_writer = writer;
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(700));

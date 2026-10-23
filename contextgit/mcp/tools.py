@@ -113,6 +113,9 @@ def _task_view(task: Task, titles: dict[str, str]) -> dict[str, Any]:
         "contract": task.contract,
         "depends_on": [titles.get(dep, dep) for dep in task.depends_on],
         "blocked_by": [titles.get(dep, dep) for dep in task.blocked_by],
+        "dependency_ids": task.depends_on,
+        "brief": task.brief,
+        "done_criteria": task.done_criteria,
         "tokens": task.tokens,
         "gate_status": task.gate_status,
     }
@@ -439,7 +442,10 @@ def resume_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
     if error or resolved is None:
         return error or {"error": "no team", "type": "TeamNotFound"}
     repo.update_team_details(resolved, state="running")
-    repo.launch_team(resolved)
+    if repo.team_execution.settings(resolved) and repo.latest_team_plan(resolved) and repo.latest_team_plan(resolved).status == "approved":
+        repo.team_execution.integrate(resolved)
+    else:
+        repo.launch_team(resolved)
     return repo.get_team(resolved).model_dump(mode="json")
 
 
@@ -448,6 +454,8 @@ def prepare_merge(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
     resolved, error = _orchestrator_team(repo, team_id)
     if error or resolved is None:
         return error or {"error": "no team", "type": "TeamNotFound"}
+    if repo.team_execution.settings(resolved):
+        return repo.team_execution.preview(resolved)
     tasks = repo.list_tasks(resolved)
     unfinished = [task.title for task in tasks if task.status != "done"]
     if not unfinished and tasks:
@@ -457,6 +465,14 @@ def prepare_merge(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
         "unfinished": unfinished,
         "requires_user_confirmation": True,
     }
+
+
+def integrate_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
+    """Parent-only integration into the fixed team branch, never the user's branch."""
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    return _guard(lambda: repo.team_execution.integrate(resolved))
 
 
 def propose_skill(

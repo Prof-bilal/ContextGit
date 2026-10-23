@@ -119,6 +119,12 @@ try {
   assert.equal(runtime.snapshot("worker-0").state, "exited");
   await assert.rejects(() => runtime.send("worker-0", "bad"), /exited/);
   for (const session of sessions.slice(1)) onExit(`pty-${session.id}`, 0);
+  const beforeRetry = starts.length;
+  await Promise.all([runtime.retry('worker-0', 'restored-team', 'restored-task'), runtime.retry('worker-0', 'restored-team', 'restored-task')]);
+  assert.equal(starts.length, beforeRetry + 1, 'Repeated Resume actions launch exactly once');
+  assert.equal(starts.at(-1).env.CONTEXTGIT_TEAM, 'restored-team');
+  assert.equal(starts.at(-1).env.CONTEXTGIT_TASK, 'restored-task');
+  onExit('pty-worker-0', 0);
   await new Promise((resolve) => setTimeout(resolve, 1700));
   assert(transcripts.some((entry) => entry.text.includes("survives closing")));
   console.log(

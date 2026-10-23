@@ -6,6 +6,50 @@ does not import or mount their surfaces. Old feature URLs open the canvas.
 
 ## Use
 
+### Parent-led teams with live terminals
+
+Choose **Create team** in the existing canvas toolbar. Select an installed Codex
+or Claude parent, allowed worker CLIs, the goal, a maximum active worker count,
+and optional approved skills. The parent starts in its own worktree with the
+full orchestration instructions. It chooses the number of workers and proposes
+a plan through MCP; it does not receive a fixed worker count.
+
+The existing team container shows the parent's interactive terminal above the
+workers' interactive terminals. Purple skill trees show the instruction
+snapshots attached to each session. There are no team progress-bar cards.
+The team header provides plan review, approval-gated worker additions,
+pause/resume, final merge review, collapse, and archive controls.
+
+Approve the plan to authorize worker processes. Only approved workers launch;
+dependencies must be integrated before their worktrees are created, and each
+new worker starts from the current team integration commit. Parent approval of
+a completed worker re-runs its project checks and integrates into the isolated
+`codex/team/<team-id>` branch through a serialized, checked candidate worktree.
+No automatic integration into the user's target branch or remote push occurs.
+Automatic integration requires a detected/configured project quality gate.
+Failures retain the worker and candidate worktrees and post the error to the
+team board. The parent can request correction or retry with `integrate_team`.
+
+New plan revisions may append workers after user approval; existing approved
+worker instructions and dependencies remain immutable in this first release.
+The parent reads actual task IDs from `list_tasks` when proposing additions.
+Team pause prevents scheduling and integration; active CLIs continue. Reopening
+the app does not restart agents automatically: use the parent terminal's
+resume control or the team's pause/resume controls to resume coordination.
+Collapsing or expanding terminals never kills or duplicates their processes.
+
+Final merge confirmation rechecks reviewed work, the integration head, clean
+worktrees, and combined tests. It fast-forwards the original target branch only
+when that branch is checked out and has not diverged. Diverged targets require
+an explicit update and validation rather than an automatic merge. Existing
+teams created before this opt-in execution mode retain the legacy workflow
+described below. Migration 0031 adds durable team execution settings and
+integration results without replacing existing team or session records.
+
+Run `npm run test:live-team --prefix desktop` for the real canvas/PTY wiring
+fixture (requires root Playwright dependencies and system Chromium), and
+`pytest tests/test_parent_execution.py` for real-Git integration regressions.
+
 1. Choose a project from the floating selector. Right-click the canvas or use
    **New team** to place a bounded team. Select the parent CLI, optional role
    skills and a goal.

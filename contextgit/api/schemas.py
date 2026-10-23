@@ -218,6 +218,11 @@ class TeamCreateRequest(BaseModel):
     gate_command: str | None = None
     goal: str = ""
     orchestrator_agent: str | None = None
+    managed_execution: bool = False
+    max_active: int = Field(default=4, ge=1, le=12)
+    allowed_agents: list[Literal["codex", "claude", "opencode", "commandcode"]] = Field(default_factory=lambda: ["codex", "claude"], min_length=1)
+    orchestrator_model: str | None = Field(default=None, max_length=200)
+    worker_models: dict[str, str] = Field(default_factory=dict)
 
 
 class TeamUpdateRequest(BaseModel):

@@ -23,6 +23,7 @@ export interface ContextGitBridge {
   ptyStart: (options: {
     id: string;
     command: string;
+    model?: string;
     sessionId?: string;
     resume?: boolean;
     cols: number;

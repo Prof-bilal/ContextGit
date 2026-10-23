@@ -476,6 +476,8 @@ export interface SpatialTeam extends TeamBoard {
   layout: CanvasLayout;
   plan: TeamPlanRevision | null;
   skills: SkillLink[];
+  execution?: { max_active: number; allowed_agents: string[]; integration_branch: string; orchestrator_model?: string | null; worker_models?: Record<string, string> } | null;
+  integrations?: Array<{ task_id: string; status: string; error?: string; integration_head?: string }>;
 }
 
 export interface SkillLink {
@@ -1409,6 +1411,11 @@ export function projectApi(owner?: string) {
     goal?: string;
     orchestratorAgent?: string;
     baseRef?: string;
+    managedExecution?: boolean;
+    maxActive?: number;
+    allowedAgents?: string[];
+    orchestratorModel?: string;
+    workerModels?: Record<string, string>;
   }) => request<SpatialTeam>("/api/v1/teams", {
     method: "POST",
     body: JSON.stringify({
@@ -1417,11 +1424,19 @@ export function projectApi(owner?: string) {
       goal: input.goal ?? "",
       orchestrator_agent: input.orchestratorAgent,
       base_ref: input.baseRef,
+      managed_execution: input.managedExecution ?? false,
+      max_active: input.maxActive ?? 4,
+      allowed_agents: input.allowedAgents ?? ["codex", "claude"],
+      orchestrator_model: input.orchestratorModel || null,
+      worker_models: input.workerModels ?? {},
     }),
   }),
   updateSpatialTeam: (id: string, patch: Partial<Pick<Team, "name" | "goal" | "state" | "orchestrator_agent" | "orchestrator_session_id">>) =>
     request<SpatialTeam>(`/api/v1/teams/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   startOrchestrator: (id: string) => request<Session>(`/api/v1/teams/${id}/orchestrator/start`, { method: "POST" }),
+  harnessModels: (agent: string) => request<{ models: { id: string; label: string }[]; source: string; message: string }>(`/api/v1/harnesses/${encodeURIComponent(agent)}/models`),
+  integrateTeam: (id: string) => request(`/api/v1/teams/${id}/integrate`, { method: "POST" }),
+  archiveSpatialTeam: (id: string) => request(`/api/v1/teams/${id}`, { method: "DELETE" }),
   teamPlan: (id: string) => request<TeamPlanRevision | null>(`/api/v1/teams/${id}/plan`),
   saveTeamPlan: (id: string, goal: string, tasks: TeamPlanTask[]) =>
     request<TeamPlanRevision>(`/api/v1/teams/${id}/plan`, {

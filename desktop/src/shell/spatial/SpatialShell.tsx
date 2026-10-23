@@ -46,6 +46,7 @@ import {
   type TeamPlanTask,
 } from "@/shared/api";
 import { HARNESSES } from "@/shared/harnesses";
+import { TeamCreateDialog, TEAM_CLIS } from "./TeamCreateDialog";
 import { harnessFor } from "@/shared/harnesses";
 import { SKILLS } from "@/shared/roles";
 import { terminalRuntime } from "../terminal/runtime";
@@ -58,6 +59,7 @@ import ProjectMenu from "./ProjectMenu";
 import PlanReview from "./PlanReview";
 import FilesPanel from "./FilesPanel";
 import PresetsPanel, { type TeamPreset } from "./PresetsPanel";
+import { RunSkills, AgentSkills, type RunSkill } from "./RunSkills";
 import { useCanvasPreference } from "./useCanvasPreference";
 
 const RuntimeTerminal = lazy(() => import("../terminal/RuntimeTerminal"));
@@ -91,6 +93,9 @@ type TeamNodeData = {
   onJob: (team: SpatialTeam) => void;
   onClose: (team: SpatialTeam) => void;
   onCloseAgent: (session: Session) => void;
+  onReview: (team: SpatialTeam) => void;
+  onMerge: (team: SpatialTeam) => void;
+  onAddWorker: (team: SpatialTeam) => void;
 };
 
 type MergePreview = {
@@ -166,13 +171,13 @@ const TeamNode = memo(function TeamNode({ data }: NodeProps<Node<TeamNodeData>>)
   const { team, sessions } = data;
   const collapsed = team.layout.collapsed;
   const standalone = team.team.name === "Ungrouped runs";
+  const parent = sessions.find(session => session.id === team.team.orchestrator_session_id);
   const visibleTasks = team.tasks.filter(
     (task) =>
       !task.session_id ||
       sessions.some((session) => session.id === task.session_id),
   );
-  // Cap live cards: extra workers render behind a "Show all" expander and
-  // only attached sessions mount a real xterm (others show a static tail).
+  // Keep larger teams manageable; every visible started worker has a live xterm.
   const capped = data.showAll ? visibleTasks : visibleTasks.slice(0, 6);
   const workers = standalone ? capped.slice().reverse() : capped;
   const hiddenCount = visibleTasks.length - capped.length;
@@ -212,6 +217,10 @@ const TeamNode = memo(function TeamNode({ data }: NodeProps<Node<TeamNodeData>>)
         <span className="sp-team-count">
           {workers.length} agents
         </span>
+        <button className="sp-icon nodrag" aria-label={`Review ${team.team.name} plan`} title="Review plan" onClick={() => data.onReview(team)}><LuFile /></button>
+        <button className="sp-icon nodrag" aria-label={`Add worker to ${team.team.name}`} title="Propose worker for approval" onClick={() => data.onAddWorker(team)}><LuPlus /></button>
+        <button className="sp-icon nodrag" aria-label={team.team.state === "paused" ? "Resume team" : "Pause team"} title={team.team.state === "paused" ? "Resume team" : "Pause team"} onClick={() => data.onPause(team)}>{team.team.state === "paused" ? <LuPlay /> : <LuPause />}</button>
+        <button className="sp-icon nodrag" aria-label="Review final team merge" title="Review final merge" onClick={() => data.onMerge(team)}><LuUsers /></button>
         <button
           className="sp-icon nodrag"
           onClick={() => data.onToggle(team)}
@@ -230,6 +239,12 @@ const TeamNode = memo(function TeamNode({ data }: NodeProps<Node<TeamNodeData>>)
       </header>}
       {!collapsed && (
         <div className="sp-team-body">
+          {!standalone && parent && <div className="sp-team-parent nodrag">
+            <header className="sp-worker-head"><AgentMark agent={parent.agent ?? "codex"} label="P" /><strong>Parent · {harnessFor(parent.agent)?.label ?? parent.agent}</strong><small title={parent.model ?? "CLI default"}>{parent.model ?? "CLI default"} · {team.team.state}</small><button className="sp-icon" aria-label="Resume parent terminal" title="Resume parent terminal" onClick={() => data.onOpen(parent)}><LuPlay /></button></header>
+            <EmbeddedTerminal sessionId={parent.id} onResume={() => data.onOpen(parent)} />
+            <AgentSkills skills={parent.skills ?? []} />
+          </div>}
+          {!standalone && team.execution && <div className="sp-team-runtime-info"><span>{team.execution.integration_branch}</span><small>{team.execution.max_active} active workers max · Separate worktrees</small>{team.integrations?.filter(item => item.status === "blocked").map(item => <p role="alert" key={item.task_id}>{item.error}</p>)}</div>}
           <div
             className="sp-workers nodrag"
             data-count={workers.length}
@@ -314,39 +329,14 @@ const TeamNode = memo(function TeamNode({ data }: NodeProps<Node<TeamNodeData>>)
                   <span className="sp-worker-meta">
                     {task.agent ?? "unassigned"} · {task.role}
                   </span>
-                  {session &&
-                  (data.attachedIds?.includes(session.id) ||
-                    data.activeSessionId === session.id) ? (
-                    <EmbeddedTerminal sessionId={session.id} />
-                  ) : session ? (
-                    <button
-                      type="button"
-                      className="sp-term-placeholder nodrag"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        data.onAttach?.(session);
-                      }}
-                      title="Click to attach the live terminal"
-                    >
-                      <code>
-                        &gt; {terminalRuntime.snapshot(session.id).tail.slice(-280) || task.brief || task.title}
-                      </code>
-                      <span className="sp-term-hint">
-                        Click to attach live terminal · {task.status}
-                      </span>
-                    </button>
+                  {session ? (
+                    <><EmbeddedTerminal sessionId={session.id} onResume={() => data.onOpen(session)} /><AgentSkills skills={session.skills ?? []} /></>
                   ) : (
                     <code>
                       &gt; {task.brief || task.title}
                       <br />› {task.status}
                     </code>
                   )}
-                  <span className="sp-progress">
-                    <i
-                      style={{ width: task.status === "done" ? "100%" : "0%" }}
-                    />
-                  </span>
                 </div>
               );
             })}
@@ -360,7 +350,7 @@ const TeamNode = memo(function TeamNode({ data }: NodeProps<Node<TeamNodeData>>)
                   data.onShowAll?.(team.team.id);
                 }}
               >
-                Show all {visibleTasks.length} agents ({hiddenCount} hidden to save resources)
+                Show all {visibleTasks.length} agent terminals ({hiddenCount} hidden)
               </button>
             )}
           </div>
@@ -427,6 +417,7 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
         </button>
       </header>
       <EmbeddedTerminal sessionId={session.id} onResume={() => data.onOpen(session)} />
+      <AgentSkills skills={session.skills ?? []} />
     </section>
   );
 });
@@ -444,6 +435,7 @@ const BatchNode = memo(function BatchNode({ data }: NodeProps<Node<TeamNodeData>
           <button className="sp-agent-close" aria-label={`Close ${session.name}`} onClick={() => data.onCloseAgent(session)}><LuX /></button>
         </header>
         <EmbeddedTerminal sessionId={session.id} onResume={() => data.onOpen(session)} />
+        <AgentSkills skills={session.skills ?? []} />
       </section>)}
     </div>
   </section>;
@@ -475,6 +467,8 @@ export default function SpatialShell({
   const [flowVersion, setFlowVersion] = useState(0);
   const [teamDialog, setTeamDialog] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [planOwnerId, setPlanOwnerId] = useState<string>();
+  const [mergeOwnerId, setMergeOwnerId] = useState<string>();
   const [skillsOpen, setSkillsOpen] = useCanvasPreference(
     shared.workspace?.path,
     "skills",
@@ -496,6 +490,32 @@ export default function SpatialShell({
   const [spawnCount, setSpawnCount] = useState(1);
   const [spawnProgress, setSpawnProgress] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [armedTeamIds, setArmedTeamIds] = useState<string[]>([]);
+  const notifiedParentEvents = useRef(new Set<string>());
+  const [maxTeamActive, setMaxTeamActive] = useState(4);
+  const [teamModels, setTeamModels] = useState<Record<string, string>>({});
+  const [workerModels, setWorkerModels] = useState<Record<string, string>>({});
+  const [allowedTeamAgents, setAllowedTeamAgents] = useState(["codex", "claude"]);
+  const [installedTeamAgents, setInstalledTeamAgents] = useState<string[]>([]);
+  const [checkingTeamAgents, setCheckingTeamAgents] = useState(false);
+  const [teamSkills, setTeamSkills] = useState<RunSkill[]>([]);
+  useEffect(() => {
+    if (!teamDialog) return;
+    let active = true;
+    setCheckingTeamAgents(true);
+    void Promise.all(TEAM_CLIS.map(async agent => ({ agent, installed: (await window.contextgit?.harnessCheck(agent))?.installed ?? false })))
+      .then(results => {
+        if (!active) return;
+        const installed = results.filter(result => result.installed).map(result => result.agent);
+        setInstalledTeamAgents(installed);
+        setAllowedTeamAgents(installed);
+        if (installed.length && !installed.includes(orchestrator)) setOrchestrator(installed[0]);
+      }).catch(cause => { if (active) setError(String(cause)); })
+      .finally(() => { if (active) setCheckingTeamAgents(false); });
+    return () => { active = false; };
+  }, [teamDialog]);
+  const [runSkills, setRunSkills] = useState<RunSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const [worktreeMode, setWorktreeMode] = useState<"root" | "worktree">("root");
   const [agentCount, setAgentCount] = useState(4);
   const [teamRoles, setTeamRoles] = useState(
@@ -695,22 +715,19 @@ export default function SpatialShell({
       );
       // An inline terminal already owns this PTY's grid. Mounting a second
       // preview with a different size makes the two views resize each other.
-      const inline = teams.some(team => team.tasks.some(task => task.session_id === session.id));
+      const inline = teams.some(team => team.team.orchestrator_session_id === session.id || team.tasks.some(task => task.session_id === session.id));
       setTerminalSession(inline ? null : session);
       focusAgentNode(session.id);
-      if (terminalRuntime.session(session.id)) {
-        if (["exited", "error"].includes(terminalRuntime.snapshot(session.id).state))
-          void terminalRuntime.retry(session.id).catch(cause => setError(String(cause)));
-        return;
-      }
       const owner = teams.find(
         (team) =>
           team.team.orchestrator_session_id === session.id ||
           team.tasks.some((task) => task.session_id === session.id),
       );
       const task = owner?.tasks.find((task) => task.session_id === session.id);
-      if (["done", "error"].includes(session.status)) {
-        void terminalRuntime.restore(session);
+      if (owner?.execution) setArmedTeamIds(current => current.includes(owner.team.id) ? current : [...current, owner.team.id]);
+      if (terminalRuntime.session(session.id)) {
+        if (["idle", "exited", "error"].includes(terminalRuntime.snapshot(session.id).state))
+          void terminalRuntime.retry(session.id, owner?.team.id, task?.id).catch(cause => setError(String(cause)));
         return;
       }
       const ownerApi = owner ? projectApi(owner.team.project_path) : api;
@@ -783,7 +800,28 @@ export default function SpatialShell({
                 if (entry.team.state === "paused")
                   await ownerApi.resumeSpatialTeam(entry.team.id);
                 else await ownerApi.pauseSpatialTeam(entry.team.id);
+                if (entry.team.state === "paused") {
+                  setArmedTeamIds(current => current.includes(entry.team.id) ? current : [...current, entry.team.id]);
+                  await shared.refresh();
+                }
                 await loadTeams();
+              },
+              onReview: (entry: SpatialTeam) => {
+                setSelectedId(entry.team.id);
+                setPlanOwnerId(entry.team.id);
+                setPlanTasks(entry.plan?.plan.tasks ?? []);
+                setPlanOpen(true);
+              },
+              onAddWorker: (entry: SpatialTeam) => {
+                setSelectedId(entry.team.id);
+                setPlanOwnerId(entry.team.id);
+                setPlanTasks([...(entry.plan?.plan.tasks ?? []), { id: `worker-${crypto.randomUUID().slice(0, 8)}`, title: "New worker", agent: entry.execution?.allowed_agents[0] ?? "codex", role: "implementer", brief: "", scope: [], depends_on: [], done_criteria: "" }]);
+                setPlanOpen(true);
+              },
+              onMerge: (entry: SpatialTeam) => {
+                setSelectedId(entry.team.id);
+                setMergeOwnerId(entry.team.id);
+                void projectApi(entry.team.project_path).previewSpatialTeamMerge(entry.team.id).then(result => { setMergePreview(result); setMergeOpen(true); }).catch(cause => setError(String(cause)));
               },
               selectedWorkers,
               onWorkerSelect: (id: string) =>
@@ -990,6 +1028,8 @@ export default function SpatialShell({
     teams.find(
       (team) => team.team.id === selectedId,
     ) ?? null;
+  const planTeam = teams.find(team => team.team.id === planOwnerId) ?? selected;
+  const mergeTeam = teams.find(team => team.team.id === mergeOwnerId) ?? selected;
   // Canvas tab strip: every visible agent session, synced with the shared
   // active session so canvas clicks and tab clicks select the same run.
   const canvasTabs = useMemo(() => {
@@ -1017,7 +1057,6 @@ export default function SpatialShell({
       .slice(0, 24);
   }, [teams, shared.sessions, closedAgentIds]);
   useEffect(() => {
-    setPlanOpen(false);
     setMergeOpen(false);
   }, [selectedId]);
   const viewportProjectPath = shared.workspace?.path;
@@ -1043,12 +1082,13 @@ export default function SpatialShell({
     if (!flow || !viewportProjectPath || nodes.length === 0) return;
     const focus = nodes.find((node) => node.type === "agent") ?? nodes[0];
     const agentCount = nodes.filter((node) => node.type === "agent").length;
-    const signature = `${viewportProjectPath}:${focus.id}:${agentCount}`;
+    if (focus.type === "team" && !focus.measured?.height) return;
+    const signature = `${viewportProjectPath}:${focus.id}:${agentCount}:${focus.type === "team" ? focus.data.team.tasks.filter(task => task.session_id).length : ""}`;
     if (centeredAgents.current === signature) return;
     centeredAgents.current = signature;
     window.requestAnimationFrame(() => {
       const width = Number(focus.style?.width) || 760;
-      const height = Number(focus.style?.height) || 520;
+      const height = (focus.type === "team" ? focus.measured?.height : Number(focus.style?.height)) || 520;
       void flow.setCenter(focus.position.x + width / 2, focus.position.y + height / 2, {
         zoom: Math.min(0.9, (window.innerWidth - 100) / width, (window.innerHeight - 180) / height),
         duration: 250,
@@ -1100,12 +1140,50 @@ export default function SpatialShell({
   }, [shared.sessions]);
 
   useEffect(() => {
+    // Explicit creation/approval/resume authorizes future dependency launches.
+    // Merely reopening saved teams never silently restarts their CLIs.
+    for (const team of teams) {
+      if (!armedTeamIds.includes(team.team.id) || team.team.state === "paused") continue;
+      const parent = shared.sessions.find(item => item.id === team.team.orchestrator_session_id);
+      if (parent && !["done", "error"].includes(parent.status) && !terminalRuntime.session(parent.id))
+        void terminalRuntime.ensure(parent, team.team.id).catch(cause => setError(String(cause)));
+      for (const task of team.tasks) {
+        const session = shared.sessions.find(item => item.id === task.session_id);
+        if (session && task.status === "working" && !terminalRuntime.session(session.id))
+          void terminalRuntime.ensure(session, team.team.id, task.id).then(() => {
+            const state = terminalRuntime.snapshot(session.id);
+            if (state.state === "error") setError(state.error ?? "Worker failed to launch");
+          }).catch(cause => setError(String(cause)));
+      }
+    }
+  }, [teams, shared.sessions, armedTeamIds]);
+
+  useEffect(() => {
+    for (const team of teams) {
+      const parentId = team.team.orchestrator_session_id;
+      if (!team.execution || !parentId || !armedTeamIds.includes(team.team.id) || team.team.state === "paused" || terminalRuntime.snapshot(parentId).state !== "running") continue;
+      const updates: Array<{ key: string; text: string }> = [];
+      if (team.plan?.status === "approved") updates.push({ key: `${team.team.id}:approved:${team.plan.revision}`, text: `The user approved team plan revision ${team.plan.revision}. Coordinate the approved workers; read team_status and list_tasks.` });
+      for (const task of team.tasks) if (task.status === "review") updates.push({ key: `${task.id}:review:${task.gate_ran_at ?? "submitted"}`, text: `Worker ${task.id} (${task.title}) submitted work for review. Inspect its committed diff and quality-gate evidence, then use review_task to approve or request changes.` });
+      for (const message of team.messages ?? []) if (message.from_task_id && ["question", "handoff"].includes(message.kind)) updates.push({ key: `${team.team.id}:message:${message.id}`, text: `Worker message on the team board (${message.id}). Use read_board to inspect and respond.` });
+      const pending = updates.filter(update => !notifiedParentEvents.current.has(update.key));
+      if (!pending.length) continue;
+      pending.forEach(update => notifiedParentEvents.current.add(update.key));
+      void terminalRuntime.send(parentId, `${pending.map(update => update.text).join(" ")}\r`).catch(cause => {
+        pending.forEach(update => notifiedParentEvents.current.delete(update.key));
+        setError(String(cause));
+      });
+    }
+  }, [teams, armedTeamIds, shared.sessions]);
+
+  useEffect(() => {
     if (!selected?.plan || selected.plan.status !== "draft" || planOpen) return;
     if (seenPlanRevision.current[selected.team.id] === selected.plan.revision)
       return;
     const tasks = selected.plan.plan.tasks ?? [];
     if (!tasks.length) return;
     seenPlanRevision.current[selected.team.id] = selected.plan.revision;
+    setPlanOwnerId(selected.team.id);
     setPlanTasks(tasks);
     setPlanOpen(true);
     setTerminalSession(null);
@@ -1178,12 +1256,20 @@ export default function SpatialShell({
     setBusy(true);
     setError(null);
     try {
+      for (const agent of [...new Set([orchestrator, ...allowedTeamAgents])]) {
+        const check = await window.contextgit?.harnessCheck(agent);
+        if (!check?.installed) throw new Error(`Install ${agent} or remove it from this team's allowed CLIs.`);
+      }
       const created = await api.createSpatialTeam({
         name: name.trim(),
         projectPath: shared.workspace.path,
         goal: requestedGoal.trim(),
         orchestratorAgent: orchestrator,
-        baseRef: worktreeMode === "worktree" ? "HEAD" : undefined,
+        managedExecution: true,
+        maxActive: maxTeamActive,
+        allowedAgents: allowedTeamAgents,
+        orchestratorModel: teamModels[orchestrator] || undefined,
+        workerModels: Object.fromEntries(Object.entries(workerModels).filter(([agent, model]) => allowedTeamAgents.includes(agent) && model)),
       });
       if (draftLocation)
         await api.updateTeamLayout(created.team.id, {
@@ -1200,14 +1286,17 @@ export default function SpatialShell({
             origin: "built-in",
           });
       }
+      for (const skill of teamSkills) await api.attachTeamSkill(created.team.id, {
+        skill_id: skill.id.includes(":") ? skill.id.slice(skill.id.indexOf(":") + 1) : skill.id,
+        title: skill.title, instruction: skill.instruction, origin: skill.origin as "built-in" | "project" | "global",
+      });
       const session = await api.startOrchestrator(created.team.id);
-      await terminalRuntime.ensure(session, created.team.id, undefined, requestedGoal.trim());
+      shared.addSession(session);
+      await terminalRuntime.ensure(session, created.team.id);
+      if (terminalRuntime.snapshot(session.id).state === "error") throw new Error(terminalRuntime.snapshot(session.id).error ?? "Parent failed to launch");
+      setArmedTeamIds(current => [...new Set([...current, created.team.id])]);
       if (draftPreset)
         await api.saveTeamPlan(created.team.id, goal.trim(), draftPreset.tasks);
-      shared.setKickoff((current) => ({
-        ...current,
-        [session.id]: `You are the parent orchestrator for team "${created.team.name}". You control and review every worker. Goal: ${requestedGoal.trim()}. Plan exactly ${agentCount} workers with these preferred roles: ${teamRoles || "generalist"}. Assign these worker CLIs in order: ${workerAgents.slice(0, agentCount).join(", ")}. Inspect the project and propose bounded worker tasks with disjoint file scopes, dependencies, done criteria, agents, and relevant skills. Worktree mode: ${worktreeMode}.`,
-      }));
       shared.openSession(session);
       setSelectedId(created.team.id);
       setTeamDialog(false);
@@ -1246,6 +1335,8 @@ export default function SpatialShell({
           projectPath,
           worktree: worktreeMode === "worktree",
           baseRef: worktreeMode === "worktree" ? "HEAD" : undefined,
+          skills: runSkills.map(skill => skill.title),
+          task: runSkills.length ? `Use these selected skills for this run:\n\n${runSkills.map(skill => `## ${skill.title}\n${skill.instruction}`).join("\n\n")}\n\nWait for the user's task before starting work.` : undefined,
         });
         shared.addSession(session);
         created++;
@@ -1280,13 +1371,13 @@ export default function SpatialShell({
   };
 
   const approvePlan = async () => {
-    if (!selected) return;
-    const ownerApi = projectApi(selected.team.project_path);
+    if (!planTeam) return;
+    const ownerApi = projectApi(planTeam.team.project_path);
     setBusy(true);
     try {
       await ownerApi.saveTeamPlan(
-        selected.team.id,
-        selected.team.goal,
+        planTeam.team.id,
+        planTeam.team.goal,
         planTasks.map((task) => ({
           ...task,
           scope: task.scope?.filter((value) => value.trim()),
@@ -1294,7 +1385,8 @@ export default function SpatialShell({
           skills: task.skills?.filter((value) => value.trim()),
         })),
       );
-      await ownerApi.approveTeamPlan(selected.team.id);
+      await ownerApi.approveTeamPlan(planTeam.team.id);
+      setArmedTeamIds(current => [...new Set([...current, planTeam.team.id])]);
       setPlanOpen(false);
       await shared.refresh();
       await loadTeams();
@@ -1326,11 +1418,11 @@ export default function SpatialShell({
   };
 
   const confirmMerge = async () => {
-    if (!selected || !mergePreview?.ready) return;
-    const ownerApi = projectApi(selected.team.project_path);
+    if (!mergeTeam || !mergePreview?.ready) return;
+    const ownerApi = projectApi(mergeTeam.team.project_path);
     setBusy(true);
     try {
-      const result = await ownerApi.confirmSpatialTeamMerge(selected.team.id);
+      const result = await ownerApi.confirmSpatialTeamMerge(mergeTeam.team.id);
       if (result.completed === false)
         throw new Error(
           "Merge stopped because one or more branches could not be integrated. Review conflicts before retrying.",
@@ -1460,7 +1552,7 @@ export default function SpatialShell({
           colorMode="dark"
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#42382f" gap={24} size={1.15} />
+          <Background color="#76594d" gap={24} size={1.8} />
           <MiniMap
             pannable
             zoomable
@@ -1475,6 +1567,7 @@ export default function SpatialShell({
             <button onClick={() => setComposerOpen(true)}>
               <LuBot /> New agent
             </button>
+            <button onClick={() => setTeamDialog(true)}><LuUsers /> Create team</button>
             <button onClick={() => setPresetsOpen((value) => !value)}>Presets</button>
             <button onClick={() => void openFiles()}><LuFile /> Files</button>
               <button
@@ -1658,6 +1751,8 @@ export default function SpatialShell({
                     </div>
                   </div>
                 </div>
+                <RunSkills project={commandProjectPath || shared.workspace?.path || ""}
+                  selected={runSkills} onChange={setRunSkills} disabled={busy} onLoading={setSkillsLoading} />
                 <div className="sp-composer-footer">
                   <span>
                     {worktreeMode === "worktree" ? "Each agent gets a separate worktree." : spawnCount > 1 ? "Agents share your project folder." : "Works directly in your project folder."}
@@ -1666,7 +1761,7 @@ export default function SpatialShell({
                     onClick={() => setComposerOpen(false)}>Cancel</button>
                   <button
                     className="sp-primary"
-                    disabled={!(commandProjectPath || shared.workspace?.path) || busy}
+                    disabled={!(commandProjectPath || shared.workspace?.path) || busy || skillsLoading}
                     onClick={() => void runFromComposer()}
                   >
                     <LuPlay aria-hidden="true" />
@@ -1818,87 +1913,19 @@ export default function SpatialShell({
       )}
 
       {teamDialog && (
-        <div className="sp-modal-backdrop">
-          <form
-            className="sp-modal"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createTeam();
-            }}
-          >
-            <header>
-              <h2>Create a team</h2>
-              <button
-                type="button"
-                aria-label="Cancel team creation"
-                onClick={() => setTeamDialog(false)}
-              >
-                <LuX />
-              </button>
-            </header>
-            <label>
-              Team name
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Orchestrator
-              <select
-                value={orchestrator}
-                onChange={(event) => setOrchestrator(event.target.value)}
-              >
-                {HARNESSES.filter((item) => item.id !== "shell").map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Goal
-              <textarea
-                rows={4}
-                value={goal}
-                onChange={(event) => setGoal(event.target.value)}
-                required
-                placeholder="Describe the outcome this team should deliver…"
-              />
-            </label>
-            <label>
-              Optional role skills
-              <select
-                multiple
-                aria-label="Initial team skills"
-                value={draftSkills}
-                onChange={(event) =>
-                  setDraftSkills(
-                    Array.from(
-                      event.target.selectedOptions,
-                      (option) => option.value,
-                    ),
-                  )
-                }
-              >
-                {Object.values(SKILLS).map((skill) => (
-                  <option key={skill.id} value={skill.id}>
-                    {skill.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="sp-primary" disabled={busy || !goal.trim()}>
-              {busy ? "Creating…" : "Create and propose plan"}
-            </button>
-          </form>
-        </div>
+        <TeamCreateDialog project={shared.workspace?.path ?? ""} name={name} onName={setName}
+          goal={goal} onGoal={setGoal} orchestrator={orchestrator} onOrchestrator={setOrchestrator}
+          models={teamModels} onModel={(agent, model) => setTeamModels(current => ({ ...current, [agent]: model }))}
+          workerModels={workerModels} onWorkerModel={(agent, model) => setWorkerModels(current => ({ ...current, [agent]: model }))}
+          installed={installedTeamAgents} checking={checkingTeamAgents} allowed={allowedTeamAgents} onAllowed={setAllowedTeamAgents}
+          concurrency={maxTeamActive} onConcurrency={setMaxTeamActive} skills={teamSkills} onSkills={setTeamSkills}
+          onSkillsLoading={setSkillsLoading} busy={busy} skillsLoading={skillsLoading} error={error}
+          onClose={() => setTeamDialog(false)} onCreate={() => void createTeam()} />
       )}
 
-      {planOpen && selected && (
+      {planOpen && planTeam && (
         <PlanReview
-          name={selected.team.name}
+          name={planTeam.team.name}
           tasks={planTasks}
           setTasks={setPlanTasks}
           approve={() => void approvePlan()}
@@ -1907,12 +1934,12 @@ export default function SpatialShell({
         />
       )}
 
-      {mergeOpen && selected && mergePreview && (
+      {mergeOpen && mergeTeam && mergePreview && (
         <aside className="sp-float sp-merge">
           <header>
             <div>
               <small>User confirmation required</small>
-              <h2>{selected.team.name} merge</h2>
+              <h2>{mergeTeam.team.name} merge</h2>
             </div>
             <button onClick={() => setMergeOpen(false)}>
               <LuX />

@@ -218,6 +218,14 @@ def create_app(
 
     repo_dep = Depends(get_repo)
 
+    @app.get("/api/v1/harnesses/{agent}/models")
+    def harness_models(agent: str) -> dict[str, object]:
+        from contextgit.core.cli_models import catalog
+        try:
+            return catalog(agent)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     from contextgit.integration.api import router as integration_router
 
     app.include_router(integration_router(get_repo))
@@ -930,6 +938,8 @@ def create_app(
             "layout": current.team_layout(team_id).model_dump(mode="json"),
             "plan": plan.model_dump(mode="json") if plan else None,
             "skills": [link.model_dump(mode="json") for link in current.team_skills(team_id)],
+            "execution": current.team_execution.settings(team_id),
+            "integrations": current._storage.team_integrations(team_id),
         }
 
     @app.get("/api/v1/teams")
@@ -1111,6 +1121,18 @@ def create_app(
 
     @app.post("/api/v1/teams", status_code=201)
     def create_spatial_team(body: TeamCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        if body.managed_execution:
+            from contextgit.core.cli_models import TEAM_CLIS, validate_model
+            try:
+                if body.orchestrator_agent not in TEAM_CLIS:
+                    raise ValueError("Choose a supported parent CLI")
+                validate_model(body.orchestrator_model)
+                for agent, model in body.worker_models.items():
+                    if agent not in body.allowed_agents:
+                        raise ValueError("Worker models must belong to an allowed CLI")
+                    validate_model(model)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         if body.gate_command is not None and body.gate_command != detect_gate(
             Path(body.project_path)
         ):
@@ -1128,8 +1150,15 @@ def create_app(
         if body.gate_command is not None:
             team = current.set_team_gate(team.id, body.gate_command)
         same_project = current.list_teams(project_path=team.project_path)
+        if body.managed_execution:
+            current.team_execution.configure(team.id, body.max_active, list(body.allowed_agents),
+                body.orchestrator_model, body.worker_models)
         current.save_team_layout(team.id, x=80 + (len(same_project) - 1) * 1040, y=80)
         return _spatial_team(current, team.id)
+
+    @app.delete("/api/v1/teams/{team_id}", status_code=204)
+    def archive_spatial_team(team_id: str, current: Repo = repo_dep) -> None:
+        current.archive_team(team_id)
 
     @app.patch("/api/v1/teams/{team_id}")
     def update_spatial_team(
@@ -1140,24 +1169,50 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/orchestrator/start")
     def start_team_orchestrator(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if not current.team_execution.settings(team_id):
+            return _start_team_orchestrator(team_id, current)
+        from contextgit.integration.service import project_lock
+        with project_lock(current.get_team(team_id).project_path, "team-parent"):
+            return _start_team_orchestrator(team_id, current)
+
+    def _start_team_orchestrator(team_id: str, current: Repo) -> dict[str, object]:
         team = current.get_team(team_id)
         if team.orchestrator_session_id:
             try:
-                return current.get_session(team.orchestrator_session_id).model_dump(mode="json")
+                existing = current.get_session(team.orchestrator_session_id)
+                if existing.worktree_path:
+                    ensure_mcp_config(existing.worktree_path, agent=existing.agent, model=existing.model, run_env={
+                        "CONTEXTGIT_REPO": str(current.root.resolve()),
+                        "CONTEXTGIT_ROLE": "orchestrator",
+                        "CONTEXTGIT_TEAM": team.id,
+                        "CONTEXTGIT_RUN": existing.name,
+                    })
+                return existing.model_dump(mode="json")
             except SessionNotFound:
                 pass
         agent = team.orchestrator_agent or "claude"
         ensure_mcp_config(team.project_path)
+        execution = current.team_execution.settings(team_id)
         session = current.create_session(
             f"{team.name} orchestrator",
             kind="terminal",
             agent=agent,
+            model=execution.get("orchestrator_model") if execution else None,
             project_path=team.project_path,
-            worktree=False,
-            task=team.goal,
+            worktree=bool(execution),
+            base_ref=execution["integration_branch"] if execution else None,
+            task=current.team_execution.instruction(team_id) if execution else team.goal,
             role="orchestrator",
             category="orchestration",
+            skills=[link.title for link in current.team_skills(team_id) if link.task_id is None],
         )
+        if session.worktree_path:
+            ensure_mcp_config(session.worktree_path, agent=agent, model=session.model, run_env={
+                "CONTEXTGIT_REPO": str(current.root.resolve()),
+                "CONTEXTGIT_ROLE": "orchestrator",
+                "CONTEXTGIT_TEAM": team.id,
+                "CONTEXTGIT_RUN": session.name,
+            })
         current.update_team_details(team_id, orchestrator_session_id=session.id, state="planning")
         return session.model_dump(mode="json")
 
@@ -1194,7 +1249,10 @@ def create_app(
     @app.post("/api/v1/teams/{team_id}/resume")
     def resume_spatial_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
         current.update_team_details(team_id, state="running")
-        current.launch_team(team_id)
+        if current.team_execution.settings(team_id) and current.latest_team_plan(team_id) and current.latest_team_plan(team_id).status == "approved":
+            current.team_execution.integrate(team_id)
+        else:
+            current.launch_team(team_id)
         return _spatial_team(current, team_id)
 
     @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/start")
@@ -1300,6 +1358,8 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/merge/preview")
     def preview_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if current.team_execution.settings(team_id):
+            return current.team_execution.preview(team_id)
         current.get_team(team_id)
         tasks = current.list_tasks(team_id)
         unfinished = [task.title for task in tasks if task.status != "done"]
@@ -1371,6 +1431,8 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/merge/confirm")
     def confirm_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if current.team_execution.settings(team_id):
+            return current.team_execution.confirm(team_id)
         current.get_team(team_id)
         tasks = current.list_tasks(team_id)
         if not tasks or any(task.status != "done" for task in tasks):
@@ -1389,6 +1451,10 @@ def create_app(
             }
         current.update_team_details(team_id, state="completed")
         return {"entries": [entry.model_dump(mode="json") for entry in entries]}
+
+    @app.post("/api/v1/teams/{team_id}/integrate")
+    def integrate_parent_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return current.team_execution.integrate(team_id)
 
     @app.get("/api/v1/team")
     def get_team(current: Repo = repo_dep) -> dict[str, object] | None:

@@ -29,6 +29,7 @@ export class TerminalRuntime {
   private outputListeners = new Map<string, Set<(data: string) => void>>();
   private connected = false;
   private sizes = new Map<string, {cols:number; rows:number}>();
+  private retries = new Map<string, Promise<void>>();
   private connect() {
     if (this.connected) return;
     const bridge = window.contextgit;
@@ -163,6 +164,7 @@ export class TerminalRuntime {
         id: ptyIdForSession(session.id),
         sessionId: session.id,
         command,
+        model: session.model ?? undefined,
         resume,
         cols: size.cols,
         rows: size.rows,
@@ -238,18 +240,21 @@ export class TerminalRuntime {
     }
     listeners.forEach((listener) => listener());
   }
-  async retry(id: string) {
+  async retry(id: string, teamId?: string, taskId?: string) {
+    const pending = this.retries.get(id);
+    if (pending) return pending;
     const entry = this.entries.get(id);
     if (!entry || ["starting", "running"].includes(entry.snapshot.state))
       return;
-    await this.flush(entry);
-    this.entries.delete(id);
-    await this.ensure(
-      entry.session,
-      entry.teamId,
-      entry.taskId,
-      entry.instruction,
-    );
+    entry.teamId = teamId ?? entry.teamId;
+    entry.taskId = taskId ?? entry.taskId;
+    const launch = (async () => {
+      await this.flush(entry);
+      this.entries.delete(id);
+      await this.ensure(entry.session, entry.teamId, entry.taskId, entry.instruction);
+    })().finally(() => this.retries.delete(id));
+    this.retries.set(id, launch);
+    return launch;
   }
   async checkpoint(id: string) {
     const entry = this.entries.get(id);

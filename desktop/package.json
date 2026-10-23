@@ -8,6 +8,10 @@
   "desktopName": "dev.contextgit.desktop",
   "description": "ContextGit desktop workbench — version control for LLM conversations",
   "scripts": {
+    "prototype:team": "vite --config prototypes/team/vite.config.ts",
+    "prototype:team:build": "vite build --config prototypes/team/vite.config.ts",
+    "prototype:team:check": "tsc -p prototypes/team/tsconfig.json && node --test prototypes/team/model.test.mjs",
+    "prototype:team:ui": "node prototypes/team/browser.test.mjs",
     "dev": "bun run tauri:dev",
     "dev:mock": "vite",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
@@ -17,6 +21,7 @@
     "test:workspace": "node scripts/test-workspace-performance.mjs",
     "test:spatial-runtime": "node scripts/test-spatial-runtime.mjs",
     "test:spatial-canvas": "node scripts/test-spatial-canvas.mjs",
+    "test:live-team": "node scripts/test-live-team.mjs",
     "test:layout": "node --test scripts/test-native-layout.mjs",
     "test:editor": "node --test scripts/test-native-layout.mjs scripts/test-editor-extension.mjs scripts/test-backend-bridge.mjs",
     "test:editor-runtime": "node scripts/test-editor-runtime.mjs",

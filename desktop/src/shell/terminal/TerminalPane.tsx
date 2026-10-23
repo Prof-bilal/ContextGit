@@ -376,6 +376,7 @@ export default function TerminalPane({
           sessionId: session.id,
           resume,
           command,
+          model: session.model ?? undefined,
           cols: term.cols,
           rows: term.rows,
           cwd: session.worktree_path ?? session.project_path ?? undefined,

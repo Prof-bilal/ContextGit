@@ -48,6 +48,7 @@ coverage.xml
 .desktop-venv/
 desktop/node_modules
 desktop/dist/
+desktop/dist-team-prototype/
 desktop/dist-electron/
 desktop/build/
 desktop/release/

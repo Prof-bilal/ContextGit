@@ -115,6 +115,7 @@ from contextgit.verify import detect_gate, run_command
 from contextgit.verify.env import capture_env, diff_env
 
 if TYPE_CHECKING:
+    from contextgit.core.team_execution import TeamExecution
     from contextgit.knowledge.service import KnowledgeService
 
 _DB_NAME = "contextgit.db"
@@ -193,6 +194,11 @@ class Repo:
         self._fleet_cache: tuple[float, list[FleetEntry]] | None = None
         self._integration = IntegrationService(self)
         self.transcripts = TranscriptService(self, self._storage, self._root)
+
+    @property
+    def team_execution(self) -> "TeamExecution":
+        from contextgit.core.team_execution import TeamExecution
+        return TeamExecution(self)
 
     @property
     def integration(self) -> IntegrationService:
@@ -1180,6 +1186,13 @@ class Repo:
         self.sync_team_board(team.id)
         return team
 
+    def archive_team(self, team_id: str) -> None:
+        team = self.get_team(team_id)
+        team.archived_at = utcnow()
+        team.state = "paused"
+        self._storage.update_team(team)
+        self.sync_team_board(team_id)
+
     def update_team_details(
         self,
         team_id: str,
@@ -1229,7 +1242,7 @@ class Repo:
             raise InvalidTaskTransition("a team plan must contain between 1 and 12 worker tasks")
         latest = self._storage.latest_team_plan(team_id)
         revision = (latest.revision if latest else 0) + 1
-        if latest and latest.status == "approved":
+        if latest and latest.status == "approved" and not self.team_execution.settings(team_id):
             raise InvalidTaskTransition("an approved team plan cannot be revised")
         if latest and latest.status == "draft":
             latest.status = "superseded"
@@ -1254,6 +1267,9 @@ class Repo:
         plan = self.latest_team_plan(team_id)
         if plan is None:
             raise TeamNotFound("this team has no proposed plan")
+        managed = self.team_execution.settings(team_id)
+        if managed:
+            self.team_execution.validate(team_id, plan.plan.get("tasks", []))
         existing = self.list_tasks(team_id)
         proposed_tasks = plan.plan.get("tasks", [])
         if (
@@ -1265,6 +1281,8 @@ class Repo:
             return plan
         if plan.status == "approved":
             raise InvalidTaskTransition("approved plan has no matching task graph")
+        if existing and managed:
+            return self.team_execution.approve_amendment(team_id, plan)
         if existing:
             raise InvalidTaskTransition("plan approval cannot replace an existing team task graph")
         raw_tasks: object = plan.plan.get("tasks", [])
@@ -1345,6 +1363,8 @@ class Repo:
             raise InvalidTaskTransition("approved plan task graph was only partially created")
         if self.get_team(team_id).state != "paused":
             self.update_team_details(team_id, state="ready")
+        if managed:
+            self.team_execution.normalise(team_id, plan, created)
         return plan
 
     def team_layout(self, team_id: str) -> CanvasLayout:
@@ -1789,6 +1809,14 @@ class Repo:
         return task
 
     def start_task(self, task_id: str, *, agent: str | None = None) -> Task:
+        task = self._storage.get_task(task_id)
+        if self.team_execution.settings(task.team_id):
+            from contextgit.integration.service import project_lock
+            with project_lock(self.get_team(task.team_id).project_path, "team-scheduling"):
+                return self._start_task(task_id, agent=agent)
+        return self._start_task(task_id, agent=agent)
+
+    def _start_task(self, task_id: str, *, agent: str | None = None) -> Task:
         """Start one ready task: its own worktree, branch and terminal session.
 
         Enforced ownership: the task is refused if another run already claims
@@ -1807,11 +1835,15 @@ class Repo:
                     "The user must approve the team plan before workers start"
                 )
         tasks_by_id = {item.id: item for item in tasks}
+        execution = self.team_execution.settings(team.id)
+        worker_base = self.team_execution.base_for(team.id, task.id) if execution else team.base_ref
+        if execution and agent is not None and agent != task.agent:
+            raise InvalidTaskTransition("Changing the approved worker CLI requires a new plan")
         if task.session_id:
             if task.status in {"todo", "blocked"}:
                 if self.get_task(task.id).blocked_by:
                     raise TaskDependencyError("This worker is waiting for dependencies")
-                if self._active_count(team.id) >= self._max_active():
+                if self._active_count(team.id) >= (execution["max_active"] if execution else self._max_active()):
                     raise WorkInProgressLimit("The team has reached its active worker limit")
                 self._set_task_status(task.id, "working")
             return self.get_task(task_id)
@@ -1824,7 +1856,7 @@ class Repo:
         if task.status == "done":
             raise TaskDependencyError(f"'{task.title}' is already done")
         active = self._active_count(task.team_id)
-        if active >= self._max_active():
+        if active >= (execution["max_active"] if execution else self._max_active()):
             raise WorkInProgressLimit(
                 f"{active} runs are already active (cap {self._max_active()})"
             )
@@ -1835,10 +1867,14 @@ class Repo:
             f"{team.name}/{task.title}",
             kind="terminal",
             agent=task.agent,
+            model=(self.team_execution.settings(team.id) or {}).get("worker_models", {}).get(task.agent),
             project_path=team.project_path,
             worktree=True,
-            base_ref=team.base_ref,
-            task="\n".join(part for part in [task.title, task.brief, task.done_criteria] if part),
+            base_ref=worker_base,
+            task="\n".join(part for part in [task.title, task.brief, task.done_criteria,
+                "Commit implementation changes, then call complete_task with evidence. Wait for parent review.",
+                *[f"Skill: {link.title}\n{link.instruction}" for link in self.team_skills(team.id) if link.task_id is None or link.task_id == task.id],
+            ] if part),
             scope=task.scope,
             role=task.role,
             skills=[
@@ -1848,7 +1884,13 @@ class Repo:
             ],
         )
         if session.worktree_path:
-            ensure_mcp_config(session.worktree_path)
+            ensure_mcp_config(session.worktree_path, agent=task.agent, model=session.model, run_env={
+                "CONTEXTGIT_REPO": str(self.root.resolve()),
+                "CONTEXTGIT_ROLE": "worker",
+                "CONTEXTGIT_TEAM": team.id,
+                "CONTEXTGIT_TASK": task.id,
+                "CONTEXTGIT_RUN": session.name,
+            })
         task.session_id = session.id
         task.status = "working"
         task.updated_at = utcnow()
@@ -1889,6 +1931,7 @@ class Repo:
         tasks_by_id = {task.id: task for task in tasks}
 
         ready: list[str] = []
+        execution = self.team_execution.settings(team.id)
         for task_id in topological_order(list(tasks_by_id), deps):
             task = tasks_by_id[task_id]
             if task.status in {"done", "working", "review", "failed"}:
@@ -1896,6 +1939,12 @@ class Repo:
             if blocked_by(task_id, tasks_by_id, deps):
                 self._set_task_status(task_id, "blocked")
                 continue
+            if execution:
+                try:
+                    self.team_execution.base_for(team.id, task_id)
+                except InvalidTaskTransition:
+                    self._set_task_status(task_id, "blocked")
+                    continue
             ready.append(task_id)
 
         claimed: list[tuple[str, list[str]]] = []
@@ -1966,7 +2015,7 @@ class Repo:
         command = self._gate_command_for(task, team, session.worktree_path)
         if not command:
             raise GateNotConfigured(f"no gate command configured for '{task.title}'")
-        env = dict(os.environ)
+        env = self.team_execution.environment(team.id) if self.team_execution.settings(team.id) else dict(os.environ)
         env["CONTEXTGIT_RUN"] = session.name
         if session.port:
             env["PORT"] = str(session.port)
@@ -2015,6 +2064,12 @@ class Repo:
         self._record(team.id, "task_approved", task.id, {})
         self.post_message(team.id, f"'{task.title}' approved", kind="review", task_id=task.id)
 
+        if self.team_execution.settings(team.id):
+            if team.state != "paused":
+                self.team_execution.integrate(team.id)
+            self.sync_team_board(team.id)
+            return self.get_task(task_id)
+
         tasks, deps = self._load_tasks(team.id)
         tasks_by_id = {item.id: item for item in tasks}
         for dependent_id in dependents(deps, task_id):
@@ -2041,6 +2096,11 @@ class Repo:
         """
         task = self._storage.get_task(task_id)
         team = self._storage.get_team(task.team_id)
+        if task.status == "done" and self.team_execution.settings(team.id) and any(
+            row["task_id"] == task.id and row["status"] == "blocked"
+            for row in self._storage.team_integrations(team.id)
+        ):
+            task.status = "review"
         if task.status != "review":
             raise TaskNotReviewable(f"'{task.title}' is not waiting for review")
         assert_transition(task_phase(task), "RUNNING")
