@@ -25,6 +25,7 @@ export function installWebBridge(): void {
   const ptyExitListeners = new Set<(id: string, code: number | undefined) => void>();
   const projectsKey = "contextgit:web-projects";
   const activeKey = "contextgit:web-active-project";
+  let activeProjectId = "";
   const savedProjects = (): Workspace[] => {
     try { return JSON.parse(localStorage.getItem(projectsKey) || "[]") as Workspace[]; } catch { return []; }
   };
@@ -36,6 +37,7 @@ export function installWebBridge(): void {
     const next = workspace(result.path);
     localStorage.setItem(projectsKey, JSON.stringify([...savedProjects().filter(item => item.path !== next.path), next]));
     localStorage.setItem(activeKey, next.path);
+    activeProjectId = result.projectId;
     projectRuntime.select(next.path);
     return next;
   };
@@ -49,6 +51,30 @@ export function installWebBridge(): void {
     listProjects: async () => savedProjects(),
     getWorkspace: async () => { const current = localStorage.getItem(activeKey); return savedProjects().find(item => item.path === current) ?? null; },
     useProject: open,
+    filesList: async (project: string, relative = "") => {
+      if (project !== localStorage.getItem(activeKey)) await open(project);
+      const response = await fetch(`${apiBase}/api/v1/files?relative=${encodeURIComponent(relative)}`, { headers: { ...headers(), "X-ContextGit-Project": activeProjectId } });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    },
+    fileRead: async (project: string, relative: string) => {
+      if (project !== localStorage.getItem(activeKey)) await open(project);
+      const response = await fetch(`${apiBase}/api/v1/files/document?relative=${encodeURIComponent(relative)}`, { headers: { ...headers(), "X-ContextGit-Project": activeProjectId } });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    },
+    filePreview: async (project: string, relative: string) => {
+      if (project !== localStorage.getItem(activeKey)) await open(project);
+      const response = await fetch(`${apiBase}/api/v1/files/preview?relative=${encodeURIComponent(relative)}`, { headers: { ...headers(), "X-ContextGit-Project": activeProjectId } });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    },
+    fileWrite: async (project: string, relative: string, content: string, expectedVersion?: string) => {
+      if (project !== localStorage.getItem(activeKey)) await open(project);
+      const response = await fetch(`${apiBase}/api/v1/files/document`, { method: "PUT", headers: { ...headers(), "X-ContextGit-Project": activeProjectId }, body: JSON.stringify({ path: relative, content, expectedVersion }) });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    },
     chooseWorkspace: async () => { const value = window.prompt("Project folder path"); return value ? open(value) : null; },
     pickWorkspaceLocation: async () => window.prompt("Parent folder path") || null,
     createWorkspace: async (parent: string, name: string) => open(`${parent.replace(/[\\/]$/, "")}/${name}`),
@@ -90,6 +116,6 @@ export function installWebBridge(): void {
   }) as unknown as ContextGitBridge;
   window.contextgit = bridge;
   listeners.forEach(callback => callback(status));
-  const initialProject = query("project");
+  const initialProject = query("project") || localStorage.getItem(activeKey);
   if (initialProject) void open(initialProject).catch((cause) => console.warn("Could not open launch project", cause));
 }

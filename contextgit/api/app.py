@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import base64
 import os
 import secrets
 import threading
@@ -315,6 +316,82 @@ def create_app(
             "instance_id": instance_id,
             "repo_id": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
         }
+
+    # ---------- browser project files ----------
+
+    def _project_file(current: Repo, relative: str) -> Path:
+        root = Path(current.root).parent.resolve()
+        candidate = (root / relative.lstrip("/\\")).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise HTTPException(400, "Project path escapes the selected folder.")
+        return candidate
+
+    def _file_version(file: Path) -> str:
+        info = file.stat()
+        return f"{info.st_size}:{info.st_mtime_ns}"
+
+    @app.get("/api/v1/files")
+    def files_list(relative: str = "", current: Repo = repo_dep) -> list[dict[str, object]]:
+        directory = _project_file(current, relative or ".")
+        if not directory.is_dir():
+            raise HTTPException(400, "Choose a folder in the project.")
+        root = Path(current.root).parent.resolve()
+        hidden = {"__pycache__", "node_modules", "target", "dist", "build"}
+        entries: list[dict[str, object]] = []
+        for item in directory.iterdir():
+            if item.name.startswith(".") or item.name in hidden:
+                continue
+            rel = item.relative_to(root).as_posix()
+            entries.append({"name": item.name, "path": rel, "kind": "directory" if item.is_dir() else "file"})
+        entries.sort(key=lambda item: (item["kind"] != "directory", str(item["name"]).lower()))
+        return entries
+
+    @app.get("/api/v1/files/document")
+    def file_document(relative: str, current: Repo = repo_dep) -> dict[str, object]:
+        file = _project_file(current, relative)
+        info = file.stat()
+        if info.st_size > 2_000_000:
+            raise HTTPException(413, "Use a terminal to inspect text files larger than 2 MB.")
+        try:
+            content = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(415, "This file is not a UTF-8 text file.") from exc
+        return {"path": relative, "content": content, "version": _file_version(file), "size": info.st_size, "encoding": "utf8"}
+
+    @app.get("/api/v1/files/preview")
+    def file_preview(relative: str, current: Repo = repo_dep) -> dict[str, object]:
+        file = _project_file(current, relative)
+        info = file.stat()
+        if info.st_size > 8_000_000:
+            raise HTTPException(413, "Preview supports files up to 8 MB.")
+        extension = file.suffix.lower().lstrip(".")
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}.get(extension)
+        raw = file.read_bytes()
+        if mime:
+            content = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            kind = "image"
+        else:
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(415, "This binary file has no preview.") from exc
+            kind = "markdown" if extension in {"md", "markdown"} else "diff" if extension in {"diff", "patch"} else "text"
+        return {"path": relative, "size": info.st_size, "version": _file_version(file), "kind": kind, "content": content}
+
+    @app.put("/api/v1/files/document")
+    def file_write(body: dict[str, object], current: Repo = repo_dep) -> dict[str, object]:
+        relative = str(body.get("path") or "")
+        content = body.get("content")
+        if not isinstance(content, str):
+            raise HTTPException(422, "File content must be text.")
+        file = _project_file(current, relative)
+        info = file.stat()
+        expected = body.get("expectedVersion")
+        if isinstance(expected, str) and expected != _file_version(file):
+            raise HTTPException(409, "The file changed on disk. Reload it before saving.")
+        file.write_text(content, encoding="utf-8")
+        info = file.stat()
+        return {"path": relative, "content": content, "version": _file_version(file), "size": info.st_size, "encoding": "utf8"}
 
     # ---------- scheduled repository issues ----------
 
