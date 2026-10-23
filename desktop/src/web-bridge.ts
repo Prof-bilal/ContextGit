@@ -30,6 +30,13 @@ export function installWebBridge(): void {
     try { return JSON.parse(localStorage.getItem(projectsKey) || "[]") as Workspace[]; } catch { return []; }
   };
   const headers = () => ({ Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" });
+  const projectHeaders = () => ({ ...headers(), ...(activeProjectId ? { "X-ContextGit-Project": activeProjectId } : {}) });
+  const editorRequest = async (path: string, method = "GET") => {
+    const response = await fetch(`${apiBase}${path}`, { method, headers: projectHeaders() });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(body.detail ?? body.error ?? "Editor request failed."));
+    return body;
+  };
   const open = async (path: string): Promise<Workspace> => {
     const response = await fetch(`${apiBase}/api/v1/projects/open`, { method: "POST", headers: headers(), body: JSON.stringify({ path }) });
     if (!response.ok) throw new Error((await response.text()) || "Could not open project");
@@ -82,6 +89,10 @@ export function installWebBridge(): void {
       if (!response.ok) throw new Error(await response.text());
       return response.json();
     },
+    editorStart: async (project: string) => { if (project !== localStorage.getItem(activeKey)) await open(project); return editorRequest("/api/v1/editor/start", "POST"); },
+    editorStatus: async () => editorRequest("/api/v1/editor/status"),
+    editorSuspend: async () => editorRequest("/api/v1/editor/suspend", "POST"),
+    editorStop: async () => { await editorRequest("/api/v1/editor/stop", "POST"); },
     chooseWorkspace: async () => { const value = window.prompt("Project folder path"); return value ? open(value) : null; },
     pickWorkspaceLocation: async () => window.prompt("Parent folder path") || null,
     createWorkspace: async (parent: string, name: string) => open(`${parent.replace(/[\\/]$/, "")}/${name}`),

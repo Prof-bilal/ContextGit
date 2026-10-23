@@ -4,8 +4,13 @@ import hashlib
 import importlib
 import base64
 import os
+import shutil
+import socket
+import subprocess
 import secrets
 import threading
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -204,6 +209,8 @@ def create_app(
     # The first render fires several requests at once; without this lock two of
     # them can race open/init and the loser opens a half-written database.
     repo_lock = threading.Lock()
+    editor_lock = threading.Lock()
+    editor_process: dict[str, object] = {}
 
     def get_repo() -> Repo:
         existing = state.get("repo")
@@ -392,6 +399,60 @@ def create_app(
         file.write_text(content, encoding="utf-8")
         info = file.stat()
         return {"path": relative, "content": content, "version": _file_version(file), "size": info.st_size, "encoding": "utf8"}
+
+    # ---------- browser editor lifecycle ----------
+
+    def editor_status() -> dict[str, object]:
+        process = editor_process.get("process")
+        if not isinstance(process, subprocess.Popen) or process.poll() is not None:
+            return {"state": "stopped", "instanceId": None, "url": None}
+        url = str(editor_process["url"])
+        try:
+            with urllib.request.urlopen(f"{url}healthz", timeout=0.35) as response:
+                ready = response.status == 200
+        except (OSError, urllib.error.URLError):
+            ready = False
+        return {"state": "ready" if ready else "starting", "instanceId": editor_process["instance"], "url": url}
+
+    @app.post("/api/v1/editor/start")
+    def editor_start(current: Repo = repo_dep) -> dict[str, object]:
+        with editor_lock:
+            current_status = editor_status()
+            if current_status["state"] != "stopped":
+                return current_status
+            executable = shutil.which("code-server")
+            if not executable:
+                return {"state": "unavailable", "instanceId": None, "url": None, "message": "code-server is not installed. Install it to use the browser editor."}
+            root = Path(current.root).parent.resolve()
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = int(sock.getsockname()[1])
+            instance = uuid4().hex
+            command = [executable, "--bind-addr", f"127.0.0.1:{port}", "--auth", "none", "--disable-telemetry", "--disable-update-check", "--disable-workspace-trust", str(root)]
+            try:
+                process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError as exc:
+                return {"state": "error", "instanceId": None, "url": None, "message": str(exc)}
+            editor_process.update({"process": process, "instance": instance, "url": f"http://127.0.0.1:{port}/"})
+            return editor_status()
+
+    @app.get("/api/v1/editor/status")
+    def get_editor_status(current: Repo = repo_dep) -> dict[str, object]:
+        del current
+        with editor_lock:
+            return editor_status()
+
+    @app.post("/api/v1/editor/{action}")
+    def editor_action(action: str, current: Repo = repo_dep) -> dict[str, object]:
+        del current
+        if action not in {"suspend", "stop"}:
+            raise HTTPException(404, "Unknown editor action.")
+        with editor_lock:
+            process = editor_process.get("process")
+            if isinstance(process, subprocess.Popen) and process.poll() is None:
+                process.terminate()
+            editor_process.clear()
+            return {"state": "stopped", "instanceId": None, "url": None}
 
     # ---------- scheduled repository issues ----------
 
