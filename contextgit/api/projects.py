@@ -120,7 +120,11 @@ class ProjectRegistry:
 
     async def trim(self, keep: str) -> None:
         idle: list[str] = []
-        for key, entry in self.entries.items():
+        # Project opens can arrive concurrently while the browser restores
+        # its saved project and canvas state. Iterate over a stable snapshot
+        # so trimming cannot fail if another lifecycle operation reorders the
+        # registry during the checks below.
+        for key, entry in list(self.entries.items()):
             if key == keep or entry["requests"]:
                 continue
             repo = entry["repo"]
