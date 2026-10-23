@@ -259,7 +259,7 @@
 .sp-batch-head strong { font-size:13px; font-weight:600; }
 .sp-batch-head > span { color:#b59a88; font-size:11px; }
 .sp-batch-head > svg { color:#b88968; }
-.sp-batch-grid { display:grid; flex:1; min-height:0; gap:1px; background:#473126; grid-auto-rows:minmax(0,1fr); }
+.sp-batch-grid { display:grid; flex:1; min-height:0; gap:8px; padding:8px; background:#241b16; grid-auto-rows:minmax(560px,1fr); overflow:auto; overscroll-behavior:contain; }
 .sp-batch-terminal { display:flex; flex-direction:column; min-height:0; min-width:0; background:#151112; }
 .sp-batch-terminal:last-child:nth-child(odd) { grid-column:1 / -1; }
 .sp-batch-terminal > header { display:flex; align-items:center; gap:8px; padding:5px 10px; height:34px; flex-shrink:0; background:#1b1614; }
@@ -622,7 +622,11 @@
   scrollbar-width: none;
 }
 .sp-project-dock::-webkit-scrollbar { display: none; }
-.sp-dock-item { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 8px; }
+.sp-dock-item { position: relative; display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 8px; }
+.sp-shell .sp-dock-remove { position: absolute; top: 30px; right: -10px; z-index: 2; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid #654638; border-radius: 50%; background: #2b211d; color: #c6afa1; cursor: pointer; }
+.sp-shell .sp-dock-remove:hover { color: #fff0e5; background: #643a2d; }
+.sp-shell .sp-dock-remove:focus-visible { outline: 2px solid var(--sp-orange); outline-offset: 3px; }
+.sp-dock-remove svg { width: 14px; height: 14px; }
 .sp-shell .sp-dock-run {
   display: grid;
   place-items: center;

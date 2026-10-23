@@ -425,10 +425,10 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
 const BatchNode = memo(function BatchNode({ data }: NodeProps<Node<TeamNodeData>>) {
   const sessions = data.batchSessionIds?.flatMap(id => data.sessions.filter(session => session.id === id)) ?? [];
   return <section className="sp-batch nopan" aria-label={data.batchName}>
-    <NodeResizer isVisible={data.selected} minWidth={880} minHeight={400}
+    <NodeResizer isVisible={data.selected} minWidth={1560} minHeight={680}
       color="#9d603e" onResizeEnd={(_event, params) => saveAgentLayout(data.team.team.project_path, data.batchId!, {width:params.width,height:params.height})} />
     <header className="sp-batch-head"><LuGrip /><strong>{data.batchName}</strong><span>{sessions.length} agents</span></header>
-    <div className="sp-batch-grid nodrag" style={{gridTemplateColumns:`repeat(${Math.min(2, sessions.length)}, minmax(0, 1fr))`}}>
+    <div className="sp-batch-grid nodrag nopan nowheel" onWheel={event => event.stopPropagation()} style={{gridTemplateColumns:`repeat(${Math.min(2, sessions.length)}, minmax(0, 1fr))`}}>
       {sessions.map(session => <section className="sp-batch-terminal" key={session.id}>
         <header><AgentMark agent={session.agent ?? "shell"} label={harnessFor(session.agent)?.monogram ?? "$"} />
           <strong>{session.name}</strong><span>{session.status}</span>
@@ -600,12 +600,8 @@ export default function SpatialShell({
       return;
     }
     try {
-      const paths = [
-        ...new Set([
-          shared.workspace.path,
-          ...shared.projects.map((project) => project.path),
-        ]),
-      ];
+      const ownerPath = shared.workspace.path;
+      const paths = [ownerPath];
       const results = await Promise.allSettled(
         paths.map((path) => projectApi(path).teams(path)),
       );
@@ -613,6 +609,7 @@ export default function SpatialShell({
         result.status === "fulfilled" ? result.value : [],
       );
       const failed = results.find((result) => result.status === "rejected");
+      if (currentProject.current !== ownerPath) return;
       setTeams(next);
       setError(
         failed?.status === "rejected"
@@ -651,12 +648,7 @@ export default function SpatialShell({
 
   useEffect(() => {
     if (!backendAvailable || !shared.workspace) return;
-    const paths = [
-      ...new Set([
-        shared.workspace.path,
-        ...shared.projects.map((project) => project.path),
-      ]),
-    ].filter((path) => !migratedProjects.current.has(path));
+    const paths = [shared.workspace.path].filter((path) => !migratedProjects.current.has(path));
     if (!paths.length) return;
     paths.forEach((path) => migratedProjects.current.add(path));
     void Promise.all(
@@ -747,7 +739,7 @@ export default function SpatialShell({
       ...new Set(teams.map((entry) => entry.team.project_path)),
     ];
     setNodes((current) =>
-      teams
+      teams.filter(team => team.team.project_path === shared.workspace?.path)
         .flatMap<Node<TeamNodeData>>((team) => {
           const projectOffset = Math.max(
             0,
@@ -892,7 +884,7 @@ export default function SpatialShell({
                   const next = current.includes(session.id)
                     ? current
                     : [...current, session.id];
-                  const path = shared.workspace?.path;
+                  const path = session.project_path ?? shared.workspace?.path;
                   if (path)
                     window.localStorage.setItem(
                       `contextgit:closed-canvas-agents:${path}`,
@@ -945,7 +937,7 @@ export default function SpatialShell({
               position: previous?.position ?? {x:layout.x ?? team.layout.x + projectOffset, y:layout.y ?? team.layout.y + index * 1040},
               data: {...baseNode.data, batchId:batch.id, batchName:batch.name, batchSessionIds:ids},
               draggable:true, dragHandle:".sp-batch-head",
-              style:{width:layout.width ?? 1320, height:layout.height ?? 48 + Math.ceil(ids.length / 2) * 450},
+              style:{width:Math.max(1560, layout.width ?? 1760), height:Math.max(680, Math.min(1240, layout.height ?? 48 + Math.ceil(ids.length / 2) * 580))},
             } satisfies Node<TeamNodeData>];
           });
           const batchedIds = new Set(projectBatches.flatMap(batch => batch.sessionIds));
@@ -1035,6 +1027,7 @@ export default function SpatialShell({
   const canvasTabs = useMemo(() => {
     const seen = new Set<string>();
     return teams
+      .filter(team => team.team.project_path === shared.workspace?.path)
       .flatMap((team) =>
         team.tasks.flatMap((task) =>
           task.session_id ? [{ team, task }] : [],
@@ -1055,7 +1048,7 @@ export default function SpatialShell({
           Boolean(seen.add(entry.session!.id)),
       )
       .slice(0, 24);
-  }, [teams, shared.sessions, closedAgentIds]);
+  }, [teams, shared.sessions, closedAgentIds, shared.workspace?.path]);
   useEffect(() => {
     setMergeOpen(false);
   }, [selectedId]);
@@ -1637,6 +1630,20 @@ export default function SpatialShell({
                 );
                 return (
                   <div key={project.path} className="sp-dock-item">
+                    <button type="button" className="sp-dock-remove"
+                      aria-label={`Remove project ${project.name}`}
+                      title={`Remove ${project.name} from the app (files stay on disk)`}
+                      onClick={() => {
+                        void (async () => {
+                          const remaining = shared.projects.filter(item => item.path !== project.path);
+                          if (active && remaining.length) await shared.useProject(remaining[0].path);
+                          await shared.forgetProject(project.path);
+                          if (commandProjectPath === project.path) setCommandProjectPath(remaining[0]?.path ?? "");
+                        })().catch(cause => setError(String(cause)));
+                      }}
+                    >
+                      <LuX aria-hidden="true" />
+                    </button>
                     <button type="button" className="sp-dock-run"
                       aria-label={`Run agent in ${project.name}`}
                       title={`Run agent in ${project.name}`}

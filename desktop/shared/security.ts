@@ -7,7 +7,7 @@ export function rendererCsp(development: boolean): string {
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' ctxasset: data: blob:",
     "media-src 'self' ctxasset: blob:",
-    `connect-src 'self' http://127.0.0.1:* http://localhost:*${development ? " ws://127.0.0.1:* ws://localhost:*" : ""}`,
+    "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",

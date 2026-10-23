@@ -115,22 +115,32 @@ export function installWebBridge(): void {
     },
     forgetProject: async (path: string) => { const remaining = savedProjects().filter(item => item.path !== path); localStorage.setItem(projectsKey, JSON.stringify(remaining)); if (localStorage.getItem(activeKey) === path) { localStorage.removeItem(activeKey); projectRuntime.select(null); } return remaining; },
     ptyStart: async (options: { id: string; command: string; cwd?: string; input?: string; env?: Record<string, string> }) => {
-      const project = localStorage.getItem(activeKey);
+      const project = options.env?.CONTEXTGIT_REPO?.replace(/[\\/]\.contextgit$/, "") || localStorage.getItem(activeKey);
       if (!project) throw new Error("Open a project before starting a terminal.");
-      const projectId = await fetch(`${apiBase}/api/v1/projects/open`, { method: "POST", headers: headers(), body: JSON.stringify({ path: project }) }).then(response => response.json()).then(value => String(value.projectId));
+      const response = await fetch(`${apiBase}/api/v1/projects/open`, { method: "POST", headers: headers(), body: JSON.stringify({ path: project }) });
+      if (!response.ok) throw new Error(`Cannot open terminal project: ${await response.text()}`);
+      const { projectId } = await response.json() as { projectId: string };
       const socket = new WebSocket(`${apiBase.replace(/^http/, "ws")}/api/v1/terminal?token=${encodeURIComponent(apiToken)}&project=${encodeURIComponent(projectId)}`);
       terminalSockets.set(options.id, socket);
-      await new Promise<void>((resolve, reject) => {
-        socket.addEventListener("open", () => { socket.send(JSON.stringify({ type: "start", ...options })); resolve(); }, { once: true });
-        socket.addEventListener("error", () => reject(new Error("Could not connect to the browser terminal.")), { once: true });
-      });
+      let ready: () => void;
+      let failed: (error: Error) => void;
+      const startup = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject; });
+      const timeout = setTimeout(() => { failed(new Error("Terminal startup timed out. Reload the app using the current server URL.")); socket.close(); }, 15000);
+      socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "start", ...options })), { once: true });
+      socket.addEventListener("error", () => failed(new Error("Terminal connection failed. Check that this tab uses the current server URL and session token.")), { once: true });
+      socket.addEventListener("close", event => {
+        failed(new Error(event.code === 4401 || event.code === 1006 ? "Terminal disconnected. Reopen the app using the current server URL; older tabs have expired session tokens." : `Terminal closed (${event.code}).`));
+        if (terminalSockets.get(options.id) === socket) terminalSockets.delete(options.id);
+      }, { once: true });
       socket.addEventListener("message", event => {
         let message: { type?: string; data?: string; code?: number; message?: string };
         try { message = JSON.parse(String(event.data)); } catch { return; }
+        if (message.type === "ready") ready();
         if (message.type === "data" && typeof message.data === "string") ptyDataListeners.forEach(callback => callback(options.id, message.data!));
         if (message.type === "exit") ptyExitListeners.forEach(callback => callback(options.id, message.code));
-        if (message.type === "error") ptyExitListeners.forEach(callback => callback(options.id, undefined));
+        if (message.type === "error") failed(new Error(message.message || "Terminal could not start."));
       });
+      try { await startup; } catch (cause) { socket.close(); throw cause; } finally { clearTimeout(timeout); }
     },
     ptyWrite: (id: string, data: string) => terminalSockets.get(id)?.send(JSON.stringify({ type: "write", data })),
     ptyResize: (id: string, cols: number, rows: number) => terminalSockets.get(id)?.send(JSON.stringify({ type: "resize", cols, rows })),

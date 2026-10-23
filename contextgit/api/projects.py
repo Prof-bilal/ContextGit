@@ -213,6 +213,7 @@ def create_desktop_app(token: str) -> ASGIApp:
             return
         await websocket.accept()
         process: asyncio.subprocess.Process | None = None
+        master: int | None = None
         try:
             message = await websocket.receive_json()
             if message.get("type") != "start":
@@ -245,23 +246,66 @@ def create_desktop_app(token: str) -> ASGIApp:
                 for key, value in supplied_env.items():
                     if isinstance(key, str) and key.startswith("CONTEXTGIT_") and isinstance(value, str):
                         env[key] = value
-            process = await asyncio.create_subprocess_exec(
-                executable,
-                cwd=str(requested_cwd),
-                env=env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
+            env.setdefault("TERM", "xterm-256color")
+            slave: int | None = None
+            if os.name != "nt":
+                import pty
+                master, slave = pty.openpty()
+                import fcntl
+                import struct
+                import termios
+                fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", int(message.get("rows", 30)), int(message.get("cols", 100)), 0, 0))
+            try:
+                launch = [executable]
+                if slave is not None:
+                    # A session alone does not give the child a controlling
+                    # terminal. TUIs need its foreground process group to
+                    # receive SIGWINCH and redraw after resizing.
+                    launch = [sys.executable, "-c",
+                              "import os,sys,fcntl,termios; fcntl.ioctl(0,termios.TIOCSCTTY,0); os.execvpe(sys.argv[1],sys.argv[1:],os.environ)",
+                              executable]
+                process = await asyncio.create_subprocess_exec(
+                    *launch,
+                    cwd=str(requested_cwd),
+                    env=env,
+                    stdin=slave if slave is not None else asyncio.subprocess.PIPE,
+                    stdout=slave if slave is not None else asyncio.subprocess.PIPE,
+                    stderr=slave if slave is not None else asyncio.subprocess.STDOUT,
+                    start_new_session=os.name != "nt",
+                )
+            finally:
+                if slave is not None:
+                    os.close(slave)
+            await websocket.send_json({"type": "ready"})
             initial = message.get("input")
-            if isinstance(initial, str) and initial and process.stdin:
-                process.stdin.write(initial.encode())
-                await process.stdin.drain()
+            if isinstance(initial, str) and initial:
+                if master is not None:
+                    os.write(master, (initial + "\n").encode())
+                elif process.stdin:
+                    process.stdin.write((initial + "\n").encode())
+                    await process.stdin.drain()
 
             async def send_output() -> None:
-                assert process and process.stdout
+                assert process
                 while True:
-                    chunk = await process.stdout.read(4096)
+                    if master is not None:
+                        loop = asyncio.get_running_loop()
+                        available = loop.create_future()
+                        def readable() -> None:
+                            if not available.done():
+                                available.set_result(None)
+                        loop.add_reader(master, readable)
+                        try:
+                            await available
+                            try:
+                                chunk = os.read(master, 4096)
+                            except OSError:
+                                break
+                        finally:
+                            loop.remove_reader(master)
+                    else:
+                        assert process.stdout
+                        chunk = await process.stdout.read(4096)
                     if not chunk:
                         break
                     await websocket.send_json({"type": "data", "data": chunk.decode(errors="replace")})
@@ -277,9 +321,14 @@ def create_desktop_app(token: str) -> ASGIApp:
                         break
                     incoming = receive_task.result()
                     kind = incoming.get("type")
-                    if kind == "write" and process.stdin and isinstance(incoming.get("data"), str):
-                        process.stdin.write(str(incoming["data"]).encode())
-                        await process.stdin.drain()
+                    if kind == "write" and isinstance(incoming.get("data"), str):
+                        if master is not None:
+                            os.write(master, incoming["data"].encode())
+                        elif process.stdin:
+                            process.stdin.write(incoming["data"].encode())
+                            await process.stdin.drain()
+                    elif kind == "resize" and master is not None:
+                        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", max(1, min(500, int(incoming["rows"]))), max(1, min(500, int(incoming["cols"]))), 0, 0))
                     elif kind == "kill":
                         process.terminate()
                         break
@@ -300,6 +349,9 @@ def create_desktop_app(token: str) -> ASGIApp:
                 await websocket.send_json({"type": "error", "message": str(exc)})
             except Exception:
                 pass
+        finally:
+            if master is not None:
+                os.close(master)
 
     class Dispatch:
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
