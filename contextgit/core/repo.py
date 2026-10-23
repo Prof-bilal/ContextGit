@@ -1269,6 +1269,49 @@ class Repo:
             raise TeamNotFound("this team has no proposed plan")
         managed = self.team_execution.settings(team_id)
         if managed:
+            # Older/less capable orchestrators sometimes put the completion
+            # requirement only at plan level. Preserve explicit worker
+            # criteria, but use the plan goal as a safe default so an
+            # otherwise complete proposal is not rejected at launch time.
+            tasks = plan.plan.get("tasks", [])
+            if isinstance(tasks, list):
+                aliases = {
+                    "name": "title",
+                    "instructions": "brief",
+                    "file_ownership": "scope",
+                    "completion_criteria": "done_criteria",
+                    "worker_role": "role",
+                    "cli": "agent",
+                }
+                for index, task in enumerate(tasks, start=1):
+                    if not isinstance(task, dict):
+                        continue
+                    for source, target in aliases.items():
+                        if target not in task and source in task:
+                            task[target] = task[source]
+                    if isinstance(task.get("scope"), str):
+                        task["scope"] = [part.strip() for part in task["scope"].split(",") if part.strip()]
+                    if isinstance(task.get("done_criteria"), list):
+                        task["done_criteria"] = "; ".join(str(value).strip() for value in task["done_criteria"] if str(value).strip())
+                    if not task.get("id"):
+                        task["id"] = f"worker-{index}"
+                plan_criteria = plan.plan.get("completion_criteria", [])
+                if isinstance(plan_criteria, list):
+                    fallback = "; ".join(
+                        str(item).strip() for item in plan_criteria if str(item).strip()
+                    )
+                else:
+                    fallback = ""
+                if not fallback:
+                    fallback = str(plan.plan.get("goal") or self.get_team(team_id).goal or "Complete the assigned worker task").strip()
+                changed = False
+                for task in tasks:
+                    if isinstance(task, dict) and not str(task.get("done_criteria") or "").strip():
+                        task["done_criteria"] = fallback
+                        changed = True
+                if changed:
+                    plan.updated_at = utcnow()
+                    self._storage.update_team_plan(plan)
             self.team_execution.validate(team_id, plan.plan.get("tasks", []))
         existing = self.list_tasks(team_id)
         proposed_tasks = plan.plan.get("tasks", [])

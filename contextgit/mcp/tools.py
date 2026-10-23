@@ -307,11 +307,38 @@ def propose_team_plan(
         return error or {"error": "no team", "type": "TeamNotFound"}
     if not 1 <= len(tasks) <= 12:
         return {"error": "a team plan must contain between 1 and 12 workers", "type": "InvalidPlan"}
+    # Keep the MCP boundary tolerant of the field names orchestrators commonly
+    # use in free-form plans. The storage/approval layer intentionally has one
+    # canonical schema, but rejecting equivalent aliases makes workers appear
+    # unlaunchable even when the plan contains all required information.
+    normalised: list[dict[str, Any]] = []
+    for index, raw in enumerate(tasks, start=1):
+        item = dict(raw)
+        aliases = {
+            "name": "title",
+            "instructions": "brief",
+            "file_ownership": "scope",
+            "completion_criteria": "done_criteria",
+            "worker_role": "role",
+            "cli": "agent",
+        }
+        for source, target in aliases.items():
+            if target not in item and source in item:
+                item[target] = item[source]
+        scope = item.get("scope")
+        if isinstance(scope, str):
+            item["scope"] = [part.strip() for part in scope.split(",") if part.strip()]
+        criteria = item.get("done_criteria")
+        if isinstance(criteria, list):
+            item["done_criteria"] = "; ".join(str(value).strip() for value in criteria if str(value).strip())
+        if not item.get("id"):
+            item["id"] = f"worker-{index}"
+        normalised.append(item)
     plan = repo.save_team_plan(
         resolved,
         {
             "goal": goal,
-            "tasks": tasks,
+            "tasks": normalised,
             "completion_criteria": completion_criteria or [],
             "quality_gates": quality_gates or [],
         },

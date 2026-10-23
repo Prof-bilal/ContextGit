@@ -78,6 +78,7 @@ type TeamNodeData = {
   showAll?: boolean;
   onShowAll?: (teamId: string) => void;
   onSelect: (id: string) => void;
+  onFocusAgent?: (sessionId: string) => void;
   onToggle: (team: SpatialTeam) => void;
   onOpen: (session: Session) => void;
   onPause: (team: SpatialTeam) => void;
@@ -374,7 +375,10 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<TeamNodeData>
       className="sp-worker sp-agent-node nopan"
       data-status={task.status}
       data-selected={data.selected}
-      onPointerDown={() => data.onSelect(data.team.team.id)}
+      onPointerDown={() => {
+        data.onSelect(data.team.team.id);
+        data.onFocusAgent?.(session.id);
+      }}
       onClick={() => data.onOpen(session)}
     >
       <NodeResizer
@@ -779,6 +783,7 @@ export default function SpatialShell({
                   [teamId]: !(current[teamId] ?? false),
                 })),
               onSelect: setSelectedId,
+              onFocusAgent: focusAgentNode,
               onOpen: openTerminal,
               onToggle: async (entry: SpatialTeam) => {
                 await projectApi(entry.team.project_path).updateTeamLayout(entry.team.id, {
@@ -980,8 +985,10 @@ export default function SpatialShell({
               position:
                 oldAgent?.position ??
                 stored ?? {
-                  x: team.layout.x + projectOffset + (index % 3) * 800,
-                  y: team.layout.y + Math.floor(index / 3) * 570,
+                  // Keep cards adjacent: the default card is 760px wide, so
+                  // use a 24px gutter instead of leaving an oversized gap.
+                  x: team.layout.x + projectOffset + (index % 3) * 784,
+                  y: team.layout.y + Math.floor(index / 3) * 544,
                 },
               data: {
                 ...baseNode.data,
@@ -1073,16 +1080,37 @@ export default function SpatialShell({
   useEffect(() => {
     const flow = canvasFlow.current;
     if (!flow || !viewportProjectPath || nodes.length === 0) return;
-    const focus = nodes.find((node) => node.type === "agent") ?? nodes[0];
-    const agentCount = nodes.filter((node) => node.type === "agent").length;
+    const agents = nodes.filter((node) => node.type === "agent");
+    const focus = agents[0] ?? nodes[0];
     if (focus.type === "team" && !focus.measured?.height) return;
-    const signature = `${viewportProjectPath}:${focus.id}:${agentCount}:${focus.type === "team" ? focus.data.team.tasks.filter(task => task.session_id).length : ""}`;
+    const signature = `${viewportProjectPath}:${focus.id}:${agents.length}:${agents.map((node) => node.id).join(",")}`;
     if (centeredAgents.current === signature) return;
     centeredAgents.current = signature;
     window.requestAnimationFrame(() => {
-      const width = Number(focus.style?.width) || 760;
-      const height = (focus.type === "team" ? focus.measured?.height : Number(focus.style?.height)) || 520;
-      void flow.setCenter(focus.position.x + width / 2, focus.position.y + height / 2, {
+      // Keep the whole agent sequence in view when a new card is added. The
+      // previous behavior centered only the first card, leaving later agents
+      // outside the viewport and making users pan to find them.
+      const bounds = agents.reduce(
+        (current, node) => {
+          const width = Number(node.style?.width) || 760;
+          const height = Number(node.style?.height) || 520;
+          return {
+            minX: Math.min(current.minX, node.position.x),
+            minY: Math.min(current.minY, node.position.y),
+            maxX: Math.max(current.maxX, node.position.x + width),
+            maxY: Math.max(current.maxY, node.position.y + height),
+          };
+        },
+        {
+          minX: agents[0]?.position.x ?? focus.position.x,
+          minY: agents[0]?.position.y ?? focus.position.y,
+          maxX: (agents[0]?.position.x ?? focus.position.x) + 760,
+          maxY: (agents[0]?.position.y ?? focus.position.y) + 520,
+        },
+      );
+      const width = Math.max(760, bounds.maxX - bounds.minX);
+      const height = Math.max(520, bounds.maxY - bounds.minY);
+      void flow.setCenter((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, {
         zoom: Math.min(0.9, (window.innerWidth - 100) / width, (window.innerHeight - 180) / height),
         duration: 250,
       });
