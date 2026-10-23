@@ -53,6 +53,7 @@ export function installWebBridge(): void {
     apiBase,
     apiToken,
     getStatus: () => ({ status, apiBase }),
+    newWindow: async () => { window.open(window.location.href, "_blank", "noopener,noreferrer"); },
     runtimeInfo: async () => ({ platform: navigator.platform.toLowerCase().includes("win") ? "win32" : navigator.platform.toLowerCase().includes("mac") ? "darwin" : "linux", arch: "browser", shell: "browser terminal" }),
     voiceModelStatus: async () => ({ modelReady: true, sidecarReady: true, busy: false, modelBytes: 0, version: "Browser speech recognition" }),
     voiceModelDownload: async () => {},
@@ -124,8 +125,9 @@ export function installWebBridge(): void {
     harnessInstall: async () => ({ started: false }),
     harnessCancel: () => {},
     onHarnessProgress: () => () => {}, onPtyData: (callback: (id: string, data: string) => void) => { ptyDataListeners.add(callback); return () => ptyDataListeners.delete(callback); }, onPtyExit: (callback: (id: string, code: number | undefined) => void) => { ptyExitListeners.add(callback); return () => ptyExitListeners.delete(callback); },
-    onUpdateStatus: () => () => {}, getUpdateStatus: () => ({ state: "unsupported" }),
-    checkForUpdates: async () => ({ state: "unsupported" }),
+    onUpdateStatus: () => () => {}, getUpdateStatus: () => ({ state: "idle", currentVersion: "web", supported: false }),
+    checkForUpdates: async () => ({ state: "idle", currentVersion: "web", supported: false }),
+    openUpdateRelease: async () => { window.open("https://github.com/Prof-bilal/ContextGit/releases", "_blank", "noopener,noreferrer"); },
     usageActivity: () => {}, onUsage: () => () => {},
     saveFile: async (options: { defaultName: string; data: ArrayBuffer }) => {
       const blob = new Blob([options.data]);
