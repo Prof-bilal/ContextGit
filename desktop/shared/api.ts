@@ -46,6 +46,23 @@ export interface Branch {
   deleted_at?: string | null;
 }
 
+export interface ContextCheckpointResult {
+  session_id: string;
+  branch: string;
+  commit: Commit;
+  tag: { name: string; commit_id: string; label?: string | null } | null;
+  created: boolean;
+}
+
+export interface ContextBranchResult {
+  branch: Branch;
+  session: Session;
+  source_session_id: string;
+  source_commit_id: string;
+  handoff: string;
+  handoff_generated: boolean;
+}
+
 export interface RepoSnapshot {
   current_branch: string;
   branches: Branch[];
@@ -1028,6 +1045,23 @@ export function projectApi(owner?: string) {
     request<Branch>("/api/v1/branches", {
       method: "POST",
       body: JSON.stringify({ name, from_commit: fromCommit }),
+    }),
+  contextCheckpoint: (sessionId: string, name?: string, summary?: string) =>
+    request<ContextCheckpointResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/context-checkpoint`, {
+      method: "POST",
+      body: JSON.stringify({ name, summary }),
+    }),
+  createContextBranch: (input: { sourceSessionId: string; name: string; fromCommit?: string; agent?: string; model?: string; provider?: string }) =>
+    request<ContextBranchResult>("/api/v1/context-branches", {
+      method: "POST",
+      body: JSON.stringify({
+        source_session_id: input.sourceSessionId,
+        name: input.name,
+        from_commit: input.fromCommit,
+        agent: input.agent,
+        model: input.model,
+        provider: input.provider,
+      }),
     }),
   deleteBranch: (name: string, permanent = false) =>
     request<void>(

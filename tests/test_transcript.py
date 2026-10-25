@@ -152,6 +152,26 @@ def test_capture_api_returns_actionable_states_and_immutable_conversation(captur
     ] == ["user", "assistant"]
 
 
+def test_context_checkpoint_captures_opencode_before_committing(capture_repo):
+    repo, session, _ = capture_repo
+    repo.transcripts.bind(session.id, "one")
+    client = TestClient(create_app(repo=repo))
+
+    response = client.post(
+        f"/api/v1/sessions/{session.id}/context-checkpoint",
+        json={"name": "before-refactor"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created"] is True
+    assert [item["role"] for item in payload["commit"]["messages"]] == [
+        "user",
+        "assistant",
+    ]
+    assert payload["tag"]["name"] == "before-refactor"
+
+
 def test_missing_and_unsupported_history_are_distinct(capture_repo):
     _, session, database = capture_repo
     with pytest.raises(CaptureUnavailable) as error:

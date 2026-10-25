@@ -41,6 +41,24 @@ class BranchRequest(BaseModel):
     from_commit: str | None = None
 
 
+class ContextCheckpointRequest(BaseModel):
+    """Create a named checkpoint from one session's committed context."""
+
+    name: str | None = Field(default=None, max_length=120)
+    summary: str | None = Field(default=None, max_length=240)
+
+
+class ContextBranchRequest(BaseModel):
+    """Fork an agent context without creating a code worktree."""
+
+    source_session_id: str
+    name: str = Field(min_length=1, max_length=120)
+    from_commit: str | None = None
+    agent: str | None = None
+    model: str | None = Field(default=None, max_length=200)
+    provider: str | None = None
+
+
 class CheckoutRequest(BaseModel):
     """Select a branch or commit."""
 

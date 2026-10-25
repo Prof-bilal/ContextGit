@@ -2518,6 +2518,31 @@ class Repo:
         with self._storage.transaction():
             return self._commit_staged(session_id, summary=summary, model=model, author=author)
 
+    def context_checkpoint(
+        self,
+        session_id: str,
+        *,
+        name: str | None = None,
+        summary: str | None = None,
+    ) -> tuple[Commit, Tag | None]:
+        """Create a lightweight, immutable checkpoint for an agent session.
+
+        Staged ContextGit messages are committed first.  If the session is
+        already clean, the checkpoint simply points at the branch head; this
+        makes taking a checkpoint safe to repeat and avoids empty commits.
+        """
+        session = self._storage.get_session(session_id)
+        staged = self.staged(session_id)
+        commit = (
+            self.commit_staged(session_id, summary=summary or "Context checkpoint")
+            if staged
+            else self.get_commit(self.get_branch(session.branch).head_commit_id)
+        )
+        checkpoint_tag = None
+        if name:
+            checkpoint_tag = self.tag(name, commit.id, label="context checkpoint")
+        return commit, checkpoint_tag
+
     def _commit_staged(
         self,
         session_id: str,

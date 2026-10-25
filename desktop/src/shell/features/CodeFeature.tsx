@@ -57,6 +57,7 @@ export default function CodeFeature() {
   const terminalPending = useRef(false);
 
   const [teamBusy, setTeamBusy] = useState(false);
+  const [contextBranchBusy, setContextBranchBusy] = useState(false);
 
   const activeSession = sessions.find((session) => session.id === activeId) ?? null;
 
@@ -299,6 +300,42 @@ export default function CodeFeature() {
       setBarError(cause instanceof Error ? cause.message : "Commit failed");
     }
   }, [activeSession, refresh, staged.length, summary]);
+
+  const createContextBranch = useCallback(async () => {
+    if (!activeSession || contextBranchBusy) return;
+    const name = window.prompt("Name this context branch", `${activeSession.name}-explore`);
+    if (!name?.trim()) return;
+    setContextBranchBusy(true);
+    try {
+      const result = await api.createContextBranch({
+        sourceSessionId: activeSession.id,
+        name: name.trim(),
+        agent: activeSession.agent ?? undefined,
+        model: activeSession.model ?? undefined,
+      });
+      setBarError(null);
+      await refresh();
+      openSession(result.session);
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Could not create context branch");
+    } finally {
+      setContextBranchBusy(false);
+    }
+  }, [activeSession, contextBranchBusy, openSession, refresh]);
+
+  const checkpointContext = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      const name = window.prompt("Checkpoint name (optional)")?.trim() || undefined;
+      await api.contextCheckpoint(activeSession.id, name, summary.trim() || undefined);
+      setSummary("");
+      setBarError(null);
+      setRevision((value) => value + 1);
+      await refresh();
+    } catch (cause) {
+      setBarError(cause instanceof Error ? cause.message : "Context checkpoint failed");
+    }
+  }, [activeSession, refresh, setRevision, summary]);
 
   const undoLast = useCallback(async () => {
     if (!activeSession) return;
@@ -545,6 +582,25 @@ export default function CodeFeature() {
           </div>
         </div>
         <div className="cg-dock-actions">
+          <button
+            type="button"
+            className="cg-btn"
+            data-variant="primary"
+            disabled={contextBranchBusy}
+            onClick={() => void checkpointContext()}
+            title="Save this agent context as an immutable checkpoint"
+          >
+            Save context
+          </button>
+          <button
+            type="button"
+            className="cg-btn"
+            disabled={contextBranchBusy}
+            onClick={() => void createContextBranch()}
+            title="Fork a context-only branch and prepare a handoff"
+          >
+            {contextBranchBusy ? "Preparing…" : "Fork context"}
+          </button>
           <button
             type="button"
             className="cg-btn"

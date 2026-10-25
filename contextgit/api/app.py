@@ -27,6 +27,8 @@ from contextgit.api.schemas import (
     AgentCommitRequest,
     AgentRunRequest,
     BranchRequest,
+    ContextBranchRequest,
+    ContextCheckpointRequest,
     CanvasLayoutRequest,
     CanvasViewportRequest,
     CheckoutRequest,
@@ -114,6 +116,7 @@ from contextgit.core.models import (
     DbTable,
     EndpointGraph,
     EndpointTestSuite,
+    Message,
     HttpCollection,
     HttpHistoryEntry,
     HttpRequestSpec,
@@ -560,6 +563,96 @@ def create_app(
     @app.post("/api/v1/branches")
     def create_branch(body: BranchRequest, current: Repo = repo_dep) -> dict[str, object]:
         return current.branch(body.name, body.from_commit).model_dump(mode="json")
+
+    @app.post("/api/v1/sessions/{session_id}/context-checkpoint")
+    def context_checkpoint(
+        session_id: str,
+        body: ContextCheckpointRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        """Checkpoint only ContextGit messages; code stays in the current workspace."""
+        session = current.get_session(session_id)
+        if session.agent == "opencode":
+            from contextgit.integration.transcript import CaptureUnavailable
+
+            try:
+                current.transcripts.capture(session_id)
+            except CaptureUnavailable as error:
+                raise HTTPException(
+                    409, {"status": error.status, "message": str(error)}
+                ) from error
+        had_staged = bool(current.staged(session_id))
+        commit, tag = current.context_checkpoint(
+            session_id, name=body.name, summary=body.summary
+        )
+        return {
+            "session_id": session_id,
+            "branch": session.branch,
+            "commit": commit.model_dump(mode="json"),
+            "tag": tag.model_dump(mode="json") if tag else None,
+            "created": had_staged,
+        }
+
+    @app.post("/api/v1/context-branches", status_code=201)
+    def create_context_branch(
+        body: ContextBranchRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        """Fork a context branch and prepare a compact handoff for a new run."""
+        source = current.get_session(body.source_session_id)
+        commit_id = body.from_commit or current.get_branch(source.branch).head_commit_id
+        current.get_commit(commit_id)  # validate before calling the provider or mutating state
+        messages = current.build_context(commit_id)
+        handoff_prompt = [
+            Message(role="system", content=(
+                "Write a compact handoff for another coding agent. Preserve the goal, "
+                "decisions, constraints, rejected approaches, and open questions. "
+                "Use short bullets and do not invent facts."
+            )),
+            Message(role="user", content="\n".join(
+                f"{message.role}: {message.content}" for message in messages[-40:]
+            )),
+        ]
+        fallback = (
+            f"Context handoff from {source.name} at {commit_id[:12]}\n"
+            f"Goal/session: {source.task or source.name}\n"
+            "Continue from the committed context above. Verify assumptions before editing."
+        )
+        handoff = fallback
+        generated = False
+        try:
+            active = llm
+            if body.provider:
+                active, _ = build_for(body.provider, current.list_providers())
+            candidate = active.complete(handoff_prompt, model=body.model or source.model)
+            if candidate.strip():
+                handoff = candidate.strip()
+                generated = True
+        except Exception:
+            # A branch must remain usable when a provider is offline or missing.
+            pass
+        branch = current.branch(body.name, from_commit=commit_id, project_path=source.project_path)
+        session = current.create_session(
+            body.name,
+            kind=source.kind,
+            branch=branch.name,
+            agent=body.agent or source.agent,
+            model=body.model or source.model,
+            project_path=source.project_path,
+            task=handoff,
+            scope=source.scope,
+            role=source.role,
+            skills=source.skills,
+            category=source.category,
+        )
+        return {
+            "branch": branch.model_dump(mode="json"),
+            "session": session.model_dump(mode="json"),
+            "source_session_id": source.id,
+            "source_commit_id": commit_id,
+            "handoff": handoff,
+            "handoff_generated": generated,
+        }
 
     @app.delete("/api/v1/branches", status_code=204)
     def delete_branch(name: str, permanent: bool = False, current: Repo = repo_dep) -> None:
