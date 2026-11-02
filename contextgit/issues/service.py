@@ -224,7 +224,7 @@ def _scan_osv(root: Path, run_id: str) -> list[IssueFinding]:
             [executable, "scan", "source", "--format", "json", str(root)],
             cwd=root,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=120,
             check=False,
         )
@@ -395,7 +395,7 @@ def _scan_quality(root: Path, run_id: str) -> tuple[list[IssueFinding], str]:
                 argv,
                 cwd=root,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 timeout=120,
                 check=False,
             )
@@ -464,7 +464,7 @@ def install_osv_scanner(repo: Repo) -> dict[str, object]:
             cwd=repo.root,
             env=env,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=300,
             check=False,
         )
@@ -484,7 +484,7 @@ def _repo_sha(root: Path) -> str | None:
             ["git", "rev-parse", "HEAD"],
             cwd=root,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=10,
             check=False,
         )
@@ -513,7 +513,7 @@ def _github_repo(root: Path, configured: str | None) -> str | None:
             ["git", "config", "--get", "remote.origin.url"],
             cwd=root,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=5,
             check=False,
         )

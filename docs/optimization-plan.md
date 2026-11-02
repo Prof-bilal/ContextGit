@@ -19,16 +19,16 @@ Prioritized by impact on the "laptop hangs" complaint. Every item cites the code
 `docs/codebase-audit.md`.
 
 ### A1. RAM in the renderer (biggest lever) — audit P11/P12
-- **xterm buffers:** `desktop/src/shell/terminal/TerminalPane.tsx:175-176` sets
+- **xterm buffers:** `web/src/shell/terminal/TerminalPane.tsx:175-176` sets
   `screenReaderMode: true` and `scrollback: 10000` **per pane**. `screenReaderMode` builds a
   hidden DOM mirror of the entire buffer (real CPU/RAM per pane). → lower scrollback to
   **1000–2000**, make `screenReaderMode` **opt-in**, and add a "reduce scrollback" default for
   low-memory machines.
-- **Unmount inactive panes:** `desktop/src/shell/terminal/PaneCanvas.tsx` renders a live
+- **Unmount inactive panes:** `web/src/shell/terminal/PaneCanvas.tsx` renders a live
   `TerminalPane` (PTY + xterm + WebGL context) for **every open run**, hidden ones included.
   → keep the PTY alive but **detach/unmount the xterm view** for non-visible panes; reattach on
   show (scrollback is preserved server-side in the PTY's `deque(maxlen=400)`).
-- **Code-split tabs:** `desktop/src/shell/Shell.tsx` statically imports ~50 modules; only
+- **Code-split tabs:** `web/src/shell/Shell.tsx` statically imports ~50 modules; only
   GitView's charts + terminal are `React.lazy`. → `React.lazy` **every** per-tab view so first
   paint only parses the active tab.
 - **Idle-unload heavy views:** Browser and Editor are kept mounted forever (`Shell.tsx`
@@ -39,7 +39,7 @@ Prioritized by impact on the "laptop hangs" complaint. Every item cites the code
   state/caches accumulate. → use a **non-persistent session** or explicit eviction.
 - **Electron hygiene (official guidance):** `Menu.setApplicationMenu(null)` before ready;
   avoid synchronous IPC/`fs` in the main process; bundle; self-host fonts (kill the remote
-  Google Fonts in `desktop/index.html`). Source: Electron Performance docs.
+  Google Fonts in `web/index.html`). Source: Electron Performance docs.
 
 ### A2. Idle CPU / process churn — audit P9/P13
 - **Gate the pollers.** `useSessions` (4 s), `useFleet` (6 s), `useMergeQueue` (4 s),
@@ -74,13 +74,13 @@ Nothing is ever reclaimed today. Add:
   contents on trash (keep the branch), or offer it in the Resource monitor.
 - **Prune artifacts:** `.contextgit/documents/`, `research/<run_id>/`, the asset library
   (`<userData>/assets/files` + `assets.json`) — no GC today.
-- **Cache the asset index:** `desktop/electron/library.ts:filePath()` re-reads/parses all of
+- **Cache the asset index:** `web/electron/library.ts:filePath()` re-reads/parses all of
   `assets.json` per request (P14). → in-memory index, invalidate on write.
 - **Stop re-copying code-server extensions** on every editor start (`main.ts:509-548` deletes +
   re-copies). → copy once, version-stamp.
 
 ### A5. Startup
-- **PyInstaller `--onedir`** instead of `--onefile` (`desktop/scripts/build-backend.sh`) — no
+- **PyInstaller `--onedir`** instead of `--onefile` (`web/scripts/build-backend.sh`) — no
   per-launch self-extraction.
 - Warm the backend concurrently with first paint (already partly done); stagger non-critical
   work after first paint.

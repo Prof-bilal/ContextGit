@@ -1,6 +1,6 @@
 # ContextGit — Full Codebase Audit
 
-**Scope:** `contextgit/**` (Python backend), `desktop/**` (Electron app + bundled VS Code
+**Scope:** `contextgit/**` (Python backend), `web/**` (Electron app + bundled VS Code
 extension), `app/ components/ lib/` + `next.config.ts` (Next.js landing page), `e2e/ tests/`,
 and repo hygiene (`.gitignore`, `package.json`, `pyproject.toml`, CI).
 **Method:** static reading across four parallel scans (backend security, backend
@@ -24,7 +24,7 @@ that model.
    **(S1–S5)**
 2. **The Electron app has a stored XSS in the bundled VS Code extension**: it builds
    `innerHTML` from commit summaries, branch names and server error strings — i.e. from
-   agent/model output (`desktop/extensions/contextgraph/src/extension.ts:174-191`). **(S6)**
+   agent/model output (`web/extensions/contextgraph/src/extension.ts:174-191`). **(S6)**
 3. **The SQLite database that stores provider API keys is created with default umask
    permissions** — no `chmod 600` (`contextgit/storage/sqlite.py:64-69`). Keys are redacted at
    the API layer, but a local user can read the file. **(S7)**
@@ -117,7 +117,7 @@ See `contextgit/verify/detect.py` for the safe hardcoded set to compare against.
 
 ### S4 — **HIGH** — Permissive CORS: any localhost origin + literal `null`
 **Where:** `contextgit/api/app.py:180-191`; desktop injects `null` at
-`desktop/electron/main.ts:72-73`.
+`web/electron/main.ts:72-73`.
 **Issue:**
 ```python
 allow_origins=os.getenv("CONTEXTGIT_CORS_ORIGINS", "http://localhost:3000,...").split(","),
@@ -201,7 +201,7 @@ redirect).
 ## A.4 Desktop / Electron
 
 ### S13 — **HIGH** — Stored XSS in the bundled VS Code extension
-**Where:** `desktop/extensions/contextgraph/src/extension.ts:174-183` and `:191`.
+**Where:** `web/extensions/contextgraph/src/extension.ts:174-183` and `:191`.
 **Issue:** The webview (`enableScripts: true`) builds `innerHTML` from `commit.summary`,
 `commit.kind`, and branch names — all originating from conversation/commit data, i.e.
 **agent/model text** — plus `message.message` (server error strings):
@@ -216,7 +216,7 @@ webview (code-server origin `http://127.0.0.1:<port>`, which S4's regex trusts).
 **Fix:** Build rows with `createElement`/`textContent`, or escape every interpolated value.
 
 ### S14 — **MEDIUM** — Privileged main window has no navigation/popup guard
-**Where:** `desktop/electron/main.ts:144-185`.
+**Where:** `web/electron/main.ts:144-185`.
 **Issue:** The main window carries the full `window.contextgit` preload bridge but registers no
 `will-navigate` and no `setWindowOpenHandler`. Any top-level navigation would load a remote
 page **with the bridge attached** (→ `ptyStart`, `saveFile`, asset IPC…). Other views are
@@ -225,13 +225,13 @@ sandboxed and have no preload, so this window is the one place navigation escala
 `setWindowOpenHandler` that denies/openExternals only for http(s).
 
 ### S15 — **MEDIUM** — `shell.openExternal` on arbitrary schemes
-**Where:** `desktop/electron/viewmanager.ts:71-75`. The popup handler forwards any non-http(s)
+**Where:** `web/electron/viewmanager.ts:71-75`. The popup handler forwards any non-http(s)
 URL (`file:`, custom app schemes) to the OS, while `will-navigate` blocks them. A malicious
 page can trigger OS handlers via `window.open(...)`.
 **Fix:** Allow-list schemes (e.g. `mailto:`, `tel:`) or remove the `openExternal` fallback.
 
 ### S16 — **MEDIUM** — Embedded editor runs `code-server --auth none`
-**Where:** `desktop/electron/editor.ts:72-94`.
+**Where:** `web/electron/editor.ts:72-94`.
 **Issue:** `--bind-addr 127.0.0.1:<port> --auth none --disable-workspace-trust`. Any local
 process/user that finds the port gets a full VS Code session (including an integrated
 terminal) in the project; `--disable-workspace-trust` removes the untrusted-repo prompt, so a
@@ -240,7 +240,7 @@ hostile repo can auto-run workspace tasks/extensions.
 workspace trust.
 
 ### S17 — **MEDIUM** — PTY accepts an arbitrary executable + env from the renderer
-**Where:** `desktop/electron/main.ts:587-622` (`ctx:pty-start`); `desktop/electron/pty.ts:49-58`.
+**Where:** `web/electron/main.ts:587-622` (`ctx:pty-start`); `web/electron/pty.ts:49-58`.
 **Issue:** `options.command` is passed verbatim to `node-pty` `spawn()` when it isn't a preset
 key, and `options.env` is merged over `process.env` unvalidated. `cwd` is correctly
 constrained (`resolvePtyCwd`), but a terminal is arbitrary execution by design — the renderer
@@ -250,7 +250,7 @@ execution.
 and allow-list env keys (`PATH`, `TERM`, …) instead of merging arbitrary pairs.
 
 ### S18 — **MEDIUM** — No Content-Security-Policy; inline script + remote fonts
-**Where:** `desktop/index.html:7-23` (inline theme bootstrap `<script>`, Google Fonts
+**Where:** `web/index.html:7-23` (inline theme bootstrap `<script>`, Google Fonts
 `<link>`); no CSP header set anywhere.
 **Issue:** With no CSP, any renderer injection can load and run remote script. The inline
 script also forces `'unsafe-inline'` when a CSP is later added.
@@ -258,17 +258,17 @@ script also forces `'unsafe-inline'` when a CSP is later added.
 nonce.
 
 ### S19 — **LOW** — `ctxasset://` registered with `bypassCSP: true`
-**Where:** `desktop/electron/main.ts:39-44`. The handler only serves paths from the asset
+**Where:** `web/electron/main.ts:39-44`. The handler only serves paths from the asset
 index (no traversal) and only image/video/doc types, so the immediate risk is low, but it
 removes a defense-in-depth control. Consider dropping `bypassCSP`.
 
 ### S20 — **LOW** — `ctx:save-file` default path from an unsanitized renderer string
-**Where:** `desktop/electron/main.ts:353-368` (`path.join(downloads, options.defaultName)`).
+**Where:** `web/electron/main.ts:353-368` (`path.join(downloads, options.defaultName)`).
 `defaultName` could contain `../`; it only seeds the Save dialog default, so impact is low.
 Apply `path.basename()`.
 
 ### S21 — **LOW** — No signing/notarization; build-time editor download unverified
-**Where:** `desktop/package.json:42-85`; `desktop/scripts/fetch-editor.mjs:30` (curl of a
+**Where:** `web/package.json:42-85`; `web/scripts/fetch-editor.mjs:30` (curl of a
 pinned GitHub release with no checksum). No `electron-updater` exists (good: no update-feed
 attack surface), but distributed builds are unsigned and the code-server archive is not
 hash-verified.
@@ -449,7 +449,7 @@ Grotesk).
 
 ### P3 — **MEDIUM** — Unused dependency + eager client components
 - `@xyflow/react` is declared in the **root** `package.json` but only imported by
-  `desktop/src/shell/git/CommitGraph.tsx` → the root install pulls react-flow + d3 for nothing.
+  `web/src/shell/git/CommitGraph.tsx` → the root install pulls react-flow + d3 for nothing.
   Remove it from root.
 - `app/page.tsx` imports all ten components eagerly; eight are `"use client"` and none are
   `next/dynamic`. Lazy-load the below-the-fold demos (`hero-graph`, `hash-demo`, `merge-dialog`,
@@ -477,7 +477,7 @@ self._conn.execute("PRAGMA busy_timeout=5000")
 
 ### P6 — **HIGH** — `/api/v1/repo` re-serializes every commit message on every mutation
 **Where:** `snapshot()` returns `repo.all_commits()` (every commit **with every message body**);
-`desktop/src/shell/git/useRepo.ts` refetches after every commit/merge/branch/delete.
+`web/src/shell/git/useRepo.ts` refetches after every commit/merge/branch/delete.
 **Issue:** JSON grows super-linearly with conversation length and is fully re-sent per action.
 **Fix:** Return ids + metadata for the graph; fetch message bodies lazily/paginated.
 
@@ -503,14 +503,14 @@ first call walks every branch fully. Cache per request; add a date index (alread
 ## C.3 Electron desktop
 
 ### P11 — **HIGH** — Renderer eagerly imports ~50 modules
-**Where:** `desktop/src/shell/Shell.tsx` statically imports every tab view (Chat/Code/Assets/
+**Where:** `web/src/shell/Shell.tsx` statically imports every tab view (Chat/Code/Assets/
 Browser/Editor/Api/Endpoints/Agent/Git/Storage/Team/Usage + dialogs). Only GitView's charts
 and the terminal are lazy.
 **Fix:** `React.lazy` each `case` in `view()/rail()/dock()` so first paint parses only the
 active tab.
 
 ### P12 — **HIGH** — Memory: all panes mounted, 10k scrollback, screen reader always on
-**Where:** `desktop/src/shell/terminal/PaneCanvas.tsx` renders one live `TerminalPane` per open
+**Where:** `web/src/shell/terminal/PaneCanvas.tsx` renders one live `TerminalPane` per open
 run (hidden but alive); `TerminalPane.tsx:175-176` sets `screenReaderMode: true` and
 `scrollback: 10000` unconditionally.
 **Issue:** N live WebGL xterm instances + N mirrored DOM buffers + N PTYs; `screenReaderMode`
@@ -527,11 +527,11 @@ times per run (P9).
 **Fix:** Gate polling on the active tab and `document.visibilityState`; add server-side caching.
 
 ### P14 — **LOW** — Asset library re-parses `assets.json` per byte request
-`desktop/electron/library.ts:filePath()` re-reads/re-parses the whole index on every
+`web/electron/library.ts:filePath()` re-reads/re-parses the whole index on every
 thumbnail/preview fetch. Cache it in memory (invalidate on write).
 
 ### P15 — **LOW** — PyInstaller `--onefile` startup cost
-`desktop/scripts/build-backend.sh` builds `--onefile`, which self-extracts to a temp dir on
+`web/scripts/build-backend.sh` builds `--onefile`, which self-extracts to a temp dir on
 every launch before importing FastAPI. `--onedir` starts noticeably faster.
 
 ## C.4 Disk growth (never reclaimed)
@@ -553,7 +553,7 @@ every launch before importing FastAPI. `--onedir` starts noticeably faster.
 # Section D — Repo hygiene & dependencies
 
 ### H1 — **GOOD** — `.gitignore` is comprehensive
-All build artifacts present on disk (`.next/`, `desktop/dist*`, `.venv/`, `node_modules`,
+All build artifacts present on disk (`.next/`, `web/dist*`, `.venv/`, `node_modules`,
 `*.egg-info`, `tsconfig.tsbuildinfo`, `.coverage`, `.playwright-*`, `.contextgit/`) are matched
 and **not tracked**. Only nit: `/node_modules` is root-anchored, so a future nested
 `node_modules` wouldn't be caught.
@@ -562,7 +562,7 @@ and **not tracked**. Only nit: `/node_modules` is root-anchored, so a future nes
 `.github/workflows/python-app.yml` runs only `flake8` + `pytest`. It never runs `mypy`
 (`strict = true`) or `ruff`, even though both are configured; it also never builds/tests the
 Next.js app or the desktop. Pins Python 3.12 while `requires-python = ">=3.11"`.
-**Fix:** Add `ruff check`, `mypy`, `npx tsc --noEmit`, and `cd desktop && npm run build` steps.
+**Fix:** Add `ruff check`, `mypy`, `npx tsc --noEmit`, and `cd web && npm run build` steps.
 
 ### H3 — **MEDIUM** — No Python lockfile; duplicate npm trees
 No `uv.lock`/`poetry.lock`; `pyproject.toml` uses floor ranges. Root and `desktop/` have

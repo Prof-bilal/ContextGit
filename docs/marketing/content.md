@@ -262,7 +262,7 @@ audit and team features. Prices are coming; join the waitlist.
 Repo (primary, scanned 2026-10-08):
 - `README.md` — feature list, layout, quickstart
 - `docs/all-in-one-landscape.md` — category, surface catalog, competitor table
-- `docs/desktop.md`, `docs/code-harnesses.md`, `docs/workspace-architecture.md` — desktop architecture, harness list
+- `docs/web.md`, `docs/code-harnesses.md`, `docs/workspace-architecture.md` — desktop architecture, harness list
 - `docs/monetization-strategy.md`, `docs/plans-research.md` — pricing strategy and market bands
 - `docs/roadmap.md` — what is shipped vs planned
 - `app/page.tsx`, `app/pricing/page.tsx`, `components/pricing-tiers.tsx`, `lib/pricing` — current site copy

@@ -1,0 +1,158 @@
+/* ContextGit web design tokens. Dark, neutral surfaces with one accent,
+   in the spirit of OpenHands. Every new `src/app` style reads these. */
+:root {
+  --app-bg: #0d0e11;
+  --app-rail: #0a0b0d;
+  --app-surface: #15171b;
+  --app-surface-2: #1b1e23;
+  --app-surface-3: #23262d;
+  --app-hover: #262a31;
+  --app-line: #2a2e35;
+  --app-line-strong: #383d46;
+
+  --app-ink: #eceef2;
+  --app-ink-2: #b4b9c3;
+  --app-ink-3: #7d838f;
+
+  --app-accent: #ff6a3d;
+  --app-accent-hover: #ff8259;
+  --app-accent-soft: rgb(255 106 61 / 0.14);
+  --app-on-accent: #160b06;
+
+  --app-ok: #3fb68b;
+  --app-warn: #e5a93b;
+  --app-bad: #f0625a;
+  --app-info: #5aa9ff;
+
+  --app-font: "Schibsted Grotesk", "Segoe UI", system-ui, sans-serif;
+  --app-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --app-s1: 4px;
+  --app-s2: 8px;
+  --app-s3: 12px;
+  --app-s4: 16px;
+  --app-s5: 24px;
+  --app-s6: 32px;
+  --app-s7: 48px;
+
+  --app-r1: 6px;
+  --app-r2: 8px;
+  --app-r3: 12px;
+  --app-r4: 16px;
+
+  --app-text-xs: 12px;
+  --app-text-sm: 13px;
+  --app-text-md: 14px;
+  --app-text-lg: 16px;
+  --app-text-xl: 20px;
+  --app-text-2xl: 28px;
+
+  --app-rail-w: 56px;
+  --app-header-h: 48px;
+  --app-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  --app-ease: 150ms cubic-bezier(0.2, 0, 0, 1);
+  --app-focus: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--app-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --app-ease: 0ms linear; }
+}
+
+.app-root {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--app-rail-w) minmax(0, 1fr);
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font: 400 var(--app-text-md)/1.5 var(--app-font);
+  -webkit-font-smoothing: antialiased;
+}
+.app-main { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.app-root :focus-visible { outline: none; box-shadow: var(--app-focus); }
+.app-root ::selection { background: var(--app-accent-soft); }
+.app-scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--app-line-strong) transparent; }
+
+/* Primitives (see ui.tsx) */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--app-s2);
+  height: 32px; padding: 0 var(--app-s3); border-radius: var(--app-r2);
+  border: 1px solid var(--app-line); background: var(--app-surface-2); color: var(--app-ink);
+  font: 500 var(--app-text-sm)/1 var(--app-font); cursor: pointer; white-space: nowrap;
+  transition: background var(--app-ease), border-color var(--app-ease), color var(--app-ease);
+}
+.ui-btn:hover:not(:disabled) { background: var(--app-hover); border-color: var(--app-line-strong); }
+.ui-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-btn--primary { background: var(--app-accent); border-color: var(--app-accent); color: var(--app-on-accent); font-weight: 600; }
+.ui-btn--primary:hover:not(:disabled) { background: var(--app-accent-hover); border-color: var(--app-accent-hover); }
+.ui-btn--ghost { background: transparent; border-color: transparent; color: var(--app-ink-2); }
+.ui-btn--ghost:hover:not(:disabled) { background: var(--app-hover); color: var(--app-ink); }
+.ui-btn--danger { color: var(--app-bad); }
+.ui-btn--sm { height: 26px; padding: 0 var(--app-s2); font-size: var(--app-text-xs); }
+.ui-btn--lg { height: 40px; padding: 0 var(--app-s4); font-size: var(--app-text-md); }
+
+.ui-icon-btn {
+  position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px;
+  border-radius: var(--app-r2); border: 0; background: transparent; color: var(--app-ink-3); cursor: pointer;
+  transition: background var(--app-ease), color var(--app-ease);
+}
+.ui-icon-btn:hover { background: var(--app-hover); color: var(--app-ink); }
+.ui-icon-btn[aria-pressed="true"], .ui-icon-btn[aria-current="page"] { background: var(--app-surface-3); color: var(--app-ink); }
+.ui-icon-btn svg { width: 18px; height: 18px; }
+.ui-tip {
+  position: absolute; left: calc(100% + 10px); top: 50%; translate: 0 -50%; z-index: 50;
+  padding: 4px 8px; border-radius: var(--app-r1); background: var(--app-surface-3); color: var(--app-ink);
+  border: 1px solid var(--app-line); font-size: var(--app-text-xs); white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity var(--app-ease);
+}
+.ui-icon-btn:hover .ui-tip, .ui-icon-btn:focus-visible .ui-tip { opacity: 1; }
+
+.ui-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--app-line); background: var(--app-surface-2);
+  color: var(--app-ink-2); font: 500 var(--app-text-xs)/1 var(--app-font); cursor: pointer; max-width: 100%;
+}
+.ui-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-chip:hover { border-color: var(--app-line-strong); color: var(--app-ink); }
+.ui-chip[aria-pressed="true"] { border-color: var(--app-accent); background: var(--app-accent-soft); color: var(--app-ink); }
+.ui-chip--static { cursor: default; }
+
+.ui-card { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: var(--app-r3); }
+
+.ui-tabs { display: flex; gap: 2px; padding: 0 var(--app-s2); border-bottom: 1px solid var(--app-line); }
+.ui-tab {
+  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 var(--app-s3);
+  border: 0; border-bottom: 2px solid transparent; background: none; color: var(--app-ink-3);
+  font: 500 var(--app-text-sm)/1 var(--app-font); cursor: pointer;
+}
+.ui-tab:hover { color: var(--app-ink); }
+.ui-tab[aria-selected="true"] { color: var(--app-ink); border-bottom-color: var(--app-accent); }
+.ui-tab svg { width: 15px; height: 15px; }
+
+.ui-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--app-ink-3); flex: none; }
+.ui-dot--running { background: var(--app-ok); box-shadow: 0 0 0 3px rgb(63 182 139 / 0.2); }
+.ui-dot--idle { background: var(--app-ink-3); }
+.ui-dot--done { background: var(--app-info); }
+.ui-dot--error { background: var(--app-bad); }
+
+.ui-empty { display: grid; place-items: center; gap: var(--app-s2); padding: var(--app-s7) var(--app-s5); text-align: center; color: var(--app-ink-3); }
+.ui-empty h2 { margin: 0; color: var(--app-ink); font-size: var(--app-text-lg); font-weight: 600; }
+.ui-empty p { margin: 0; max-width: 36ch; }
+
+.ui-page-header { display: flex; align-items: center; gap: var(--app-s3); height: var(--app-header-h); padding: 0 var(--app-s4); border-bottom: 1px solid var(--app-line); flex: none; }
+.ui-page-header h1 { margin: 0; font-size: var(--app-text-md); font-weight: 600; }
+.ui-page-header .ui-spacer { flex: 1; }
+
+.ui-input, .ui-textarea, .ui-select {
+  width: 100%; border-radius: var(--app-r2); border: 1px solid var(--app-line); background: var(--app-surface-2);
+  color: var(--app-ink); font: 400 var(--app-text-md)/1.5 var(--app-font); padding: 7px 10px;
+}
+.ui-textarea { resize: vertical; min-height: 88px; }
+.ui-input:focus, .ui-textarea:focus, .ui-select:focus { outline: none; border-color: var(--app-accent); }
+.ui-label { display: block; margin-bottom: 6px; color: var(--app-ink-2); font-size: var(--app-text-xs); font-weight: 600; letter-spacing: 0.02em; }
+.ui-error { padding: var(--app-s2) var(--app-s3); border-radius: var(--app-r2); border: 1px solid rgb(240 98 90 / 0.4); background: rgb(240 98 90 / 0.08); color: var(--app-bad); font-size: var(--app-text-sm); }
+
+/* The legacy canvas positions itself `fixed; inset: 0`. A transform makes this
+   wrapper the containing block, so the canvas and its popovers stay beside the rail. */
+.app-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; transform: translateZ(0); }
+.app-rail { background: var(--app-rail); border-right: 1px solid var(--app-line); }

@@ -23,7 +23,7 @@ Backend: `pytest`, `pytest-cov`, `hypothesis` (property tests). Workbench: TypeS
 pytest -q                    # backend
 pytest --cov=contextgit      # with coverage
 npm run build --prefix website # Next.js marketing build + TS check
-npm run build --prefix desktop  # browser renderer
+npm run build --prefix web  # browser renderer
 .venv/bin/contextgit web       # manual launcher smoke test
 ```
 

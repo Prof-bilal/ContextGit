@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 from collections import OrderedDict
@@ -48,6 +49,66 @@ def terminal_arguments(command: str, message: dict) -> list[str]:
     return args
 
 
+def terminal_executable(command: str) -> str:
+    """Resolve the program for a terminal command, or "" when it is unknown."""
+    if command in {"shell", "terminal"}:
+        shell = os.environ.get("SHELL", "")
+        if os.name != "nt":
+            return shell or "sh"
+        # Git Bash exports SHELL as a POSIX path (/bin/bash.exe) that Windows
+        # cannot launch; fall back to PowerShell, then cmd.
+        return (
+            (shell and shutil.which(shell))
+            or shutil.which("pwsh")
+            or shutil.which("powershell")
+            or os.environ.get("COMSPEC", "cmd.exe")
+        )
+    if command in {"codex", "claude", "opencode", "commandcode"}:
+        return command
+    return ""
+
+
+class ConPtyProcess:
+    """A Windows ConPTY child with the slice of the asyncio Process API the terminal uses.
+
+    Without a PTY, Windows shells get plain pipes: Enter arrives as a bare
+    carriage return that never ends a line, nothing is echoed, and TUIs such
+    as Codex or Claude refuse to start.
+    """
+
+    def __init__(
+        self, argv: list[str], cwd: str, env: dict[str, str], rows: int, cols: int
+    ) -> None:
+        from winpty import PtyProcess  # type: ignore[import-untyped]
+
+        self._pty = PtyProcess.spawn(argv, cwd=cwd, env=env, dimensions=(rows, cols))
+        self.returncode: int | None = None
+
+    async def read(self) -> str:
+        try:
+            return await asyncio.to_thread(self._pty.read, 4096)
+        except EOFError:
+            return ""
+
+    def write(self, data: str) -> None:
+        self._pty.write(data)
+
+    def resize(self, rows: int, cols: int) -> None:
+        self._pty.setwinsize(rows, cols)
+
+    def terminate(self) -> None:
+        if self._pty.isalive():
+            self._pty.terminate(force=True)
+
+    async def wait(self) -> int:
+        code = await asyncio.to_thread(self._pty.wait)
+        self.returncode = code if code is not None else 0
+        return self.returncode
+
+    def close(self) -> None:
+        self._pty.close()
+
+
 def choose_folder() -> str | None:
     """Open the host OS folder picker for the localhost browser app."""
     commands: list[list[str]] = []
@@ -65,7 +126,7 @@ def choose_folder() -> str | None:
         ])
     for command in commands:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=300)
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
             continue
         if result.returncode == 0 and result.stdout.strip():
@@ -88,7 +149,7 @@ def choose_folder() -> str | None:
         result = subprocess.run(
             [sys.executable, "-c", tkinter_script],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             check=False,
             timeout=300,
         )
@@ -227,7 +288,7 @@ def create_desktop_app(token: str) -> ASGIApp:
             await websocket.close(code=4409)
             return
         await websocket.accept()
-        process: asyncio.subprocess.Process | None = None
+        process: asyncio.subprocess.Process | ConPtyProcess | None = None
         master: int | None = None
         try:
             message = await websocket.receive_json()
@@ -242,15 +303,7 @@ def create_desktop_app(token: str) -> ASGIApp:
                 await websocket.close(code=4403)
                 return
             command = str(message.get("command") or "shell")
-            commands = {
-                "shell": os.environ.get("SHELL", "sh"),
-                "terminal": os.environ.get("SHELL", "sh"),
-                "codex": "codex",
-                "claude": "claude",
-                "opencode": "opencode",
-                "commandcode": "commandcode",
-            }
-            executable = commands.get(command, "")
+            executable = terminal_executable(command)
             if not executable:
                 await websocket.send_json({"type": "error", "message": "Unknown terminal command."})
                 await websocket.close(code=4400)
@@ -280,32 +333,44 @@ def create_desktop_app(token: str) -> ASGIApp:
                 import struct
                 import termios
                 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", int(message.get("rows", 30)), int(message.get("cols", 100)), 0, 0))
-            try:
-                arguments = terminal_arguments(command, message)
-                launch = [executable, *arguments]
-                if slave is not None:
-                    # A session alone does not give the child a controlling
-                    # terminal. TUIs need its foreground process group to
-                    # receive SIGWINCH and redraw after resizing.
-                    launch = [sys.executable, "-c",
-                              "import os,sys,fcntl,termios; fcntl.ioctl(0,termios.TIOCSCTTY,0); os.execvpe(sys.argv[1],sys.argv[1:],os.environ)",
-                              executable, *arguments]
-                process = await asyncio.create_subprocess_exec(
-                    *launch,
+            arguments = terminal_arguments(command, message)
+            if os.name == "nt":
+                process = ConPtyProcess(
+                    [executable, *arguments],
                     cwd=str(requested_cwd),
                     env=env,
-                    stdin=slave if slave is not None else asyncio.subprocess.PIPE,
-                    stdout=slave if slave is not None else asyncio.subprocess.PIPE,
-                    stderr=slave if slave is not None else asyncio.subprocess.STDOUT,
-                    start_new_session=os.name != "nt",
+                    rows=max(1, min(500, int(message.get("rows", 30)))),
+                    cols=max(1, min(500, int(message.get("cols", 100)))),
                 )
-            finally:
-                if slave is not None:
-                    os.close(slave)
+            else:
+                try:
+                    launch = [executable, *arguments]
+                    if slave is not None:
+                        # A session alone does not give the child a controlling
+                        # terminal. TUIs need its foreground process group to
+                        # receive SIGWINCH and redraw after resizing.
+                        launch = [sys.executable, "-c",
+                                  "import os,sys,fcntl,termios; fcntl.ioctl(0,termios.TIOCSCTTY,0); os.execvpe(sys.argv[1],sys.argv[1:],os.environ)",
+                                  executable, *arguments]
+                    process = await asyncio.create_subprocess_exec(
+                        *launch,
+                        cwd=str(requested_cwd),
+                        env=env,
+                        stdin=slave if slave is not None else asyncio.subprocess.PIPE,
+                        stdout=slave if slave is not None else asyncio.subprocess.PIPE,
+                        stderr=slave if slave is not None else asyncio.subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                finally:
+                    if slave is not None:
+                        os.close(slave)
             await websocket.send_json({"type": "ready"})
             initial = message.get("input")
             if command in {"shell", "terminal"} and isinstance(initial, str) and initial:
-                if master is not None:
+                if isinstance(process, ConPtyProcess):
+                    # A console reads Enter as a carriage return.
+                    process.write(initial + "\r")
+                elif master is not None:
                     os.write(master, (initial + "\n").encode())
                 elif process.stdin:
                     process.stdin.write((initial + "\n").encode())
@@ -314,6 +379,12 @@ def create_desktop_app(token: str) -> ASGIApp:
             async def send_output() -> None:
                 assert process
                 while True:
+                    if isinstance(process, ConPtyProcess):
+                        text = await process.read()
+                        if not text:
+                            break
+                        await websocket.send_json({"type": "data", "data": text})
+                        continue
                     if master is not None:
                         loop = asyncio.get_running_loop()
                         available = loop.create_future()
@@ -348,11 +419,18 @@ def create_desktop_app(token: str) -> ASGIApp:
                     incoming = receive_task.result()
                     kind = incoming.get("type")
                     if kind == "write" and isinstance(incoming.get("data"), str):
-                        if master is not None:
+                        if isinstance(process, ConPtyProcess):
+                            process.write(incoming["data"])
+                        elif master is not None:
                             os.write(master, incoming["data"].encode())
                         elif process.stdin:
                             process.stdin.write(incoming["data"].encode())
                             await process.stdin.drain()
+                    elif kind == "resize" and isinstance(process, ConPtyProcess):
+                        process.resize(
+                            max(1, min(500, int(incoming["rows"]))),
+                            max(1, min(500, int(incoming["cols"]))),
+                        )
                     elif kind == "resize" and master is not None:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", max(1, min(500, int(incoming["rows"]))), max(1, min(500, int(incoming["cols"]))), 0, 0))
                     elif kind == "kill":
@@ -378,6 +456,8 @@ def create_desktop_app(token: str) -> ASGIApp:
         finally:
             if master is not None:
                 os.close(master)
+            if isinstance(process, ConPtyProcess):
+                process.close()
 
     class Dispatch:
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

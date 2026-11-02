@@ -65,7 +65,7 @@ def mcp_command() -> str:
 
 def opencode_v2() -> bool:
     version = subprocess.run([shutil.which("opencode") or "opencode", "--version"],
-        capture_output=True, text=True, timeout=5, check=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, check=True,
         env={**os.environ, "OPENCODE_DISABLE_AUTOUPDATE": "true"}).stdout
     match = re.search(r"\bv?(\d+)\.", version)
     if match is None:

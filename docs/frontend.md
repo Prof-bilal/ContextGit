@@ -1,6 +1,6 @@
 # Frontend Guide
 
-**Stack:** React 19 + TypeScript, Vite (renderer), React Flow (commit graph), xterm.js (terminals), plain fetch client in `desktop/shared/api.ts`.
+**Stack:** React 19 + TypeScript, Vite (renderer), React Flow (commit graph), xterm.js (terminals), plain fetch client in `web/shared/api.ts`.
 
 The UI ships as a **browser workbench** (`desktop/`). The Next.js app in
 `website/` serves the marketing pages only — no workbench route.
@@ -12,7 +12,7 @@ The UI ships as a **browser workbench** (`desktop/`). The Next.js app in
 4. **Inspector panel (right, History view):** tokens, model, summary, diff view, health warnings.
 
 ## Rules
-- API calls live in `desktop/shared/api.ts` (typed; mirrors `api/schemas.py`). Never use `any`.
+- API calls live in `web/shared/api.ts` (typed; mirrors `api/schemas.py`). Never use `any`.
 - Server data: plain fetch + polling; UI-only state: React state/props (add Zustand only when prop drilling hurts).
 - Merge always shows a **preview dialog** with stats (decisions/facts/conflicts) before applying.
 - Backend status and terminal output use typed fetch/event streams and update incrementally.

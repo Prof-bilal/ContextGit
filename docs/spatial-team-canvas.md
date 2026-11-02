@@ -46,7 +46,7 @@ teams created before this opt-in execution mode retain the legacy workflow
 described below. Migration 0031 adds durable team execution settings and
 integration results without replacing existing team or session records.
 
-Run `npm run test:live-team --prefix desktop` for the real canvas/PTY wiring
+Run `npm run test:live-team --prefix web` for the real canvas/PTY wiring
 fixture (requires root Playwright dependencies and system Chromium), and
 `pytest tests/test_parent_execution.py` for real-Git integration regressions.
 
@@ -134,14 +134,14 @@ finds CMake installed in the repository virtual environment.
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check contextgit tests
 .venv/bin/mypy contextgit
-npm run typecheck --prefix desktop
-npm run test:spatial-runtime --prefix desktop
-npm run test:spatial-canvas --prefix desktop
-npm run build:voice --prefix desktop
-npm run build:renderer --prefix desktop
-npm run build:backend --prefix desktop
-npm run typecheck --prefix desktop
-npm run build --prefix desktop
+npm run typecheck --prefix web
+npm run test:spatial-runtime --prefix web
+npm run test:spatial-canvas --prefix web
+npm run build:voice --prefix web
+npm run build:renderer --prefix web
+npm run build:backend --prefix web
+npm run typecheck --prefix web
+npm run build --prefix web
 ```
 
 The browser check verifies two teams with twelve workers each, real pointer

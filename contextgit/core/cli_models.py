@@ -33,7 +33,7 @@ def catalog(agent: str) -> dict[str, object]:
             "commandcode": ["--no-auto-update", "--list-models"]}[agent]
     try:
         output = subprocess.run([command, *args], stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=15, check=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15, check=True,
             env={**os.environ, "NO_COLOR": "1", "OPENCODE_DISABLE_AUTOUPDATE": "true"}).stdout
         if agent == "codex":
             rows = json.loads(output)["models"]

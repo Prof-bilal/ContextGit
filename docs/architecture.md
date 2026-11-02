@@ -24,7 +24,7 @@ contextgit/
   health/        # contradiction / staleness checks (later phase)
   api/           # FastAPI app, routes, schemas
   cli/           # typer commands
-desktop/         # Browser workbench and API client
+web/             # Local web app: workbench UI and API client
 website/         # Next.js marketing site
 tests/            # Python unit and integration tests
 docs/             # Architecture, contributor, product, and engineering docs

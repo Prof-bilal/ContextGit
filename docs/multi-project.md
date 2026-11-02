@@ -45,7 +45,7 @@ tests/scripts.
 
 - Backend: `Session.project_path` (`contextgit/core/models.py`), `Repo.create_session` /
   `_backfill_session_projects` (`contextgit/core/repo.py`).
-- Main process: `desktop/electron/main.ts` (projects store + `ctx:projects-*` IPC);
-  `desktop/electron/preload.ts`, `desktop/src/bridge.d.ts`.
-- Renderer: `desktop/src/shell/workspace/useProjects.ts` (list + active + actions) and
-  `desktop/src/shell/rail/ProjectsRail.tsx` (the tree + header dropdown).
+- Main process: `web/electron/main.ts` (projects store + `ctx:projects-*` IPC);
+  `web/electron/preload.ts`, `web/src/bridge.d.ts`.
+- Renderer: `web/src/shell/workspace/useProjects.ts` (list + active + actions) and
+  `web/src/shell/rail/ProjectsRail.tsx` (the tree + header dropdown).

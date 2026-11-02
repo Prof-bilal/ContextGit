@@ -35,12 +35,11 @@ The Why analysis surface is not exposed.
 - Use **Code → Diagnostics** when reporting a problem. Include the platform,
   architecture, shell, backend state, and agent detection results.
 
-## First-run warnings
+## Running it
 
-Installers are unsigned during this beta. Windows may show SmartScreen; choose
-the option to view more information and continue only if the checksum matches.
-macOS may block the first launch in Gatekeeper; use **Open** from the context
-menu after verifying the checksum.
+ContextGit is a local web app only; there are no desktop installers. Run
+`contextgit web` and open http://127.0.0.1:7417 (the API listens on 7418). If a
+port is taken, the launcher stops with a message instead of picking a new one.
 
 ## Reporting a bug
 

@@ -6,13 +6,13 @@ AI assistants: start with `docs/AGENTS.md`.
 
 ## Browser workbench (primary UI)
 
-The workbench ships as a browser app in `desktop/`. The launcher starts its
+The workbench ships as a local web app in `web/`. The launcher starts its
 local API backend — no separate servers to run:
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-npm install --prefix desktop
+npm install --prefix web
 .venv/bin/contextgit web
 ```
 
@@ -22,7 +22,7 @@ The API uses a local SQLite repository and the deterministic `FakeProvider` unle
 binds to localhost by default; do not expose it to untrusted networks because it
 has no authentication.
 
-See `docs/desktop.md` for architecture and commands.
+See `docs/web.md` for architecture and commands.
 
 ## Website
 
@@ -46,7 +46,7 @@ Browser smoke tests drive the workbench through its local launcher and API.
 | `docs/data-model.md` | Commits, branches, sessions, team tables |
 | `docs/merge-engine.md` | Semantic merge and conflict handling |
 | `docs/frontend.md` | UI architecture |
-| `docs/desktop.md` | Browser workbench architecture and commands |
+| `docs/web.md` | Browser workbench architecture and commands |
 | `docs/testing.md` | Test strategy and how to run the suites |
 | `docs/codestyle.md` | Style and review rules |
 | `docs/roadmap.md` | What is planned and what shipped |

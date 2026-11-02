@@ -18,6 +18,8 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
+    # Windows browser terminals need a real console (ConPTY), not pipes.
+    "pywinpty>=2.0.14; sys_platform == 'win32'",
 ]
 
 [project.scripts]

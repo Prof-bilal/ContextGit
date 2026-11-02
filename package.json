@@ -5,8 +5,8 @@
   "scripts": {
     "website:dev": "npm run dev --prefix website",
     "website:build": "npm run build --prefix website",
-    "desktop:build": "npm run build --prefix desktop",
-    "desktop:web:build": "npm run build:renderer --prefix desktop",
+    "web:build": "npm run build --prefix web",
+    "web:dev": "npm run dev --prefix web",
     "check:structure": "node scripts/check-structure.mjs",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"

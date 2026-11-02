@@ -100,7 +100,7 @@ relevant doc in `docs/` (e.g. `docs/team-mode-architecture.md`). Use the claims 
 
 **Title:** Download ContextGit
 **Sections:**
-1. **Download** — macOS, Windows, Linux with the installer for each (AppImage, .deb, dmg, nsis, per `desktop/package.json`).
+1. **Download** — macOS, Windows, Linux with the installer for each (AppImage, .deb, dmg, nsis, per `web/package.json`).
    *Blocked until installers are published somewhere public. Do not show download buttons with no real file.*
 2. **System requirements** — confirm first.
 3. **Run from source** — the quickstart from `README.md` (desktop `npm install` / `npm run dev`).
@@ -117,7 +117,7 @@ relevant doc in `docs/` (e.g. `docs/team-mode-architecture.md`). Use the claims 
 - **Get started** — install, first repo, first agent run (from `README.md`)
 - **Concepts** — conversations as commits, branches, merge, worktrees per run (from `docs/architecture.md`, `docs/data-model.md`, `docs/merge-engine.md`)
 - **Guides** — Team mode (`docs/team-mode-architecture.md`, `docs/team-mode-mcp.md`), chat sessions (`docs/chat-sessions.md`), documents (`docs/chat-documents.md`), usage (`docs/usage.md`), code harnesses (`docs/code-harnesses.md`)
-- **Workbench** — desktop architecture (`docs/desktop.md`, `docs/workspace-architecture.md`, `docs/embedding-clients.md`)
+- **Workbench** — desktop architecture (`docs/web.md`, `docs/workspace-architecture.md`, `docs/embedding-clients.md`)
 - **Reference** — CLI (`ctx --help`), MCP server (`contextgit-mcp --help`), API (`/api/v1`)
 - **Contributing** — `docs/AGENTS.md`, `docs/codestyle.md`, `docs/testing.md`, `CODE_OF_CONDUCT.md`
 

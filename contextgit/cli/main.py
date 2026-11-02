@@ -32,11 +32,11 @@ JsonOpt = Annotated[bool, typer.Option("--json", help="Emit machine-readable JSO
 
 @app.command()
 def web(
-    port: Annotated[int, typer.Option(help="Browser UI port; 0 chooses a free port.")] = 0,
-    api_port: Annotated[int, typer.Option(help="Local API port; 0 chooses a free port.")] = 0,
+    port: Annotated[int, typer.Option(help="Browser UI port; 0 chooses a free port.")] = 7417,
+    api_port: Annotated[int, typer.Option(help="Local API port; 0 chooses a free port.")] = 7418,
     project: Annotated[Path | None, typer.Option(help="Open this project on launch.")] = None,
 ) -> None:
-    """Open the lightweight ContextGit workbench in the default browser."""
+    """Open the local ContextGit web app (http://127.0.0.1:7417) in the default browser."""
     from contextgit.web import run
 
     run(port=port, api_port=api_port, project=project)

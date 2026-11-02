@@ -38,9 +38,9 @@
   "exclude": [
     "node_modules",
     "tests/fixtures",
-    "desktop/build",
-    "desktop/extensions",
-    "desktop/dist",
-    "desktop/release"
+    "web/build",
+    "web/extensions",
+    "web/dist",
+    "web/release"
   ]
 }

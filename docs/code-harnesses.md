@@ -13,11 +13,11 @@ single source of truth:
 
 | Concern | Where |
 |---|---|
-| **The list** — id, label, monogram, command, args, npm package, docs | `desktop/shared/harnesses.ts` (`HARNESSES`) |
-| PTY presets (derived) | `desktop/electron/pty.ts` (`PTY_PRESETS`) |
-| UI list + labels (derived) | `desktop/src/shell/agents.ts` |
-| Brand mark + colour | `desktop/src/shell/primitives.tsx` (`MARKS`, `MARK_COLORS`) + `desktop/src/shell/marks/brand.tsx` |
-| Brand hue / avatar colour | `desktop/src/shell.css` (`--cg-brand-*`, `--cg-agent-*`) |
+| **The list** — id, label, monogram, command, args, npm package, docs | `web/shared/harnesses.ts` (`HARNESSES`) |
+| PTY presets (derived) | `web/electron/pty.ts` (`PTY_PRESETS`) |
+| UI list + labels (derived) | `web/src/shell/agents.ts` |
+| Brand mark + colour | `web/src/shell/primitives.tsx` (`MARKS`, `MARK_COLORS`) + `web/src/shell/marks/brand.tsx` |
+| Brand hue / avatar colour | `web/src/shell.css` (`--cg-brand-*`, `--cg-agent-*`) |
 
 `id` is triple-duty: the `Session.agent` value stored by the backend, the PTY
 preset key, and the `data-agent` / brand-mark key. That is *why* it is one list.
@@ -81,7 +81,7 @@ same `TerminalPane`.
 
 IPC surface (main ↔ renderer): `ctx:harness-check`, `ctx:harness-install`,
 `ctx:harness-cancel`, and the `ctx:harness-progress` push. Types live in
-`desktop/shared/harnesses.ts` (`HarnessCheck`, `HarnessInstallEvent`).
+`web/shared/harnesses.ts` (`HarnessCheck`, `HarnessInstallEvent`).
 
 ## Backend parity
 
@@ -93,7 +93,7 @@ ids so any of them can implement and be reviewed by a different agent.
 
 ## Adding a harness
 
-1. Add one row to `HARNESSES` in `desktop/shared/harnesses.ts`.
+1. Add one row to `HARNESSES` in `web/shared/harnesses.ts`.
 2. Add its brand mark to `MARKS` / `MARK_COLORS` in `primitives.tsx` (see
    `marks/brand.tsx`) and the `--cg-brand-*` / `--cg-agent-*` tokens in
    `shell.css`.
