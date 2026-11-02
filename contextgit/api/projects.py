@@ -68,6 +68,21 @@ def terminal_executable(command: str) -> str:
     return ""
 
 
+def reset_stale_terminals(repo: Repo) -> int:
+    """Reset terminal sessions left 'running' by a previous launch of the app.
+
+    Every terminal runs as a child of the API process, so when the app restarts
+    none of them can still be alive; mark them idle again.
+    """
+    changed = 0
+    for session in repo.list_sessions():
+        if session.kind != "terminal" or session.status != "running":
+            continue
+        repo.set_session_status(session.id, "idle")
+        changed += 1
+    return changed
+
+
 class ConPtyProcess:
     """A Windows ConPTY child with the slice of the asyncio Process API the terminal uses.
 
@@ -186,6 +201,7 @@ class ProjectRegistry:
                         repo = Repo.open(root)
                     except RepoNotFound:
                         repo = Repo.init(root)
+                    reset_stale_terminals(repo)
                     return repo, create_app(repo=repo, api_token=self.token)
                 repo, app = await asyncio.to_thread(prepare)
                 await asyncio.to_thread(repo.integration.start)
