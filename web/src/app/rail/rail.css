@@ -1,0 +1,116 @@
+/* Rail components styling. Classes prefixed rail-. Uses only --app-* variables. */
+
+.rail-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  z-index: 39;
+}
+
+.rail-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 300px;
+  z-index: 40;
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-line);
+  box-shadow: var(--app-shadow);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(0);
+  transition: transform var(--app-ease);
+}
+
+.rail-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--app-s2);
+  padding: var(--app-s4);
+  border-bottom: 1px solid var(--app-line);
+  flex: none;
+}
+
+.rail-drawer-title {
+  font: 600 var(--app-text-md) var(--app-font);
+  color: var(--app-ink);
+}
+
+.rail-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: var(--app-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s3);
+}
+
+.rail-drawer-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s3);
+}
+
+.rail-drawer-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s2);
+}
+
+.rail-drawer-heading {
+  margin: 0;
+  font: 600 var(--app-text-xs) var(--app-font);
+  color: var(--app-ink-3);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rail-session-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--app-s2);
+  padding: var(--app-s2) var(--app-s3);
+  height: 40px;
+  border-radius: var(--app-r2);
+  border: 0;
+  background: var(--app-surface-2);
+  color: var(--app-ink);
+  font: 500 var(--app-text-sm) var(--app-font);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--app-ease);
+}
+
+.rail-session-row:hover {
+  background: var(--app-hover);
+}
+
+.rail-session-row:focus-visible {
+  background: var(--app-hover);
+}
+
+.rail-session-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-session-time {
+  margin-left: auto;
+  font: var(--app-text-xs) var(--app-mono);
+  color: var(--app-ink-3);
+}
+
+.rail-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--app-accent);
+  color: var(--app-on-accent);
+  font: 600 var(--app-text-xs) var(--app-font);
+}
