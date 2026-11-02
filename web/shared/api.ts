@@ -307,6 +307,24 @@ export interface WorkspaceStatus {
   conflicts: string[];
 }
 
+/** One changed file in a run's working tree (`GET /sessions/{id}/diff`). */
+export interface SessionDiffFile {
+  path: string;
+  status: "A" | "M" | "D";
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  /** Unified diff text; empty when the file is binary or was truncated. */
+  diff: string;
+}
+
+/** The working-tree diff of one run, relative to its base commit. */
+export interface SessionDiff {
+  base: string;
+  files: SessionDiffFile[];
+  truncated: boolean;
+}
+
 /** One run in the fleet board (`GET /fleet`). */
 export interface FleetEntry {
   session_id: string;
@@ -1273,6 +1291,8 @@ export function projectApi(owner?: string) {
     }),
   workspace: (id: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/workspace`),
+  sessionDiff: (id: string) =>
+    request<SessionDiff>(`/api/v1/sessions/${id}/diff`),
   fleet: () => request<FleetEntry[]>("/api/v1/fleet"),
   preflight: (id: string, target?: string) =>
     request<WorkspaceStatus>(`/api/v1/sessions/${id}/preflight`, {
