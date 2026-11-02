@@ -1,25 +1,4 @@
-/**
- * Terminal / Files / Changes / App tabs for one session.
- *
- * The Changes tab needs a working-tree diff endpoint that does not exist yet.
- * `GET /api/v1/sessions/{id}/workspace` only returns `changed_files: string[]`
- * (no per-file A/M/D status and no diff text). Until that endpoint ships this
- * tab lists the changed paths and says that diffs are coming.
- *
- * Missing endpoint spec:
- *   GET /api/v1/sessions/{id}/diff?path=<optional project-relative path>
- *   200 {
- *     base: string;                 // session.base_commit, or HEAD when null
- *     files: Array<{
- *       path: string;
- *       status: "A" | "M" | "D";    // added / modified / deleted
- *       additions: number;
- *       deletions: number;
- *       binary: boolean;
- *       diff: string;               // unified diff; "" when binary
- *     }>;
- *   }
- */
+/** Terminal / Files / Changes / App tabs for one session. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LuArrowLeft,
@@ -34,7 +13,7 @@ import {
   LuSearch,
   LuSquareTerminal,
 } from "react-icons/lu";
-import { projectApi, type Session, type WorkspaceStatus } from "@/shared/api";
+import { projectApi, type Session, type SessionDiff } from "@/shared/api";
 import type { FileNode } from "@/shared/workspaceFiles";
 import EmbeddedTerminal from "../../shell/terminal/EmbeddedTerminal";
 import { terminalRuntime } from "../../shell/terminal/runtime";
@@ -343,16 +322,16 @@ function FilesPane({ project, refresh }: { project: string; refresh: number }) {
 }
 
 function ChangesPane({ session, refresh }: { session: Session; refresh: number }) {
-  const [status, setStatus] = useState<WorkspaceStatus | null>(null);
+  const [diff, setDiff] = useState<SessionDiff | null>(null);
+  const [selectedPath, setSelectedPath] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError("");
     try {
-      setStatus(
-        await projectApi(session.project_path ?? undefined).workspace(session.id),
+      setDiff(
+        await projectApi(session.project_path ?? undefined).sessionDiff(session.id),
       );
     } catch (cause) {
       setError(String(cause));
@@ -362,43 +341,94 @@ function ChangesPane({ session, refresh }: { session: Session; refresh: number }
   }, [session.id, session.project_path]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
   }, [load, refresh]);
 
-  const changed = status?.changed_files ?? [];
+  const files = diff?.files ?? [];
+  const selected =
+    files.find(file => file.path === selectedPath) ?? files[0] ?? null;
 
   return (
     <div className="ws-pane ws-changes">
       <aside className="ws-changed-list">
         <div className="ws-changed-head">
           <span>Changes</span>
-          <span className="ws-count">{changed.length}</span>
+          <span className="ws-count">{files.length}</span>
         </div>
         <div className="ws-changed-body app-scroll">
           {error && <p className="ui-error" role="alert">{error}</p>}
-          {loading && !status && <p className="ws-muted">Loading changes…</p>}
-          {!loading && !error && changed.length === 0 && (
+          {loading && !diff && <p className="ws-muted">Loading changes…</p>}
+          {!loading && !error && files.length === 0 && (
             <p className="ws-muted">No changes.</p>
           )}
-          {changed.map(path => (
-            <div className="ws-changed-item" key={path} title={path}>
-              <span className="ws-change-dot" aria-hidden="true" />
-              <span className="ws-changed-path">{path}</span>
-            </div>
+          {files.map(file => (
+            <button
+              key={file.path}
+              type="button"
+              className="ws-changed-item"
+              aria-current={selected?.path === file.path ? "true" : undefined}
+              title={file.path}
+              onClick={() => setSelectedPath(file.path)}
+            >
+              <span className="ws-change-badge" data-status={file.status}>
+                {file.status}
+              </span>
+              <span className="ws-changed-path">{file.path}</span>
+              <span className="ws-change-stats">
+                <span className="ws-change-add">+{file.additions}</span>
+                <span className="ws-change-del">-{file.deletions}</span>
+              </span>
+            </button>
           ))}
         </div>
       </aside>
       <div className="ws-diff">
-        {!loading && !error && changed.length === 0 && (
-          <EmptyState title="No changes yet">
-            Files this run edits will be listed here.
-          </EmptyState>
+        {!loading && !error && files.length === 0 && (
+          <div className="ws-fill">
+            <EmptyState title="No changes yet">
+              Files this run edits will be listed here.
+            </EmptyState>
+          </div>
         )}
-        {!loading && !error && changed.length > 0 && (
-          <EmptyState title="Diffs are coming">
-            The changed files are listed on the left. The backend does not
-            expose a working-tree diff yet.
-          </EmptyState>
+        {selected && (
+          <>
+            <header className="ws-viewer-head">
+              <span className="ws-viewer-path" title={selected.path}>
+                {selected.path}
+              </span>
+            </header>
+            {diff?.truncated && (
+              <p className="ws-muted">Some diffs were too large to show.</p>
+            )}
+            <div className="ws-viewer-body app-scroll">
+              {selected.binary
+                ? <p className="ws-muted">Binary or very large file; contents not shown.</p>
+                : !selected.diff
+                  ? <p className="ws-muted">This diff is too large to show here. Open the file in the Files tab.</p>
+                  : (
+                  <div className="ws-code">
+                    {selected.diff.split("\n").map((raw, index) => {
+                      const line = raw.replace(/\r$/, "");
+                      const tone = line.startsWith("@@")
+                        ? " ws-code-hunk"
+                        : line.startsWith("+") && !line.startsWith("+++")
+                          ? " ws-code-add"
+                          : line.startsWith("-") && !line.startsWith("---")
+                            ? " ws-code-del"
+                            : "";
+                      return (
+                        <div key={index} className={`ws-code-line${tone}`}>
+                          <span className="ws-code-text">{line || " "}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+            </div>
+          </>
         )}
       </div>
     </div>

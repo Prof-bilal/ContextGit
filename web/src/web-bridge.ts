@@ -1,5 +1,9 @@
 import { projectRuntime } from "../shared/projectRuntime";
 import type { BackendStatus } from "../shared/status";
+import { harnessFor } from "../shared/harnesses";
+
+/** Agents the local terminal endpoint knows how to start (contextgit/api/projects.py). */
+const LAUNCHABLE = ["shell", "codex", "claude", "opencode", "commandcode"];
 
 type Workspace = import("../shared/workspace").Workspace;
 type ContextGitBridge = NonNullable<Window["contextgit"]>;
@@ -155,8 +159,17 @@ export function installWebBridge(): void {
     ptyWrite: (id: string, data: string) => terminalSockets.get(id)?.send(JSON.stringify({ type: "write", data })),
     ptyResize: (id: string, cols: number, rows: number) => terminalSockets.get(id)?.send(JSON.stringify({ type: "resize", cols, rows })),
     ptyKill: (id: string) => { terminalSockets.get(id)?.send(JSON.stringify({ type: "kill" })); terminalSockets.get(id)?.close(); terminalSockets.delete(id); },
-    ptyPresets: async () => ["shell", "codex", "claude", "opencode", "commandcode"],
-    harnessCheck: async () => ({ installed: true }),
+    ptyPresets: async () => [...LAUNCHABLE],
+    // An agent is usable when the local terminal can launch it and its CLI is on PATH.
+    harnessCheck: async (id: string) => {
+      const command = harnessFor(id)?.command ?? id;
+      if (id === "shell") return { id, command: "shell", installed: true, path: null };
+      if (!LAUNCHABLE.includes(id)) return { id, command, installed: false, path: null };
+      const response = await fetch(`${apiBase}/api/v1/commands/which?name=${encodeURIComponent(command)}`, { headers: headers() });
+      const body = await response.json().catch(() => ({})) as { path?: string | null };
+      const path = response.ok ? body.path ?? null : null;
+      return { id, command, installed: Boolean(path), path };
+    },
     harnessInstall: async () => ({ started: false }),
     harnessCancel: () => {},
     onHarnessProgress: () => () => {}, onPtyData: (callback: (id: string, data: string) => void) => { ptyDataListeners.add(callback); return () => ptyDataListeners.delete(callback); }, onPtyExit: (callback: (id: string, code: number | undefined) => void) => { ptyExitListeners.add(callback); return () => ptyExitListeners.delete(callback); },

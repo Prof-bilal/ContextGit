@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -63,9 +64,27 @@ def terminal_executable(command: str) -> str:
             or shutil.which("powershell")
             or os.environ.get("COMSPEC", "cmd.exe")
         )
-    if command in {"codex", "claude", "opencode", "commandcode"}:
-        return command
-    return ""
+    # Agent id -> executable, matching `command` in web/shared/harnesses.ts.
+    return {"codex": "codex", "claude": "claude", "opencode": "opencode", "commandcode": "command-code"}.get(command, "")
+
+
+# Bare executable names only: no paths, separators or shell syntax.
+COMMAND_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+def reset_stale_terminals(repo: Repo) -> int:
+    """Reset terminal sessions left 'running' by a previous launch of the app.
+
+    Every terminal runs as a child of the API process, so when the app restarts
+    none of them can still be alive; mark them idle again.
+    """
+    changed = 0
+    for session in repo.list_sessions():
+        if session.kind != "terminal" or session.status != "running":
+            continue
+        repo.set_session_status(session.id, "idle")
+        changed += 1
+    return changed
 
 
 class ConPtyProcess:
@@ -186,6 +205,7 @@ class ProjectRegistry:
                         repo = Repo.open(root)
                     except RepoNotFound:
                         repo = Repo.init(root)
+                    reset_stale_terminals(repo)
                     return repo, create_app(repo=repo, api_token=self.token)
                 repo, app = await asyncio.to_thread(prepare)
                 await asyncio.to_thread(repo.integration.start)
@@ -257,6 +277,13 @@ def create_desktop_app(token: str) -> ASGIApp:
     @root.post("/api/v1/projects/open")
     async def open_project(body: OpenProject) -> dict[str, str]:
         return await registry.open(body.path)
+
+    @root.get("/api/v1/commands/which")
+    def which_command(name: str) -> dict[str, str | None]:
+        """Where an agent CLI resolves on PATH, so the UI lists only installed agents."""
+        if not COMMAND_NAME.fullmatch(name):
+            raise HTTPException(400, "Invalid command name.")
+        return {"command": name, "path": shutil.which(name)}
 
     @root.post("/api/v1/projects/choose")
     async def choose_project() -> dict[str, str | None]:
@@ -469,7 +496,10 @@ def create_desktop_app(token: str) -> ASGIApp:
                 if not secrets.compare_digest(supplied, f"Bearer {token}"):
                     return await JSONResponse({"error": "Unauthorized"}, 401)(scope, receive, send)
             if (
-                scope["path"] in {"/api/v1/health", "/api/v1/projects/open", "/api/v1/projects/choose", "/api/v1/projects/create"}
+                scope["path"] in {
+                    "/api/v1/health", "/api/v1/projects/open", "/api/v1/projects/choose",
+                    "/api/v1/projects/create", "/api/v1/commands/which",
+                }
                 or scope["method"] == "OPTIONS"
             ):
                 return await root(scope, receive, send)

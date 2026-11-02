@@ -1,13 +1,13 @@
 """FastAPI routes are thin validation and serialization wrappers around Repo."""
 
+import base64
 import hashlib
 import importlib
-import base64
 import os
+import secrets
 import shutil
 import socket
 import subprocess
-import secrets
 import threading
 import urllib.error
 import urllib.request
@@ -27,8 +27,6 @@ from contextgit.api.schemas import (
     AgentCommitRequest,
     AgentRunRequest,
     BranchRequest,
-    ContextBranchRequest,
-    ContextCheckpointRequest,
     CanvasLayoutRequest,
     CanvasViewportRequest,
     CheckoutRequest,
@@ -37,6 +35,8 @@ from contextgit.api.schemas import (
     CommitRequest,
     CommitResponse,
     CommitStagedRequest,
+    ContextBranchRequest,
+    ContextCheckpointRequest,
     DbOpenRequest,
     DbQueryRequest,
     EndpointBisectRequest,
@@ -116,11 +116,11 @@ from contextgit.core.models import (
     DbTable,
     EndpointGraph,
     EndpointTestSuite,
-    Message,
     HttpCollection,
     HttpHistoryEntry,
     HttpRequestSpec,
     HttpResponseResult,
+    Message,
     ServerStatus,
     UsageSummary,
     WhyAnswer,
@@ -139,6 +139,7 @@ from contextgit.endpoints.tests import (
     run_suite,
 )
 from contextgit.endpoints.why import why_for, why_history
+from contextgit.gitops.diff import working_tree_diff
 from contextgit.issues import install_osv_scanner, run_scan
 from contextgit.knowledge.models import Lesson
 from contextgit.knowledge.skills import SkillDraft, SkillLibrary
@@ -1081,6 +1082,15 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}/workspace")
     def session_workspace(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
         return current.session_workspace(session_id).model_dump(mode="json")
+
+    @app.get("/api/v1/sessions/{session_id}/diff")
+    def session_diff(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Unified working-tree diff of this run's checkout for the Changes tab."""
+        session = current.get_session(session_id)
+        project = current.root.parent if current.root.name == ".contextgit" else current.root
+        root = Path(session.worktree_path) if session.worktree_path else project
+        base = session.base_commit if session.worktree_path and session.base_commit else "HEAD"
+        return working_tree_diff(root, base=base)
 
     @app.get("/api/v1/fleet")
     def fleet(current: Repo = repo_dep) -> list[dict[str, object]]:
