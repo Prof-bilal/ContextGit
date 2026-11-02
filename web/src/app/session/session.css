@@ -331,3 +331,11 @@
 .session-confirm-backdrop { z-index: 60; }
 .session-confirm { width: min(420px, 90vw); }
 .session-confirm h2 { margin: 0; font-size: var(--app-text-lg); font-weight: 600; color: var(--app-ink); }
+
+/* Timeline on the git-log lane. */
+.session-timeline { padding: var(--app-s3) var(--app-s4); }
+.session-lane > li { padding-bottom: var(--app-s3); }
+.session-timeline-title { display: flex; align-items: baseline; justify-content: space-between; gap: var(--app-s2); color: var(--app-ink); font-size: var(--app-text-sm); }
+.session-timeline-time { flex: none; color: var(--app-ink-3); font: 400 var(--app-text-xs)/1 var(--app-mono); }
+.session-timeline-description { margin-top: 2px; color: var(--app-ink-2); font: 400 var(--app-text-xs)/1.5 var(--app-mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+.session-quiet { margin: 0; color: var(--app-ink-3); font-size: var(--app-text-sm); }

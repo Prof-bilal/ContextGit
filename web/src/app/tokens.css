@@ -1,31 +1,34 @@
 /* ContextGit web design tokens. Dark, neutral surfaces with one accent,
    in the spirit of OpenHands. Every new `src/app` style reads these. */
 :root {
-  --app-bg: #0d0e11;
-  --app-rail: #0a0b0d;
-  --app-surface: #15171b;
-  --app-surface-2: #1b1e23;
-  --app-surface-3: #23262d;
-  --app-hover: #262a31;
-  --app-line: #2a2e35;
-  --app-line-strong: #383d46;
+  /* Graphite surfaces; colour comes from git's own vocabulary: ref yellow for
+     the primary action, branch cyan for info, green/red only for add/delete
+     and ok/error. */
+  --app-bg: #0f1216;
+  --app-rail: #0c0e12;
+  --app-surface: #161a20;
+  --app-surface-2: #1c2128;
+  --app-surface-3: #242a33;
+  --app-hover: #222831;
+  --app-line: #2a313b;
+  --app-line-strong: #39414d;
 
-  --app-ink: #eceef2;
-  --app-ink-2: #b4b9c3;
-  --app-ink-3: #7d838f;
+  --app-ink: #d6dde6;
+  --app-ink-2: #aab3bf;
+  --app-ink-3: #8b95a3;
 
-  --app-accent: #ff6a3d;
-  --app-accent-hover: #ff8259;
-  --app-accent-soft: rgb(255 106 61 / 0.14);
-  --app-on-accent: #160b06;
+  --app-accent: #e3b341;
+  --app-accent-hover: #edc25e;
+  --app-accent-soft: rgb(227 179 65 / 0.12);
+  --app-on-accent: #1a1405;
 
-  --app-ok: #3fb68b;
-  --app-warn: #e5a93b;
-  --app-bad: #f0625a;
-  --app-info: #5aa9ff;
+  --app-ok: #3fb950;
+  --app-warn: #d29922;
+  --app-bad: #f85149;
+  --app-info: #56b6c2;
 
-  --app-font: "Schibsted Grotesk", "Segoe UI", system-ui, sans-serif;
-  --app-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --app-font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --app-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
 
   --app-s1: 4px;
   --app-s2: 8px;
@@ -35,23 +38,23 @@
   --app-s6: 32px;
   --app-s7: 48px;
 
-  --app-r1: 6px;
-  --app-r2: 8px;
-  --app-r3: 12px;
-  --app-r4: 16px;
+  --app-r1: 4px;
+  --app-r2: 6px;
+  --app-r3: 8px;
+  --app-r4: 10px;
 
   --app-text-xs: 12px;
   --app-text-sm: 13px;
   --app-text-md: 14px;
   --app-text-lg: 16px;
   --app-text-xl: 20px;
-  --app-text-2xl: 28px;
+  --app-text-2xl: 26px;
 
-  --app-rail-w: 56px;
+  --app-rail-w: 52px;
   --app-header-h: 48px;
-  --app-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
-  --app-ease: 150ms cubic-bezier(0.2, 0, 0, 1);
-  --app-focus: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--app-accent);
+  --app-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+  --app-ease: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --app-focus: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--app-info);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -70,7 +73,7 @@
 }
 .app-main { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .app-root :focus-visible { outline: none; box-shadow: var(--app-focus); }
-.app-root ::selection { background: var(--app-accent-soft); }
+.app-root ::selection { background: rgb(86 182 194 / 0.28); }
 .app-scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--app-line-strong) transparent; }
 
 /* Primitives (see ui.tsx) */
@@ -109,12 +112,12 @@
 
 .ui-chip {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
-  border-radius: 999px; border: 1px solid var(--app-line); background: var(--app-surface-2);
-  color: var(--app-ink-2); font: 500 var(--app-text-xs)/1 var(--app-font); cursor: pointer; max-width: 100%;
+  border-radius: var(--app-r2); border: 1px solid var(--app-line); background: transparent;
+  color: var(--app-ink-2); font: 500 var(--app-text-sm)/1 var(--app-font); cursor: pointer; max-width: 100%;
 }
 .ui-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-chip:hover { border-color: var(--app-line-strong); color: var(--app-ink); }
-.ui-chip[aria-pressed="true"] { border-color: var(--app-accent); background: var(--app-accent-soft); color: var(--app-ink); }
+.ui-chip[aria-pressed="true"] { border-color: var(--app-ink-3); background: var(--app-surface-3); color: var(--app-ink); box-shadow: inset 2px 0 0 var(--app-accent); }
 .ui-chip--static { cursor: default; }
 
 .ui-card { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: var(--app-r3); }
@@ -130,7 +133,7 @@
 .ui-tab svg { width: 15px; height: 15px; }
 
 .ui-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--app-ink-3); flex: none; }
-.ui-dot--running { background: var(--app-ok); box-shadow: 0 0 0 3px rgb(63 182 139 / 0.2); }
+.ui-dot--running { background: var(--app-ok); box-shadow: 0 0 0 3px rgb(63 185 80 / 0.18); }
 .ui-dot--idle { background: var(--app-ink-3); }
 .ui-dot--done { background: var(--app-info); }
 .ui-dot--error { background: var(--app-bad); }
@@ -150,9 +153,29 @@
 .ui-textarea { resize: vertical; min-height: 88px; }
 .ui-input:focus, .ui-textarea:focus, .ui-select:focus { outline: none; border-color: var(--app-accent); }
 .ui-label { display: block; margin-bottom: 6px; color: var(--app-ink-2); font-size: var(--app-text-xs); font-weight: 600; letter-spacing: 0.02em; }
-.ui-error { padding: var(--app-s2) var(--app-s3); border-radius: var(--app-r2); border: 1px solid rgb(240 98 90 / 0.4); background: rgb(240 98 90 / 0.08); color: var(--app-bad); font-size: var(--app-text-sm); }
+.ui-error { padding: var(--app-s2) var(--app-s3); border-radius: var(--app-r2); border: 1px solid rgb(248 81 73 / 0.4); background: rgb(248 81 73 / 0.08); color: var(--app-bad); font-size: var(--app-text-sm); }
 
 /* The legacy canvas positions itself `fixed; inset: 0`. A transform makes this
    wrapper the containing block, so the canvas and its popovers stay beside the rail. */
 .app-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; transform: translateZ(0); }
 .app-rail { background: var(--app-rail); border-right: 1px solid var(--app-line); }
+
+/* Signature: the git-log lane. Lists of runs and run events hang off one
+   vertical line with a commit dot per row, coloured by state. */
+.ui-lane { list-style: none; margin: 0; padding: 0; position: relative; }
+.ui-lane > li { position: relative; padding-left: 26px; }
+.ui-lane > li::before {
+  content: ""; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--app-line);
+}
+.ui-lane > li:first-child::before { top: 14px; }
+.ui-lane > li:last-child::before { bottom: calc(100% - 14px); }
+.ui-lane > li:only-child::before { display: none; }
+.ui-lane > li::after {
+  content: ""; position: absolute; left: 3px; top: 10px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--app-bg); border: 2px solid var(--lane-dot, var(--app-ink-3)); box-sizing: border-box;
+}
+.ui-lane > li[data-state="running"] { --lane-dot: var(--app-ok); }
+.ui-lane > li[data-state="running"]::after { background: var(--app-ok); }
+.ui-lane > li[data-state="done"] { --lane-dot: var(--app-info); }
+.ui-lane > li[data-state="error"] { --lane-dot: var(--app-bad); }
+.ui-sha { font: 500 var(--app-text-xs)/1 var(--app-mono); color: var(--app-accent); }

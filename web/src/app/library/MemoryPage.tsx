@@ -1,6 +1,6 @@
 /** Project memory: the approved revision, plus synthesizing, reviewing and approving a new one. */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LuCheck, LuX, LuTriangle, LuRefreshCw, LuFileText, LuSparkles } from "react-icons/lu";
+import { LuCheck, LuX, LuTriangle, LuRefreshCw, LuFileText } from "react-icons/lu";
 import { projectApi, type ProjectMemoryRevision, type MemoryConflict, type ProjectMemoryPreview } from "@/shared/api";
 import { useApp } from "../context";
 import { Button, EmptyState, PageHeader } from "../ui";
@@ -84,14 +84,14 @@ export default function MemoryPage() {
   return (
     <LibraryPage title="Memory">
       <LibraryContent>
-        <Section title="Project memory" description="Reviewed knowledge extracted from completed sessions. Completed teams propose reusable memory and skills.">
+        <Section title="Project memory" description="What agents should know about this project: architecture, conventions and decisions. Agents only see what you approve.">
           {error && <div className="ui-error" role="alert">{error}</div>}
           
           {current && (
             <div className="lib-item">
               <div className="lib-item-head">
                 <div>
-                  <strong>Approved memory (rev {current.revision})</strong>
+                  <strong>Current memory</strong> <span className="ui-sha">rev {current.revision}</span>
                   <div style={{ display: "flex", gap: "var(--app-s2)", alignItems: "center", flexWrap: "wrap" }}>
                     <Badge tone="ok">Approved</Badge>
                     <span className="lib-meta">{formatDate(current.approved_at)}</span>
@@ -145,10 +145,10 @@ export default function MemoryPage() {
             </div>
           )}
           {preview && (
-            <div className="lib-item lib-item--pending" style={{ borderColor: "rgb(255 106 61 / 0.5)", marginTop: "var(--app-s4)" }}>
+            <div className="lib-item lib-item--pending" style={{ marginTop: "var(--app-s4)" }}>
               <div className="lib-item-head">
                 <div>
-                  <strong>Pending preview (rev {preview.revision})</strong>
+                  <strong>Draft</strong> <span className="ui-sha">rev {preview.revision}</span>
                   <div style={{ display: "flex", gap: "var(--app-s2)", alignItems: "center", flexWrap: "wrap" }}>
                     <Badge tone="warn">Pending review</Badge>
                     <span className="lib-meta">Generated {formatDate(draft?.created_at ?? null)}</span>
@@ -201,23 +201,23 @@ export default function MemoryPage() {
           {!current && !preview && (
             <ol className="lib-empty-steps">
               <li>
-                <strong>Synthesize memory</strong>
-                <p>Click "Generate preview" to create a new memory preview from completed sessions.</p>
+                <strong>Draft</strong>
+                <p>Summarise this project's finished sessions into a draft.</p>
               </li>
               <li>
-                <strong>Review preview</strong>
-                <p>Review the generated summary, full text, and any conflicts with existing memory.</p>
+                <strong>Review</strong>
+                <p>Read the draft and any points that contradict the current memory.</p>
               </li>
               <li>
-                <strong>Approve or reject</strong>
-                <p>Approve to save as the new project memory, or reject to discard.</p>
+                <strong>Approve</strong>
+                <p>Approved memory is what agents read. Rejecting discards the draft.</p>
               </li>
             </ol>
           )}
 
           <div className="lib-actions" style={{ marginTop: "var(--app-s4)", paddingTop: "var(--app-s4)", borderTop: "1px solid var(--app-line)" }}>
             <Button variant="primary" onClick={() => void synthesize()} disabled={busy || synthesizing || !!draft}>
-              {synthesizing ? <><LuRefreshCw className="lib-spin" /> Generating...</> : <><LuSparkles /> Generate preview</>}
+              {synthesizing ? <><LuRefreshCw className="lib-spin" aria-hidden="true" /> Drafting…</> : <>Draft from sessions</>}
             </Button>
             <Button variant="ghost" onClick={() => void load()} disabled={busy}>
               <LuRefreshCw /> Refresh

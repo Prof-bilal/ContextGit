@@ -2,8 +2,7 @@
 import { useEffect } from "react";
 import type { Session } from "@/shared/api";
 import { useApp } from "../context";
-import { Button, EmptyState, StatusDot } from "../ui";
-import { AgentMark } from "../../shell/primitives";
+import { Button, EmptyState } from "../ui";
 import "./rail.css";
 import { agentLabel, folderName, projectTerminalSessions, relativeTime, STATUS_LABEL } from "./sessionUtils";
 
@@ -81,17 +80,17 @@ export default function SessionsDrawer() {
               {running.length > 0 && (
                 <div className="rail-drawer-group">
                   <h3 className="rail-drawer-heading">Running</h3>
-                  {running.map(s => (
-                    <SessionRow key={s.id} session={s} />
-                  ))}
+                  <ol className="ui-lane">
+                    {running.map(s => <SessionRow key={s.id} session={s} />)}
+                  </ol>
                 </div>
               )}
               {recent.length > 0 && (
                 <div className="rail-drawer-group">
                   <h3 className="rail-drawer-heading">Recent</h3>
-                  {recent.map(s => (
-                    <SessionRow key={s.id} session={s} />
-                  ))}
+                  <ol className="ui-lane">
+                    {recent.map(s => <SessionRow key={s.id} session={s} />)}
+                  </ol>
                 </div>
               )}
             </div>
@@ -105,15 +104,18 @@ export default function SessionsDrawer() {
 function SessionRow({ session }: { session: Session }) {
   const { go, setDrawerOpen } = useApp();
   return (
-    <button
-      type="button"
-      className="rail-session-row"
-      onClick={() => { go({ kind: "session", sessionId: session.id }); setDrawerOpen(false); }}
-    >
-      <AgentMark agent={session.agent ?? "shell"} label={agentLabel(session.agent)} />
-      <span className="rail-session-name" title={session.name}>{session.name}</span>
-      <span className="rail-session-time">{relativeTime(session.updated_at || session.created_at)}</span>
-      <StatusDot status={session.status} label={STATUS_LABEL[session.status]} />
-    </button>
+    <li data-state={session.status}>
+      <button
+        type="button"
+        className="rail-session-row"
+        aria-label={`${session.name}, ${agentLabel(session.agent)}, ${STATUS_LABEL[session.status]}`}
+        onClick={() => { go({ kind: "session", sessionId: session.id }); setDrawerOpen(false); }}
+      >
+        <span className="rail-session-name" title={session.name}>{session.name}</span>
+        <span className="rail-session-meta">
+          <span className="ui-sha">{session.id.slice(0, 7)}</span> {agentLabel(session.agent)} · {relativeTime(session.updated_at || session.created_at)}
+        </span>
+      </button>
+    </li>
   );
 }

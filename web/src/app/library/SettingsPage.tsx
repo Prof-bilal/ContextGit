@@ -81,7 +81,7 @@ export default function SettingsPage() {
   return (
     <LibraryPage title="Settings">
       <LibraryContent>
-        <Section title="AI provider" description="Configure the AI provider, model, and API key for this project.">
+        <Section title="AI provider" description="The model ContextGit uses to draft memory and skills for this project. Agent CLIs use their own logins.">
           {!projectPath && <p className="lib-muted">Open a project to configure its AI provider.</p>}
           {projectPath && !settings && !error && <p role="status" className="lib-loading">Loading providers…</p>}
           {error && <p role="alert" className="ui-error">{error}{!settings && <Button variant="ghost" onClick={() => setAttempt(v => v + 1)}>Retry setup</Button>}</p>}
@@ -115,7 +115,7 @@ export default function SettingsPage() {
           </fieldset>}
           {notice && <p role="status" className="lib-notice">{notice}</p>}
         </Section>
-        <Section title="Workbench" description="Read-only information about the running workbench.">
+        <Section title="This app" description="Where the app and its local API are running.">
           <dl className="lib-kv">
             <div><dt>UI address</dt><dd><code className="lib-mono">{typeof window !== "undefined" ? window.location.origin : "—"}</code></dd></div>
             <div><dt>API address</dt><dd><code className="lib-mono">{backendStatus?.status.state === "ready" ? backendStatus.status.apiBase : (backendStatus?.apiBase ?? (typeof window !== "undefined" && window.contextgit?.apiBase) ?? "—")}</code></dd></div>
@@ -143,8 +143,8 @@ export default function SettingsPage() {
           </ul>
         </Section>
 
-        <Section title="About" description="ContextGit — AI-powered development workflow.">
-          <p>ContextGit is an open-source tool for managing AI-assisted development workflows. It provides a spatial canvas for orchestrating multiple AI agents, project memory synthesis, and reusable skill libraries.</p>
+        <Section title="About">
+          <p>ContextGit keeps a history of your agent sessions, like git does for code: branch, compare, merge and roll back what agents worked on. Everything stays on this machine; only calls to the model you configure leave it.</p>
           <p><a href="https://github.com/Prof-bilal/ContextGit" target="_blank" rel="noopener noreferrer" className="lib-link"><LuGithub /> View on GitHub</a></p>
         </Section>
       </LibraryContent>

@@ -39,7 +39,7 @@
 
 .lib-notice {
   padding: var(--app-s2) var(--app-s3); border-radius: var(--app-r2);
-  border: 1px solid rgb(63 182 139 / 0.4); background: rgb(63 182 139 / 0.08);
+  border: 1px solid rgb(63 185 80 / 0.4); background: rgb(63 185 80 / 0.08);
   color: var(--app-ok); font-size: var(--app-text-sm);
 }
 .lib-muted { margin: 0; color: var(--app-ink-3); font-size: var(--app-text-sm); }
@@ -51,11 +51,11 @@
   border-radius: 999px; border: 1px solid var(--app-line); background: var(--app-surface-2);
   color: var(--app-ink-2); font: 600 11px/1 var(--app-font); letter-spacing: 0.02em; white-space: nowrap; text-transform: capitalize;
 }
-.lib-badge--ok { color: var(--app-ok); border-color: rgb(63 182 139 / 0.35); background: rgb(63 182 139 / 0.08); }
+.lib-badge--ok { color: var(--app-ok); border-color: rgb(63 185 80 / 0.35); background: rgb(63 185 80 / 0.08); }
 .lib-badge--warn { color: var(--app-warn); border-color: rgb(229 169 59 / 0.35); background: rgb(229 169 59 / 0.08); }
-.lib-badge--bad { color: var(--app-bad); border-color: rgb(240 98 90 / 0.35); background: rgb(240 98 90 / 0.08); }
+.lib-badge--bad { color: var(--app-bad); border-color: rgb(248 81 73 / 0.35); background: rgb(248 81 73 / 0.08); }
 .lib-badge--info { color: var(--app-info); border-color: rgb(90 169 255 / 0.35); background: rgb(90 169 255 / 0.08); }
-.lib-badge--accent { color: var(--app-accent); border-color: rgb(255 106 61 / 0.4); background: var(--app-accent-soft); }
+.lib-badge--accent { color: var(--app-accent); border-color: rgb(227 179 65 / 0.4); background: var(--app-accent-soft); }
 .lib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-s2); color: var(--app-ink-3); font-size: var(--app-text-xs); }
 
 /* Skills: list + detail */
@@ -122,7 +122,7 @@
   display: grid; gap: var(--app-s3); padding: var(--app-s4); border-radius: var(--app-r2);
   border: 1px solid var(--app-line); background: var(--app-surface-2);
 }
-.lib-item--pending { border-color: rgb(255 106 61 / 0.35); }
+.lib-item--pending { border-color: rgb(227 179 65 / 0.35); }
 .lib-item-head { display: flex; align-items: flex-start; gap: var(--app-s3); }
 .lib-item-head > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .lib-item-head strong { font-size: var(--app-text-md); font-weight: 600; overflow-wrap: anywhere; }

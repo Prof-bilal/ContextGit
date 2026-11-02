@@ -1,9 +1,9 @@
 /** One session: header with status and actions, activity panel with a composer (left), workspace tabs (right). */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Session, SessionStatus } from "@/shared/api";
+import type { Session } from "@/shared/api";
 import { AgentMark } from "../../shell/primitives";
-import { StatusDot, Chip, Button, IconButton, EmptyState } from "../ui";
-import { LuSendHorizontal, LuFolderOpen, LuGitBranch, LuTerminal, LuX, LuRotateCcw, LuSparkles, LuSquare } from "react-icons/lu";
+import { StatusDot, Chip, Button, IconButton } from "../ui";
+import { LuSendHorizontal, LuFolderOpen, LuGitBranch, LuTerminal, LuX, LuRotateCcw, LuSquare } from "react-icons/lu";
 import { agentLabel } from "../rail/sessionUtils";
 import { useSessionTimeline, type SentMessage } from "./useSessionTimeline";
 import { useTerminalState } from "./useTerminalState";
@@ -164,16 +164,6 @@ export default function SessionView({ session }: { session: Session }) {
   const projectName = session.project_path ? baseName(session.project_path) : "Unknown project";
   const branchName = session.git_branch ?? session.branch ?? "main";
 
-  // Get tone for timeline entries
-  const getToneStatus = (tone?: "ok" | "bad" | "info" | "accent"): SessionStatus => {
-    switch (tone) {
-      case "ok": return "running";
-      case "bad": return "error";
-      case "info": return "done";
-      case "accent": return "running";
-      default: return "idle";
-    }
-  };
 
   return (
     <div className="session-view">
@@ -217,16 +207,16 @@ export default function SessionView({ session }: { session: Session }) {
             {/* Task card */}
             <section className="session-task-card" aria-labelledby="task-heading">
               <h2 id="task-heading" className="session-task-title">
-                {session.task ?? "No task — interactive session"}
+                {session.task ?? "Interactive session"}
               </h2>
               <dl className="session-task-meta">
-                <dt><LuTerminal aria-hidden="true" /> CLI</dt>
+                <dt>Agent</dt>
                 <dd>{agentLabel(session.agent)}</dd>
-                <dt><LuSparkles aria-hidden="true" /> Model</dt>
+                <dt>Model</dt>
                 <dd>{session.model ?? "default"}</dd>
-                <dt><LuRotateCcw aria-hidden="true" /> Created</dt>
+                <dt>Created</dt>
                 <dd>{relativeTime(session.created_at)}</dd>
-                <dt><LuFolderOpen aria-hidden="true" /> Working directory</dt>
+                <dt>Folder</dt>
                 <dd title={worktreePath ?? "Unknown"}>
                   {worktreePath ?? "Unknown"}
                 </dd>
@@ -244,26 +234,21 @@ export default function SessionView({ session }: { session: Session }) {
                 </div>
               )}
               {!error && !loaded ? (
-                <EmptyState title="Loading..." />
+                <p className="session-quiet">Loading…</p>
               ) : entries.length === 0 ? (
-                <EmptyState title="No activity yet" />
+                <p className="session-quiet">Nothing has happened yet.</p>
               ) : (
-                entries.map((entry) => (
-                  <article key={entry.id} className="session-timeline-entry">
-                    <time className="session-timeline-time" dateTime={entry.at}>
-                      {relativeTime(entry.at)}
-                    </time>
-                    <div className="session-timeline-body">
+                <ol className="ui-lane session-lane">
+                  {entries.map((entry) => (
+                    <li key={entry.id} data-state={entry.tone === "bad" ? "error" : entry.tone === "ok" ? "running" : entry.tone === "info" ? "done" : undefined}>
                       <div className="session-timeline-title">
-                        {entry.tone && <StatusDot status={getToneStatus(entry.tone)} />}
                         <span>{entry.title}</span>
+                        <time className="session-timeline-time" dateTime={entry.at}>{relativeTime(entry.at)}</time>
                       </div>
-                      {entry.body && (
-                        <div className="session-timeline-description">{entry.body}</div>
-                      )}
-                    </div>
-                  </article>
-                ))
+                      {entry.body && <div className="session-timeline-description">{entry.body}</div>}
+                    </li>
+                  ))}
+                </ol>
               )}
             </section>
 
@@ -272,12 +257,12 @@ export default function SessionView({ session }: { session: Session }) {
               <textarea
                 ref={textareaRef}
                 className="session-composer-textarea ui-textarea"
-                placeholder="Send a message to the agent…"
+                placeholder="Type into the terminal…"
                 value={composerText}
                 onChange={(e) => setComposerText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={!isRunning}
-                aria-label="Message to agent"
+                aria-label="Text to send to the terminal"
                 aria-describedby={!isRunning ? "composer-hint" : undefined}
               />
               {!isRunning && (

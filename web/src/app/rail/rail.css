@@ -115,8 +115,9 @@
   font: 600 var(--app-text-xs) var(--app-font);
 }
 
-/* The rail itself: one vertical column of icon buttons. */
-.rail {
+/* The rail itself: one vertical column of icon buttons. `.app-rail`, never the
+   bare `.rail`, which a legacy stylesheet floats as a toolbar at >= 1200px. */
+.app-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -125,29 +126,44 @@
   min-height: 0;
   z-index: 41;
 }
-.rail .ui-icon-btn { position: relative; }
+.app-rail .ui-icon-btn { position: relative; }
 .rail-logo {
+  position: relative;
   display: grid;
   place-items: center;
   width: 36px;
   height: 36px;
   margin-bottom: var(--app-s2);
-  border: 0;
+  border: 1px solid var(--app-line-strong);
   border-radius: var(--app-r2);
-  background: var(--app-accent);
-  color: var(--app-on-accent);
-  font: 700 var(--app-text-sm)/1 var(--app-font);
-  letter-spacing: 0.02em;
+  background: var(--app-surface);
+  color: var(--app-ink);
+  font: 600 var(--app-text-sm)/1 var(--app-mono);
   cursor: pointer;
 }
-.rail-logo:hover { background: var(--app-accent-hover); }
+/* HEAD marker: the one place the ref colour appears in the rail. */
+.rail-logo::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--app-accent);
+}
+.rail-logo:hover { border-color: var(--app-ink-3); }
 .rail-sep { width: 24px; height: 1px; margin: var(--app-s2) 0; background: var(--app-line); }
 .rail-spacer { flex: 1; }
 .rail-status { width: 8px; height: 8px; margin: var(--app-s3) 0 var(--app-s1); border-radius: 50%; }
-.rail-status--ok { background: var(--app-ok); box-shadow: 0 0 0 3px rgb(63 182 139 / 0.18); }
-.rail-status--down { background: var(--app-bad); box-shadow: 0 0 0 3px rgb(240 98 90 / 0.18); }
-.rail .rail-badge { position: absolute; top: 2px; right: 2px; width: auto; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
+.rail-status--ok { background: var(--app-ok); box-shadow: 0 0 0 3px rgb(63 185 80 / 0.18); }
+.rail-status--down { background: var(--app-bad); box-shadow: 0 0 0 3px rgb(248 81 73 / 0.18); }
+.app-rail .rail-badge { position: absolute; top: 2px; right: 2px; background: var(--app-ok); color: #06140a; width: auto; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
 /* Drawer header: project name on its own line, then the switcher and Open folder. */
 .rail-drawer-head { flex-wrap: wrap; }
 .rail-drawer-title { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-drawer-head .ui-select { flex: 1; min-width: 0; height: 30px; padding: 4px 8px; font-size: var(--app-text-sm); }
+/* Drawer rows sit on the lane: name, then short id, agent and time. */
+.rail-drawer .ui-lane .rail-session-row { display: grid; gap: 2px; width: 100%; padding: 6px var(--app-s2); text-align: left; }
+.rail-session-meta { color: var(--app-ink-3); font-size: var(--app-text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-drawer-heading { font: 500 var(--app-text-xs)/1 var(--app-font); letter-spacing: 0; text-transform: none; color: var(--app-ink-3); }

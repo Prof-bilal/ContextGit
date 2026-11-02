@@ -1,18 +1,24 @@
-/** "What do you want to build?" start screen: pick a project, agent and run location, then start. */
+/** Start a run: a command line for the open project, then recent runs as a git-log lane. */
 import { useEffect, useRef, useState } from "react";
-import { LuFolderOpen } from "react-icons/lu";
+import { LuCornerDownLeft, LuFolderOpen } from "react-icons/lu";
 import { DEFAULT_HARNESS, HARNESSES } from "@/shared/harnesses";
 import { projectApi } from "@/shared/api";
 import { terminalRuntime } from "../../shell/terminal/runtime";
-import { agentLabel, folderName, FOCUS_PROMPT_EVENT, projectTerminalSessions, relativeTime, STATUS_LABEL } from "../rail/sessionUtils";
+import { agentLabel, FOCUS_PROMPT_EVENT, projectTerminalSessions, relativeTime, STATUS_LABEL } from "../rail/sessionUtils";
 import { useApp } from "../context";
-import { Button, Card, Chip, StatusDot } from "../ui";
+import { Button, Chip } from "../ui";
 import "./home.css";
 
 type RunLocation = "root" | "worktree";
 type LastRun = { agent?: unknown; location?: unknown };
 
 const lastRunKey = (path: string) => `contextgit:last-run:${path}`;
+
+/** "C:\Users\me\code\app" -> "~\code\app": the path the way a prompt shows it. */
+function promptPath(path: string): string {
+  const home = path.match(/^([A-Za-z]:[\\/]Users[\\/][^\\/]+|\/(?:home|Users)\/[^/]+)/)?.[1];
+  return home ? `~${path.slice(home.length)}` : path;
+}
 
 export default function Home() {
   const { wb, go } = useApp();
@@ -21,7 +27,12 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Agent CLIs found on PATH; null until checked. Shell is always available.
+  const [installed, setInstalled] = useState<Set<string> | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const projectPath = wb.activePath;
+  const recent = projectPath ? projectTerminalSessions(wb.sessions, projectPath).slice(0, 8) : [];
 
   // The rail's "New session" button asks for the prompt to be focused.
   useEffect(() => {
@@ -30,10 +41,17 @@ export default function Home() {
     return () => window.removeEventListener(FOCUS_PROMPT_EVENT, focus);
   }, []);
 
-  const projectPath = wb.activePath;
-  const shell = HARNESSES.find(harness => harness.id === "shell");
-  const clis = shell ? [shell, ...HARNESSES.filter(harness => harness.id !== "shell")] : HARNESSES;
-  const recent = projectPath ? projectTerminalSessions(wb.sessions, projectPath).slice(0, 6) : [];
+  useEffect(() => {
+    const bridge = window.contextgit;
+    if (!bridge) return;
+    let alive = true;
+    void Promise.all(HARNESSES.map(harness =>
+      harness.id === "shell"
+        ? Promise.resolve(harness.id)
+        : bridge.harnessCheck(harness.id).then(result => (result.installed ? harness.id : null), () => null),
+    )).then(ids => { if (alive) setInstalled(new Set(ids.filter((id): id is string => Boolean(id)))); });
+    return () => { alive = false; };
+  }, []);
 
   // Preselect the CLI and run location this project used last.
   useEffect(() => {
@@ -50,12 +68,17 @@ export default function Home() {
     setLocation(saved.location === "worktree" ? "worktree" : "root");
   }, [projectPath]);
 
+  // Shell first, then installed agents; keep the selected one even if the check missed it.
+  const agents = HARNESSES
+    .filter(harness => !installed || installed.has(harness.id) || harness.id === agent)
+    .sort((a, b) => (a.id === "shell" ? -1 : b.id === "shell" ? 1 : 0));
+
   const openFolder = async () => {
     try {
       setError(null);
       await wb.choose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not open a project folder");
+      setError(cause instanceof Error ? cause.message : "The folder could not be opened.");
     }
   };
 
@@ -77,114 +100,106 @@ export default function Home() {
       wb.addSession(session);
       await terminalRuntime.ensure(session);
       const launch = terminalRuntime.snapshot(session.id);
-      if (launch.state === "error") throw new Error(launch.error ?? "Agent launch failed");
+      if (launch.state === "error") throw new Error(launch.error ?? `${agentLabel(agent)} did not start.`);
       localStorage.setItem(lastRunKey(projectPath), JSON.stringify({ agent, location }));
       await wb.refresh();
       go({ kind: "session", sessionId: session.id });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start the session");
+      setError(cause instanceof Error ? cause.message : "The session did not start.");
     } finally {
       setStarting(false);
     }
   };
 
+  if (!projectPath) {
+    return (
+      <div className="home app-scroll">
+        <section className="home-empty">
+          <h1>Open a project</h1>
+          <p>Pick a folder. ContextGit keeps its sessions, branches and memory in a <code>.contextgit</code> folder inside it.</p>
+          <Button variant="primary" icon={<LuFolderOpen aria-hidden="true" />} onClick={() => void openFolder()}>
+            Open folder
+          </Button>
+          {error && <p className="ui-error" role="alert">{error}</p>}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="home app-scroll">
-      <header className="home-intro">
-        <h1>What do you want to build?</h1>
-        <p>Pick an agent, describe the task, and ContextGit will record every step.</p>
-      </header>
+      <section className="home-run" aria-labelledby="home-title">
+        <h1 id="home-title" className="home-title">New session</h1>
 
-      <Card className="home-card">
-        {projectPath ? (
-          <div className="home-project">
-            <Chip icon={<LuFolderOpen aria-hidden="true" />} title={projectPath}>{folderName(projectPath)}</Chip>
-            <Button icon={<LuFolderOpen aria-hidden="true" />} onClick={() => void openFolder()} disabled={starting}>
-              Open folder
-            </Button>
+        <div className="home-console">
+          <div className="home-prompt">
+            <span className="home-prompt-path" title={projectPath}>{promptPath(projectPath)}</span>
+            <button type="button" className="home-prompt-change" onClick={() => void openFolder()} disabled={starting}>
+              Change
+            </button>
           </div>
-        ) : (
-          <div className="home-project home-project-empty">
-            <Button variant="primary" size="lg" icon={<LuFolderOpen aria-hidden="true" />}
-              onClick={() => void openFolder()} disabled={starting}>
-              Open a project folder
-            </Button>
-            <p>Choose a folder to keep its sessions and history together.</p>
-          </div>
-        )}
 
-        <div className="home-field">
-          <span className="home-label" id="home-agent-label">Agent</span>
-          <div className={projectPath ? "home-chips" : "home-chips home-chips--disabled"} role="group" aria-labelledby="home-agent-label">
-            {clis.map(harness => (
-              <Chip key={harness.id} pressed={agent === harness.id}
-                onClick={projectPath && !starting ? () => setAgent(harness.id) : undefined}>
-                {harness.label}
+          <textarea
+            ref={promptRef}
+            className="home-input"
+            aria-label="Task for the agent"
+            placeholder={agent === "shell" ? "Command to run (optional)" : "What should the agent do?"}
+            value={prompt}
+            rows={4}
+            disabled={starting}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                void start();
+              }
+            }}
+          />
+
+          <div className="home-options">
+            <div className="home-group" role="group" aria-label="Agent">
+              {agents.map(harness => (
+                <Chip key={harness.id} pressed={agent === harness.id}
+                  onClick={!starting ? () => setAgent(harness.id) : undefined}>
+                  {harness.label}
+                </Chip>
+              ))}
+            </div>
+            <div className="home-group home-where" role="group" aria-label="Where it runs">
+              <Chip pressed={location === "root"} onClick={!starting ? () => setLocation("root") : undefined}
+                title="Work directly in the project folder">
+                Project folder
               </Chip>
-            ))}
+              <Chip pressed={location === "worktree"} onClick={!starting ? () => setLocation("worktree") : undefined}
+                title="Work on a new branch in its own git worktree">
+                New worktree
+              </Chip>
+            </div>
+            <Button variant="primary" onClick={() => void start()} disabled={starting}
+              icon={<LuCornerDownLeft aria-hidden="true" />} title="Ctrl+Enter">
+              {starting ? "Starting…" : "Start"}
+            </Button>
           </div>
         </div>
-
-        <div className="home-field">
-          <span className="home-label" id="home-location-label">Run location</span>
-          <div className={projectPath ? "home-chips" : "home-chips home-chips--disabled"} role="group" aria-labelledby="home-location-label">
-            <Chip pressed={location === "root"}
-              onClick={projectPath && !starting ? () => setLocation("root") : undefined}>
-              Project root
-            </Chip>
-            <Chip pressed={location === "worktree"}
-              onClick={projectPath && !starting ? () => setLocation("worktree") : undefined}>
-              New worktree
-            </Chip>
-          </div>
-        </div>
-
-        <textarea
-          ref={promptRef}
-          className="ui-textarea"
-          aria-label="Describe the task"
-          placeholder="Describe the task…"
-          value={prompt}
-          disabled={!projectPath || starting}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-              event.preventDefault();
-              void start();
-            }
-          }}
-        />
-
-        <div className="home-footer">
-          <span className="home-footer-hint">Ctrl+Enter to start</span>
-          <Button variant="primary" onClick={() => void start()} disabled={!projectPath || starting}>
-            {starting ? "Starting…" : "Start"}
-          </Button>
-        </div>
-
         {error && <p className="ui-error home-error" role="alert">{error}</p>}
-      </Card>
+      </section>
 
       {recent.length > 0 && (
-        <section className="home-recent-section" aria-labelledby="home-recent-heading">
-          <h2 id="home-recent-heading">Recent sessions</h2>
-          <div className="home-recent-grid">
+        <section className="home-history" aria-labelledby="home-history-title">
+          <h2 id="home-history-title">Recent sessions</h2>
+          <ol className="ui-lane">
             {recent.map(session => (
-              <Card key={session.id} className="home-recent-card">
-                <button type="button" className="home-recent"
-                  onClick={() => go({ kind: "session", sessionId: session.id })}>
-                  <span className="home-recent-top">
-                    <span className="home-recent-agent">{agentLabel(session.agent)}</span>
-                    <StatusDot status={session.status} label={STATUS_LABEL[session.status]} />
-                  </span>
-                  <span className="home-recent-name" title={session.name}>{session.name}</span>
-                  <span className="home-recent-meta">
-                    {STATUS_LABEL[session.status]} · {relativeTime(session.updated_at || session.created_at)}
+              <li key={session.id} data-state={session.status}>
+                <button type="button" className="home-run-row" onClick={() => go({ kind: "session", sessionId: session.id })}>
+                  <span className="ui-sha">{session.id.slice(0, 7)}</span>
+                  <span className="home-run-name" title={session.name}>{session.name}</span>
+                  <span className="home-run-meta">
+                    {agentLabel(session.agent)} · {STATUS_LABEL[session.status].toLowerCase()} · {relativeTime(session.updated_at || session.created_at)}
                   </span>
                 </button>
-              </Card>
+              </li>
             ))}
-          </div>
+          </ol>
         </section>
       )}
     </div>
