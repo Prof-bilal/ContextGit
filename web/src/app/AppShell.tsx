@@ -9,6 +9,7 @@ import SkillsPage from "./library/SkillsPage";
 import MemoryPage from "./library/MemoryPage";
 import SettingsPage from "./library/SettingsPage";
 import { EmptyState, Button } from "./ui";
+import CommandPalette from "./CommandPalette";
 import "./tokens.css";
 
 export default function AppShell({ backendAvailable }: { backendAvailable: boolean }) {
@@ -39,6 +40,7 @@ export default function AppShell({ backendAvailable }: { backendAvailable: boole
         <SessionsDrawer />
         {main}
       </main>
+      <CommandPalette />
     </div>
   );
 }
