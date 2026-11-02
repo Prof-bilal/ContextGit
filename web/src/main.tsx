@@ -2,7 +2,6 @@ import "./theme-bootstrap";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import "../../website/app/globals.css";
 import "./desktop.css";
 import "./shell.css";
 import "./shell/avatar/clay.css";

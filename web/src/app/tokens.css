@@ -61,6 +61,12 @@
   :root { --app-ease: 0ms linear; }
 }
 
+/* Page base. The app used to borrow these from the marketing site's
+   globals.css, which also brought rules that broke the layout at >= 1200px. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app-bg); color: var(--app-ink); }
+body { font-family: var(--app-font); }
+
 .app-root {
   position: fixed;
   inset: 0;

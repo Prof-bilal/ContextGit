@@ -14,12 +14,10 @@
     "dev": "vite",
     "dev:mock": "vite",
     "typecheck": "tsc --noEmit",
-    "test:workspace": "node scripts/test-workspace-performance.mjs",
     "test:spatial-runtime": "node scripts/test-spatial-runtime.mjs",
     "test:spatial-canvas": "node scripts/test-spatial-canvas.mjs",
     "test:live-team": "node scripts/test-live-team.mjs",
     "test:browser": "node --test scripts/test-browser-address.mjs",
-    "test:knowledge": "node scripts/test-knowledge.mjs",
     "build:renderer": "vite build",
     "build": "npm run typecheck && npm run build:renderer"
   },
