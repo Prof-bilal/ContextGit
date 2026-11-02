@@ -1,4 +1,4 @@
-/* OWNER: library agent. Skills / Memory / Settings pages. Reads only --app-* tokens. */
+/* Skills / Memory / Settings pages. Reads only --app-* tokens. */
 
 .lib-page { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--app-bg); }
 .lib-body { flex: 1; min-height: 0; }
@@ -169,3 +169,18 @@
   .lib-content, .lib-detail { padding: var(--app-s4) var(--app-s4) var(--app-s6); }
   .lib-section-head, .lib-section-body { padding-inline: var(--app-s4); }
 }
+
+/* Skills list: search + New on one row, items as full-width buttons. */
+.lib-list-tools { display: flex; align-items: center; gap: var(--app-s2); margin: var(--app-s3) 0; }
+.lib-search { position: relative; flex: 1; }
+.lib-search .lib-search-icon { position: absolute; left: 10px; top: 50%; translate: 0 -50%; width: 14px; height: 14px; color: var(--app-ink-3); pointer-events: none; }
+.lib-search .ui-input { padding-left: 30px; }
+.lib-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--app-s2); }
+.lib-item-button { display: grid; gap: 4px; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.lib-item-button .lib-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--app-s2); }
+.lib-item-excerpt { color: var(--app-ink-3); font-size: var(--app-text-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-badges { display: flex; gap: var(--app-s2); align-items: center; flex-wrap: wrap; }
+.lib-instruction { white-space: pre-wrap; margin: var(--app-s3) 0; padding: var(--app-s3); border-radius: var(--app-r2); background: var(--app-surface-2); border: 1px solid var(--app-line); }
+/* Number badge spans the title and text rows; text stays in the wide column. */
+.lib-empty-steps li::before { grid-row: span 2; }
+.lib-empty-steps li > * { grid-column: 2; margin: 0; }

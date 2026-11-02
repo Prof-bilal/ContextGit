@@ -1,0 +1,158 @@
+/* Home start screen. Every colour and spacing value comes from tokens.css. */
+.home {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--app-s5);
+  padding: 12vh var(--app-s5) var(--app-s7);
+}
+
+.home-intro {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s2);
+  text-align: center;
+}
+.home-intro h1 {
+  margin: 0;
+  font-size: var(--app-text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.home-intro p {
+  margin: 0;
+  color: var(--app-ink-3);
+  font-size: var(--app-text-md);
+}
+
+.home-card {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s4);
+  padding: var(--app-s5);
+}
+
+.home-project {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-s2);
+}
+.home-project-empty {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.home-project-empty p {
+  margin: 0;
+  color: var(--app-ink-3);
+  font-size: var(--app-text-sm);
+}
+
+.home-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s2);
+}
+.home-label {
+  color: var(--app-ink-2);
+  font-size: var(--app-text-xs);
+  font-weight: 600;
+}
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-s2);
+}
+.home-chips--disabled {
+  opacity: 0.5;
+}
+
+.home-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--app-s3);
+}
+.home-footer-hint {
+  margin-right: auto;
+  color: var(--app-ink-3);
+  font-size: var(--app-text-xs);
+}
+.home-error {
+  margin: 0;
+}
+
+.home-recent-section {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s3);
+}
+.home-recent-section h2 {
+  margin: 0;
+  font-size: var(--app-text-lg);
+  font-weight: 600;
+}
+.home-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--app-s3);
+}
+
+.home-recent-card {
+  padding: 0;
+  overflow: hidden;
+}
+.home-recent {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-s1);
+  padding: var(--app-s3);
+  border: 0;
+  background: transparent;
+  color: var(--app-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--app-ease);
+}
+.home-recent:hover {
+  background: var(--app-hover);
+}
+.home-recent-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-s2);
+  color: var(--app-ink-3);
+  font-size: var(--app-text-xs);
+}
+.home-recent-agent,
+.home-recent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-recent-name {
+  font-size: var(--app-text-md);
+  font-weight: 600;
+}
+.home-recent-meta {
+  color: var(--app-ink-3);
+  font-size: var(--app-text-xs);
+}
+
+@media (max-width: 640px) {
+  .home-recent-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

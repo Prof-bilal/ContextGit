@@ -1,4 +1,4 @@
-/** OWNER: library agent. Layout pieces shared by the Skills, Memory and Settings pages. */
+/** Layout pieces shared by the Skills, Memory and Settings pages. */
 import type { ReactNode } from "react";
 import { LuFolderOpen } from "react-icons/lu";
 import { useApp } from "../context";

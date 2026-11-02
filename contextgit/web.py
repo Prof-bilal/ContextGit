@@ -9,17 +9,17 @@ import socket
 import subprocess
 import sys
 import threading
-from urllib.parse import quote
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
+from urllib.parse import quote
 
 # Fixed so the workbench always lives at the same address, which also keeps the
 # browser's saved layout and project session (both origin-scoped). Both sit
 # below the OS ephemeral range (49152+), so the OS never hands them out at random.
 UI_PORT = 7417
 API_PORT = 7418
+BOOTSTRAP_PATH = "/contextgit-bootstrap.js"
 
 
 def _free_port() -> int:
@@ -65,14 +65,23 @@ def run(*, port: int = UI_PORT, api_port: int = API_PORT, project: Path | None =
             "CONTEXTGIT_CORS_ORIGINS": ",".join(f"http://{host}" for host in sorted(hosts)),
         }
     )
-    # The page gets this launch's API address and token in a script tag, so the
-    # bare address (and bookmarks of it) always works. "<" is escaped so the
-    # JSON cannot close the script element.
-    bootstrap = json.dumps({"api": f"http://127.0.0.1:{api_port}", "token": token})
-    bootstrap = bootstrap.replace("<", "\\u003c")
-    index_html = (renderer / "index.html").read_text(encoding="utf-8").replace(
-        "</head>", f"<script>window.__CONTEXTGIT__={bootstrap}</script></head>", 1
+    # The page loads this launch's API address and token from a same-origin
+    # script (the renderer's CSP blocks inline scripts), so the bare address and
+    # bookmarks of it always work. A classic script in <head> runs before the
+    # deferred module bundle reads it.
+    bootstrap_js = (
+        "window.__CONTEXTGIT__="
+        + json.dumps({"api": f"http://127.0.0.1:{api_port}", "token": token})
+        + ";"
     ).encode("utf-8")
+    index_html = (renderer / "index.html").read_text(encoding="utf-8").replace(
+        "</head>", f'<script src="{BOOTSTRAP_PATH}"></script></head>', 1
+    ).encode("utf-8")
+    dynamic = {
+        "/": ("text/html; charset=utf-8", index_html),
+        "/index.html": ("text/html; charset=utf-8", index_html),
+        BOOTSTRAP_PATH: ("text/javascript; charset=utf-8", bootstrap_js),
+    }
     if project is not None:
         environment["CONTEXTGIT_WEB_PROJECT"] = str(project.expanduser().resolve())
     api = subprocess.Popen(
@@ -89,7 +98,8 @@ def run(*, port: int = UI_PORT, api_port: int = API_PORT, project: Path | None =
             return
 
         def do_GET(self) -> None:
-            if self.path.split("?", 1)[0].split("#", 1)[0] not in {"/", "/index.html"}:
+            page = dynamic.get(self.path.split("?", 1)[0].split("#", 1)[0])
+            if page is None:
                 super().do_GET()
                 return
             # Only hand the token to pages addressed as loopback. A DNS-rebinding
@@ -97,12 +107,22 @@ def run(*, port: int = UI_PORT, api_port: int = API_PORT, project: Path | None =
             if self.headers.get("Host", "") not in hosts:
                 self.send_error(403, "Open ContextGit at " + origin)
                 return
+            # Another site could include the token script with <script src>.
+            # Browsers mark such loads as cross-site; refuse them, and let CORP
+            # block them in browsers that do not send Sec-Fetch-Site.
+            site = self.headers.get("Sec-Fetch-Site", "")
+            if page[1] is bootstrap_js and site not in {"", "same-origin"}:
+                self.send_error(403, "Cross-site requests are not allowed")
+                return
+            content_type, body = page
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(index_html)))
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
-            self.wfile.write(index_html)
+            self.wfile.write(body)
 
     server = ThreadingHTTPServer(("127.0.0.1", port), StaticHandler)
     selected = f"?project={quote(str(project.expanduser().resolve()))}" if project else ""
