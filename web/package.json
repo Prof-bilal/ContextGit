@@ -1,0 +1,42 @@
+{
+  "name": "contextgit-web",
+  "private": true,
+  "version": "0.2.0-beta.6",
+  "license": "Apache-2.0",
+  "author": "Prof-bilal <Prof-bilal@users.noreply.github.com>",
+  "homepage": "https://github.com/Prof-bilal/ContextGit",
+  "description": "ContextGit local web workbench — version control for LLM conversations",
+  "scripts": {
+    "prototype:team": "vite --config prototypes/team/vite.config.ts",
+    "prototype:team:build": "vite build --config prototypes/team/vite.config.ts",
+    "prototype:team:check": "tsc -p prototypes/team/tsconfig.json && node --test prototypes/team/model.test.mjs",
+    "prototype:team:ui": "node prototypes/team/browser.test.mjs",
+    "dev": "vite",
+    "dev:mock": "vite",
+    "typecheck": "tsc --noEmit",
+    "test:spatial-runtime": "node scripts/test-spatial-runtime.mjs",
+    "test:spatial-canvas": "node scripts/test-spatial-canvas.mjs",
+    "test:live-team": "node scripts/test-live-team.mjs",
+    "test:browser": "node --test scripts/test-browser-address.mjs",
+    "build:renderer": "vite build",
+    "build": "npm run typecheck && npm run build:renderer"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "^12.12.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-icons": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  },
+  "allowScripts": {}
+}

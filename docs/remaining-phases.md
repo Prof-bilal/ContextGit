@@ -264,8 +264,8 @@ the extra is installed.
 - **Migrations**: 0014 is the other agent's `session_trash`, 0015 is `http_history`.
   Anything new starts at **0016**, and `tests/test_storage.py` asserts the applied
   version list — it is shared, so update it in the same change.
-- **Another agent owns the Git panel**: `desktop/src/shell/views/GitView.tsx`,
-  `desktop/src/shell/rail/GitRail.tsx`, `desktop/src/shell/git/*`, `DeleteBranchDialog.tsx`
+- **Another agent owns the Git panel**: `web/src/shell/views/GitView.tsx`,
+  `web/src/shell/rail/GitRail.tsx`, `web/src/shell/git/*`, `DeleteBranchDialog.tsx`
   and the git/commit endpoints. Do not edit them. Its e2e test
   (`a branch can be deleted, and the current one cannot`) currently fails and is theirs,
   not ours.

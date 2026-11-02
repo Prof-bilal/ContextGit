@@ -284,8 +284,8 @@ export default function FeaturesPage() {
             </header>
 
             <div className="internals-grid">
-              <div className="layers reveal" role="img" aria-label="Architecture layers. The Tauri desktop UI and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
-                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Desktop UI (Tauri)</span><span className="layer">CLI (typer)</span></div>
+              <div className="layers reveal" role="img" aria-label="Architecture layers. The browser workbench and the CLI sit on a FastAPI layer. FastAPI sits on the core library. The core library uses storage on SQLite, an LLM adapter, and the merge engine. Dependencies point downward only.">
+                <div className="layer-row layer-two" aria-hidden="true"><span className="layer">Browser workbench</span><span className="layer">CLI (typer)</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>
                 <div className="layer-row" aria-hidden="true"><span className="layer">FastAPI &middot; HTTP and SSE</span></div>
                 <p className="layer-link mono" aria-hidden="true">calls</p>

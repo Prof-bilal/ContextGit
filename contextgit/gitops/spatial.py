@@ -12,7 +12,7 @@ def uncommitted_code(worktree: str) -> list[str]:
     untracked = set(
         git.run("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
     ) - {""}
-    managed = {".mcp.json", ".codex/config.toml"}
+    managed = {".mcp.json", ".codex/config.toml", ".contextgit/opencode.json"}
     untracked -= managed | {"AGENTS.md"}
     tracked -= managed
     if "AGENTS.md" in tracked:

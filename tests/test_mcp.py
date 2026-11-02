@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -126,6 +127,34 @@ class TestTools:
 
 
 class TestConfig:
+    def test_repairs_existing_codex_config_without_losing_user_options(self, project: Path) -> None:
+        config = project / ".codex" / "config.toml"
+        config.parent.mkdir()
+        config.write_text('model = "custom"\n[mcp_servers.contextgit]\ncommand = "stale"\nenv_vars = [\n  "CUSTOM",\n]\nstartup_timeout_sec = 45\n[mcp_servers.contextgit.env]\nCUSTOM = "kept"\n[mcp_servers.contextgit.tools.team_status]\napproval_mode = "approve"\n[mcp_servers.other]\ncommand = "other"\n')
+        identity = {"CONTEXTGIT_REPO": "/actual/app/state", "CONTEXTGIT_ROLE": "orchestrator", "CONTEXTGIT_TEAM": "team-1"}
+        ensure_mcp_config(project, run_env=identity)
+        first = config.read_text()
+        ensure_mcp_config(project, run_env=identity)
+        assert config.read_text() == first
+        data = tomllib.loads(first)
+        server = data["mcp_servers"]["contextgit"]
+        assert server["command"] != "stale"
+        assert server["env"] | identity == server["env"]
+        assert server["env"]["CONTEXTGIT_TASK"] == ""
+        assert server["env"]["CUSTOM"] == "kept"
+        assert server["startup_timeout_sec"] == 45
+        assert server["tools"]["team_status"]["approval_mode"] == "approve"
+        assert "CONTEXTGIT_ROLE" in server["env_vars"] and "CUSTOM" in server["env_vars"]
+        assert data["model"] == "custom"
+        assert data["mcp_servers"]["other"]["command"] == "other"
+
+    def test_shared_config_does_not_capture_the_callers_authority(self, project: Path, monkeypatch) -> None:
+        monkeypatch.setenv("CONTEXTGIT_ROLE", "orchestrator")
+        monkeypatch.setenv("CONTEXTGIT_TEAM", "unrelated")
+        ensure_mcp_config(project)
+        data = json.loads((project / CONFIG_NAME).read_text())
+        assert "CONTEXTGIT_ROLE" not in data["mcpServers"]["contextgit"]["env"]
+
     def test_creates_the_file_with_our_server(self, project: Path) -> None:
         path = ensure_mcp_config(project)
         assert path is not None
@@ -153,6 +182,36 @@ class TestConfig:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", ["orchestrator", "worker"])
+async def test_configured_stdio_identity_survives_filtered_client_env(repo: Repo, project: Path, team, role: str) -> None:
+    """Use just generated MCP env, not the parent CLI's full environment."""
+    pytest.importorskip("mcp")
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    ensure_mcp_config(project, run_env={
+        "CONTEXTGIT_REPO": str(repo.root.resolve()),
+        "CONTEXTGIT_TEAM": team.id, "CONTEXTGIT_ROLE": role,
+    })
+    server = tomllib.loads((project / ".codex" / "config.toml").read_text())["mcp_servers"]["contextgit"]
+    params = StdioServerParameters(command=server["command"], args=server["args"], env=server["env"], cwd=str(project))
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            status = await session.call_tool("team_status", {})
+            result = await session.call_tool("propose_team_plan", {"goal": "Audit", "tasks": [{"title": "Read-only audit", "agent": "codex"}]})
+    status_data = json.loads(status.content[0].text)
+    result_data = json.loads(result.content[0].text)
+    assert status_data["team"] == team.name
+    if role == "orchestrator":
+        assert "error" not in result_data
+        assert result_data["status"] == "draft"
+    else:
+        assert result_data["type"] == "Forbidden"
+    assert not repo.list_tasks(team.id)  # Proposals never launch workers.
 
 
 @pytest.mark.anyio

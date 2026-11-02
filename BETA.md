@@ -3,18 +3,9 @@
 This revision adds model context-window meters and a project learning loop:
 conversation checkpoints, editable lesson drafts, and a per-project AI connection.
 
-This is an unsigned beta for Windows x64, macOS Intel/Apple Silicon,
-and Linux x64/arm64. Linux x86_64 means both AMD64 and Intel 64-bit CPUs.
-This release publishes the Tauri desktop shell with its bundled backend.
-Linux users can choose the format that matches their distribution: AppImage or
-`.tar.gz` for any distro, `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL/SUSE,
-or `.pacman` for Arch/Omarchy/Manjaro. Download the installer for your CPU
-architecture and the matching `SHA256SUMS` file from the GitHub prerelease page.
-Linux beta installers are currently published as AppImage, `.deb`, and `.rpm`.
-
-For Omarchy and other Arch-based systems, use the **Linux x86_64 `.pacman`**
-package, or the x86_64 AppImage. Do not use an arm64/aarch64 package unless
-your machine reports `aarch64` or `arm64`.
+This beta ships a lightweight browser workbench. Install the Python package,
+then run `contextgit web`; the local API and browser UI start together without
+a bundled native runtime.
 
 Each agent tab now shows the model context window and an estimated token usage
 meter, resolved from a built-in model catalog. Closing an agent saves a
@@ -26,11 +17,9 @@ selected provider, then approve or reject it; approved lessons are written as
 capture is currently verified for OpenCode; other agents use a bounded terminal
 recording labeled partial.
 
-This beta also includes the embedded VS Code workbench and native browser, reduced
-background polling and idle cleanup, the command palette, square-corner UI,
-and a direct project shell terminal. Update app now checks GitHub releases,
-shows clear status and errors, and opens the matching release's downloads.
-Install updates manually; signed automatic installation is not configured yet.
+This beta also includes the optional code-server workbench, reduced background
+polling and idle cleanup, the command palette, square-corner UI, and a direct
+project shell terminal.
 The Why analysis surface is not exposed.
 
 ## Support contract
@@ -46,12 +35,11 @@ The Why analysis surface is not exposed.
 - Use **Code → Diagnostics** when reporting a problem. Include the platform,
   architecture, shell, backend state, and agent detection results.
 
-## First-run warnings
+## Running it
 
-Installers are unsigned during this beta. Windows may show SmartScreen; choose
-the option to view more information and continue only if the checksum matches.
-macOS may block the first launch in Gatekeeper; use **Open** from the context
-menu after verifying the checksum.
+ContextGit is a local web app only; there are no desktop installers. Run
+`contextgit web` and open http://127.0.0.1:7417 (the API listens on 7418). If a
+port is taken, the launcher stops with a message instead of picking a new one.
 
 ## Reporting a bug
 

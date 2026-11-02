@@ -44,7 +44,7 @@ Routes (in `contextgit/api/app.py`):
 | DELETE | `/api/v1/http/collections/{name}` | delete a collection |
 | GET | `/api/v1/http/history` | recent requests, newest first (capped) |
 
-**Panel** — `desktop/src/shell/views/ApiView.tsx`, `rail/ApiRail.tsx`,
+**Panel** — `web/src/shell/views/ApiView.tsx`, `rail/ApiRail.tsx`,
 `api/useApiClient.ts`, `api/KeyValueEditor.tsx`, typed client methods in `lib/api.ts`:
 method + URL bar with Send, Params/Headers/Body/Auth panes, a formatted response viewer
 (pretty JSON, headers, status, timing, size), saved collections in the rail, and the
@@ -78,6 +78,6 @@ Routes: `GET /api/v1/db/drivers`, `GET|PUT|DELETE /api/v1/db/connections[/{name}
 `POST /api/v1/db/open`, `DELETE /api/v1/db/open/{id}`, `GET /api/v1/db/schema`,
 `POST /api/v1/db/query`.
 
-**Panel** — `desktop/src/shell/views/DbView.tsx`, `rail/DbRail.tsx`, `db/useDatabase.ts`,
+**Panel** — `web/src/shell/views/DbView.tsx`, `rail/DbRail.tsx`, `db/useDatabase.ts`,
 typed clients in `lib/api.ts`. Covered by `tests/test_dbclient.py` (12) and the desktop
 e2e "the DB tab connects to SQLite and runs a query".

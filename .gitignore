@@ -44,13 +44,9 @@ coverage.xml
 .freebuff/
 .codeatlas/
 
-# electron desktop
-.desktop-venv/
-desktop/node_modules
-desktop/dist/
-desktop/dist-electron/
-desktop/build/
-desktop/release/
+web/node_modules
+web/dist/
+web/dist-team-prototype/
 
 # playwright / e2e artifacts
 test-results/

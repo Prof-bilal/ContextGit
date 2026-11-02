@@ -1,0 +1,602 @@
+/* ============================================================================
+   ContextGit agent-workspace shell.
+   Desktop-only. Scoped to .cg-shell so the landing page and globals.css are
+   untouched. Dark-first: --cg-* default to the dark ramp; [data-cg-theme=light]
+   remaps them to the warm paper ramp. App surfaces and controls use square
+   corners; circular indicators, avatars and icon silhouettes keep their shape.
+   ============================================================================ */
+
+/* ------------------------------------------------------------------ base --- */
+
+/* Scrollbars: a visible lane on the right, not a hairline you can't find. */
+
+/* -------------------------------------------------------------- titlebar --- */
+
+/* Keep the primary view switcher optically centered in the window rather than
+   centered in the space left over after the brand and utility actions. */
+
+/* Segmented nav — the BridgeMind-style pill switch. */
+.cg-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--cg-bg);
+  border: 1px solid var(--cg-line);
+  border-radius: 0;
+  /* Nine tabs must never push the titlebar actions off-screen: scroll instead. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cg-bg) 35%, transparent);
+}
+.cg-segmented::-webkit-scrollbar {
+  display: none;
+}
+
+.cg-segment {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: var(--cg-ink-3);
+  font:
+    600 0.8rem/1 "Schibsted Grotesk",
+    sans-serif;
+  min-width: 4.35rem;
+  justify-content: center;
+  padding: 0.36rem 0.78rem;
+  border-radius: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  transition:
+    color 120ms var(--cg-ease),
+    background-color 120ms var(--cg-ease);
+}
+.cg-segment:hover {
+  color: var(--cg-ink-2);
+}
+.cg-segment[aria-selected="true"] {
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+}
+.cg-segment[aria-selected="true"] .cg-segment-dot {
+  background: var(--cg-signal);
+}
+.cg-segment-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cg-line-strong);
+  transition: background-color 120ms var(--cg-ease);
+}
+
+.cg-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cg-ink-2);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.cg-icon-btn:hover {
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+}
+.cg-icon-btn[aria-pressed="true"] {
+  color: var(--cg-signal);
+}
+
+/* Project tabs keep parallel agent work visible without replacing the rail. */
+@keyframes cg-spin { to { transform: rotate(360deg); } }
+
+
+/* ------------------------------------------------------------------ body --- */
+/* Code uses the project and agent tab strips as navigation. Keep the detailed
+   rail for Git and team views, but give the active agent workspace the full
+   width in the normal Code view. */
+
+/* Native workspaces occupy the entire content area below the project tabs. */
+
+/* ------------------------------------------------------------------ rail --- */
+
+/* Rail row with a sibling action (delete) */
+/* A run row's role chip: keep it compact so it never crowds out the delete icon. */
+/* Conversation-type filter in the chat rail: one full-width row that only
+   scrolls if it truly cannot fit, instead of wrapping to a ragged second line. */
+
+/* ---------- team mode (task board, feed, task form) ---------- */
+
+/* New-run form in the rail */
+
+/* Auto-loaded skills preview under a Role picker (run + task forms). */
+
+/* Collapsible agent group */
+
+/* Projects rail: project groups, provider subgroups and the switcher dropdown. */
+
+/* Session row */
+
+/* ----------------------------------------------------------------- atoms --- */
+
+/* Status is carried mostly by the active states; idle/done stay quiet so a
+   list of mostly-idle runs does not read as a wall of color. */
+.cg-status {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  color: var(--cg-ink-3);
+}
+.cg-status[data-status="running"] {
+  color: var(--cg-ok);
+  animation: cg-spin 1s linear infinite;
+}
+.cg-status[data-status="idle"] {
+  color: var(--cg-line-strong);
+}
+.cg-status[data-status="done"] {
+  color: var(--cg-ink-3);
+}
+.cg-status[data-status="error"] {
+  color: var(--cg-bad);
+}
+@keyframes cg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Agent / provider brand marks: the real logo in its official colour with no
+   chip behind it (a coloured square made brand marks read as placeholders). */
+.cg-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  font:
+    700 0.95rem/1 "Martian Mono",
+    monospace;
+}
+.cg-mark svg {
+  width: 1em;
+  height: 1em;
+}
+.cg-mark[data-size="lg"] {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.4rem;
+}
+
+.cg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  padding: 0.12rem 0.42rem;
+  border-radius: 0;
+  border: 1px solid var(--cg-line);
+  background: color-mix(in srgb, var(--cg-surface-2) 60%, transparent);
+  color: var(--cg-ink-2);
+  font:
+    500 0.62rem/1.4 "Martian Mono",
+    monospace;
+  white-space: nowrap;
+}
+.cg-chip svg {
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
+}
+.cg-chip[data-tone="signal"] {
+  color: var(--cg-signal);
+  border-color: color-mix(in srgb, var(--cg-signal) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-signal) 12%, transparent);
+}
+.cg-chip[data-tone="ok"] {
+  color: var(--cg-ok);
+  border-color: color-mix(in srgb, var(--cg-ok) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-ok) 12%, transparent);
+}
+.cg-chip[data-tone="bad"] {
+  color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-bad) 12%, transparent);
+}
+.cg-chip[data-tone="warn"] {
+  color: var(--cg-warn);
+  border-color: color-mix(in srgb, var(--cg-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-warn) 12%, transparent);
+}
+
+/* Chips double as filter toggles (history kind filter), so give the button
+   form a pointer and a hover that reads as clickable. */
+button.cg-chip {
+  cursor: pointer;
+  transition:
+    border-color 120ms var(--cg-ease),
+    color 120ms var(--cg-ease);
+}
+button.cg-chip:hover {
+  border-color: var(--cg-line-strong);
+  color: var(--cg-ink);
+}
+button.cg-chip[aria-pressed="true"] {
+  cursor: default;
+}
+
+/* Folded branch labels on a busy commit ("+12 more"): quiet, not a real chip. */
+
+/* ------------------------------------------------------------------ main --- */
+/* One wrapper per tab; inactive ones are display:none but stay mounted
+   (Code is never unmounted, so live terminals survive tab switches). */
+.cg-feature-error {
+  padding: 1.25rem;
+  min-width: 0;
+  overflow: auto;
+  color: var(--cg-ink, #f4efe6);
+  background: var(--cg-surface, #211d18);
+}
+.cg-feature-error h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+.cg-feature-error pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cg-resource-errors {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  max-width: 28rem;
+  max-height: 70vh;
+  overflow: auto;
+  z-index: 1000;
+}
+.cg-resource-errors:empty {
+  display: none;
+}
+.cg-feature-modal-error {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(32rem, 90vw);
+  padding-bottom: 1rem;
+  background: var(--cg-surface);
+  border: 1px solid var(--cg-line);
+  box-shadow: 0 1rem 3rem #0008;
+  z-index: 1000;
+}
+.cg-feature-modal-error > button {
+  margin-left: 1.25rem;
+}
+.cg-banner {
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  background: color-mix(in srgb, var(--cg-bad) 14%, transparent);
+  color: var(--cg-bad);
+  font:
+    400 0.74rem/1.4 "Martian Mono",
+    monospace;
+  border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-mini-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--cg-bg);
+  border: 1px solid var(--cg-line);
+  border-radius: 0;
+}
+.cg-mini-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--cg-ink-3);
+  font:
+    600 0.72rem/1 "Schibsted Grotesk",
+    sans-serif;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0;
+  cursor: pointer;
+}
+.cg-mini-seg button[aria-selected="true"] {
+  background: var(--cg-surface-3);
+  color: var(--cg-ink);
+}
+
+.cg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--cg-line-strong);
+  background: var(--cg-surface-2);
+  color: var(--cg-ink);
+  border-radius: 0;
+  padding: 0.38rem 0.7rem;
+  font:
+    600 0.76rem/1 "Schibsted Grotesk",
+    sans-serif;
+  cursor: pointer;
+}
+.cg-btn:hover {
+  background: var(--cg-surface-3);
+}
+.cg-btn[data-variant="primary"] {
+  background: var(--cg-signal);
+  border-color: var(--cg-signal);
+  color: #191612;
+}
+.cg-btn[data-variant="primary"]:hover {
+  background: var(--cg-signal-hot);
+  border-color: var(--cg-signal-hot);
+}
+.cg-btn[data-variant="danger"] {
+  color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--cg-bad) 10%, transparent);
+}
+.cg-btn[data-variant="danger"]:hover {
+  background: color-mix(in srgb, var(--cg-bad) 18%, transparent);
+}
+.cg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------ project workbench --- */
+
+/* --------------------------------------------------------- code: panes ---- */
+/* Keep panes from other projects mounted, but do not let their empty canvas
+   reserve half of the current project's workspace. */
+/* Team mode puts a board above the panes: bound the canvas so it cannot
+   squeeze (and overlap) the board. The canvas itself stays mounted either way. */
+@keyframes cg-running-glow {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--cg-signal) 42%, transparent),
+      0 0 10px color-mix(in srgb, var(--cg-signal) 23%, transparent),
+      inset 0 0 12px color-mix(in srgb, var(--cg-signal) 5%, transparent);
+  }
+  50% {
+    filter: brightness(1.08);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--cg-signal) 64%, transparent),
+      0 0 25px color-mix(in srgb, var(--cg-signal) 48%, transparent),
+      inset 0 0 22px color-mix(in srgb, var(--cg-signal) 11%, transparent);
+  }
+}
+/* Hidden panes stay mounted (display:none) so the PTY process and scrollback live on. */
+/* The viewport must not reserve scrollbar space: Chromium ignores
+   scrollbar-width and the global 12px ::-webkit-scrollbar would otherwise
+   hide the terminal's last column and clip its bottom row. Scrollback still
+   works via the wheel, keys and touch. */
+.cg-btn-sm {
+  padding: 0.24rem 0.5rem;
+  font-size: 0.7rem;
+}
+/* On-demand harness install — fills the pane in place of the terminal. */
+.cg-install {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  gap: 0.9rem;
+  padding: 1.1rem 1.25rem;
+  background: var(--cg-surface-2);
+}
+.cg-install-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.cg-install-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.cg-install-copy h3 {
+  margin: 0;
+  font:
+    600 0.95rem/1.2 "Schibsted Grotesk",
+    sans-serif;
+  color: var(--cg-ink);
+}
+.cg-install-copy p {
+  margin: 0;
+  font:
+    400 0.78rem/1.35 "Schibsted Grotesk",
+    sans-serif;
+  color: var(--cg-ink-3);
+  overflow-wrap: anywhere;
+}
+.cg-install-bar > span {
+  transition: width 0.5s var(--cg-ease);
+}
+.cg-install-bar[data-active="true"] > span {
+  background: linear-gradient(
+    90deg,
+    var(--cg-signal),
+    var(--cg-signal-hot),
+    var(--cg-signal)
+  );
+  background-size: 200% 100%;
+  animation: cg-install-shimmer 1.2s linear infinite;
+}
+@keyframes cg-install-shimmer {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.cg-install-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.cg-install-phase {
+  margin-right: auto;
+  font:
+    400 0.62rem/1.2 "Martian Mono",
+    monospace;
+  color: var(--cg-ink-3);
+  overflow-wrap: anywhere;
+}
+/* Usage tab: merged token accounting across every surface and connected AI. */
+/* Streak panel: current streak hero + best/active stats. */
+
+/* Per-harness account limits (Code dock panel + rail group badge). */
+
+/* Generated document card (Chat "Document" mode). */
+
+/* Docs workspace (Chat | Docs). */
+
+/* ----------------------------------------------------------- chat view ---- */
+/* Short conversations sit on the composer instead of floating at the top. */
+/* Messages: user turns are raised bubbles on the right, replies read as plain
+   text on the left. No coloured rails. */
+@keyframes cg-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@keyframes cg-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Model replies render as markdown — headings, lists, fences, tables — so the
+   reader sees prose and code instead of raw `#` and ``` syntax. Block spacing
+   comes from the grid, which keeps the flat, rail-free transcript look. */
+
+/* ------------------------------------------------------- agent / git ------ */
+/* Runs read as a log, not cards: no uneven wrapping, easy to scan. */
+
+/* A run row opens into its output */
+
+/* Shared modal body + the run sheets */
+
+/* --------------------------------------------------------- issues: clean dashboard ---- */
+@keyframes cg-work-progress { 0% { transform: translateX(-110%); } 100% { transform: translateX(285%); } }
+
+/* Git commit rows */
+
+
+/* Chat-style transcript: humans and the agent have distinct sides/bubbles. */
+
+/* Real commit DAG (React Flow) */
+
+/* Git lane graph (git-log style) */
+/* Extra (non-first) parents of a merge are drawn dashed: they reach in from another lane. */
+
+/* Commit activity heatmap (a GitHub-style year of weeks × days) */
+
+/* Merge conflict resolution */
+
+/* ------------------------------------------------------------------ dock --- */
+/* Inspector rows: label | value on one line, so a narrow dock stays compact
+   instead of stacking label-above-value for every field. */
+.cg-field {
+  display: grid;
+  grid-template-columns: 4.25rem 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+.cg-field dt {
+  font:
+    500 0.58rem/1.35 "Martian Mono",
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cg-ink-3);
+}
+.cg-field dd {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--cg-ink);
+  word-break: break-word;
+}
+
+/* Clickable model card: the answer to "which model am I talking to?" */
+.cg-burn-bar {
+  height: 6px;
+  border-radius: 0;
+  background: var(--cg-surface-3);
+  overflow: hidden;
+}
+.cg-burn-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--cg-signal);
+}
+.cg-burn-bar[data-tone="warn"] > span {
+  background: var(--cg-warn);
+}
+.cg-burn-bar[data-tone="bad"] > span {
+  background: var(--cg-bad);
+}
+
+/* -------------------------------------------------------------- bottombar -- */
+
+/* --------------------------------------------- model selector + picker ---- */
+
+/* ------------------------------------------------------------ storage view --- */
+
+/* ------------------------------------------- chat feature blocks (§7.5) ---- */
+/* Council: a free/paid filter plus three model dropdowns. */
+
+/* Shared block shell for council / research / image results in the transcript */
+
+/* Council — the same prompt in parallel columns */
+
+/* Research — a visible run, then the cited report */
+
+/* Image lab — the prompt is the artifact */
+
+/* Blame — hover affordance on a message + the provenance sheet */
+
+/* Governor — budget + receipts */
+
+/* Mission dialog — same shell as the other dialogs, roomier body. */
+
+/* New-agent block: live creature preview + colour + shuffle */
+
+/* ------------------------------------------------------------- responsive -- */
+
+/* Competitive matrix + verification verdicts (research presents) */
+
+/* "Connect a provider" prompt — shown when a mode has no usable provider */
+
+/* ------------------------------------------------------------ assets tab --- */
+/* The divider belongs to the whole row here, not the short heading. */
+
+/* ------------------------------------------------------------ Git refresh ---
+   Git has a denser information model than Code. Keep the navigation, history,
+   and inspector visually distinct so the page does not read as one oversized
+   panel. */
+
+/* Session detail: give the title and facts a stable rhythm, and keep raw CLI
+   output useful without letting it swallow the entire Git workspace. */

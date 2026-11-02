@@ -1,0 +1,117 @@
+/* Home: one console for starting a run, recent runs below as a lane. */
+.home {
+  flex: 1;
+  min-height: 0;
+  padding: 10vh var(--app-s5) var(--app-s7);
+}
+
+.home-run,
+.home-history,
+.home-empty {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.home-title {
+  margin: 0 0 var(--app-s3);
+  color: var(--app-ink-3);
+  font: 500 var(--app-text-sm)/1 var(--app-font);
+}
+
+.home-console {
+  border: 1px solid var(--app-line-strong);
+  border-radius: var(--app-r3);
+  background: var(--app-surface);
+}
+.home-console:focus-within { border-color: var(--app-ink-3); }
+
+.home-prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--app-s3);
+  padding: var(--app-s2) var(--app-s3);
+  border-bottom: 1px solid var(--app-line);
+  font: 400 var(--app-text-sm)/1.4 var(--app-mono);
+}
+.home-prompt-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-info);
+}
+.home-prompt-path::after { content: " $"; color: var(--app-ink-3); }
+.home-prompt-change {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--app-r1);
+  background: none;
+  color: var(--app-ink-3);
+  font: 500 var(--app-text-xs)/1 var(--app-font);
+  cursor: pointer;
+}
+.home-prompt-change:hover { color: var(--app-ink); background: var(--app-hover); }
+
+.home-input {
+  display: block;
+  width: 100%;
+  min-height: 112px;
+  padding: var(--app-s3);
+  border: 0;
+  background: transparent;
+  color: var(--app-ink);
+  font: 400 var(--app-text-lg)/1.55 var(--app-font);
+  resize: vertical;
+}
+.home-input:focus { outline: none; }
+.home-input::placeholder { color: var(--app-ink-3); }
+
+.home-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-s2) var(--app-s4);
+  padding: var(--app-s2) var(--app-s3) var(--app-s3);
+  border-top: 1px solid var(--app-line);
+}
+.home-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.home-where { padding-left: var(--app-s4); border-left: 1px solid var(--app-line); }
+.home-options > .ui-btn { margin-left: auto; }
+.home-error { margin-top: var(--app-s3); }
+
+.home-history { margin-top: var(--app-s7); }
+.home-history h2 {
+  margin: 0 0 var(--app-s3);
+  color: var(--app-ink-3);
+  font: 500 var(--app-text-sm)/1 var(--app-font);
+}
+.home-run-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--app-s3);
+  width: 100%;
+  padding: 8px var(--app-s2);
+  border: 0;
+  border-radius: var(--app-r2);
+  background: none;
+  color: var(--app-ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.home-run-row:hover { background: var(--app-hover); }
+.home-run-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-run-meta { color: var(--app-ink-3); font-size: var(--app-text-xs); white-space: nowrap; }
+
+.home-empty { padding-top: 6vh; }
+.home-empty h1 { margin: 0 0 var(--app-s2); font: 600 var(--app-text-2xl)/1.2 var(--app-font); }
+.home-empty p { margin: 0 0 var(--app-s4); max-width: 52ch; color: var(--app-ink-2); }
+.home-empty code { font: 400 0.92em var(--app-mono); color: var(--app-info); }
+
+@media (max-width: 640px) {
+  .home { padding: var(--app-s5) var(--app-s3); }
+  .home-where { padding-left: 0; border-left: 0; }
+  .home-run-meta { display: none; }
+}

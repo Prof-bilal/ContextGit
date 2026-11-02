@@ -1,0 +1,176 @@
+/* Terminal / Files / Changes / App tabs. Reads only --app-* tokens. */
+
+.ws-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--app-surface);
+  color: var(--app-ink);
+}
+
+.ws-top { display: flex; align-items: stretch; flex: none; min-width: 0; }
+.ws-toolbar {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--app-s1); padding: 0 var(--app-s2); border-bottom: 1px solid var(--app-line);
+}
+
+.ws-body { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+.ws-pane { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.ws-centered { display: grid; place-items: center; }
+.ws-muted { margin: 0; padding: var(--app-s2) var(--app-s3); color: var(--app-ink-3); font-size: var(--app-text-sm); }
+
+/* The terminal stays mounted and keeps its exact size while another tab is
+   shown: display:none makes xterm's WebGL renderer drop its canvas and redraw
+   scrollback garbled, so hide it in place instead. */
+.ws-body { position: relative; }
+.ws-terminal[data-active="false"] { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.ws-terminal-body { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.ws-terminal-body > div { flex: 1; width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; }
+.ws-banner { flex: none; margin: var(--app-s2); }
+
+/* Files: list on the left, viewer on the right. */
+.ws-files {
+  display: grid;
+  grid-template-columns: minmax(190px, 280px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.ws-file-list {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  border-right: 1px solid var(--app-line); background: var(--app-surface-2);
+}
+
+.ws-search {
+  position: relative; flex: none; display: flex; align-items: center;
+  padding: var(--app-s2); border-bottom: 1px solid var(--app-line);
+}
+.ws-search svg {
+  position: absolute; left: calc(var(--app-s2) + 9px); width: 14px; height: 14px;
+  color: var(--app-ink-3); pointer-events: none;
+}
+.ws-search input { height: 30px; padding-left: 30px; font-size: var(--app-text-sm); }
+
+.ws-crumbs { flex: none; padding: var(--app-s1) var(--app-s2); border-bottom: 1px solid var(--app-line); }
+.ws-crumb {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
+  padding: 4px 6px; border: 0; border-radius: var(--app-r1); background: none;
+  color: var(--app-ink-3); font: 500 var(--app-text-xs)/1.4 var(--app-font);
+  text-align: left; cursor: pointer;
+}
+.ws-crumb:hover:not(:disabled) { background: var(--app-hover); color: var(--app-ink); }
+.ws-crumb:disabled { cursor: default; }
+.ws-crumb svg { width: 13px; height: 13px; flex: none; }
+.ws-crumb span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ws-list-error { flex: none; margin: var(--app-s2); }
+
+.ws-nodes { flex: 1; min-height: 0; overflow: auto; padding: var(--app-s1); }
+.ws-node {
+  display: flex; align-items: center; gap: var(--app-s2); width: 100%;
+  padding: 5px var(--app-s2); border: 0; border-radius: var(--app-r1); background: none;
+  color: var(--app-ink-2); font: 400 var(--app-text-sm)/1.45 var(--app-font);
+  text-align: left; cursor: pointer;
+}
+.ws-node:hover { background: var(--app-hover); color: var(--app-ink); }
+.ws-node[aria-current="true"] { background: var(--app-accent-soft); color: var(--app-ink); }
+.ws-node svg { width: 15px; height: 15px; flex: none; color: var(--app-ink-3); }
+.ws-node[aria-current="true"] svg { color: var(--app-accent); }
+.ws-node-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ws-viewer { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--app-surface); }
+.ws-viewer-head {
+  flex: none; display: flex; align-items: center; gap: var(--app-s2);
+  height: 32px; padding: 0 var(--app-s3); border-bottom: 1px solid var(--app-line);
+}
+.ws-viewer-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--app-ink-2); font: 500 var(--app-text-xs)/1 var(--app-mono);
+}
+.ws-viewer-meta { flex: none; margin-left: auto; color: var(--app-ink-3); font-size: var(--app-text-xs); white-space: nowrap; }
+.ws-viewer-body { flex: 1; min-height: 0; overflow: auto; }
+.ws-fill { min-height: 100%; display: grid; place-items: center; }
+
+.ws-code {
+  min-width: max-content; padding: var(--app-s2) 0;
+  font: 400 var(--app-text-xs)/1.6 var(--app-mono); color: var(--app-ink-2);
+}
+.ws-code-line { display: flex; align-items: flex-start; min-height: 1.6em; }
+.ws-code-no {
+  flex: none; width: 52px; padding: 0 var(--app-s2) 0 var(--app-s3);
+  text-align: right; color: var(--app-ink-3); user-select: none;
+}
+.ws-code-text { padding-right: var(--app-s4); white-space: pre; tab-size: 2; }
+.ws-code-add { background: color-mix(in srgb, var(--app-ok) 12%, transparent); color: var(--app-ink); }
+.ws-code-del { background: color-mix(in srgb, var(--app-bad) 12%, transparent); color: var(--app-ink); }
+.ws-code-hunk { background: var(--app-surface-2); color: var(--app-ink-3); }
+
+.ws-image { display: grid; place-items: center; min-height: 100%; padding: var(--app-s4); }
+.ws-image img {
+  max-width: 100%; height: auto; object-fit: contain;
+  border: 1px solid var(--app-line); border-radius: var(--app-r2); background: var(--app-surface-2);
+}
+
+/* Changes: changed files on the left, diff space on the right. */
+.ws-changes {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.ws-changed-list {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  border-right: 1px solid var(--app-line); background: var(--app-surface-2);
+}
+.ws-changed-head {
+  flex: none; display: flex; align-items: center; gap: var(--app-s2);
+  padding: var(--app-s3); border-bottom: 1px solid var(--app-line);
+  color: var(--app-ink-3); font-size: var(--app-text-xs); font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
+.ws-count {
+  display: inline-grid; place-items: center; min-width: 20px; height: 18px;
+  margin-left: auto; padding: 0 5px; border-radius: 999px;
+  background: var(--app-surface-3); color: var(--app-ink-2); font-size: var(--app-text-xs);
+}
+.ws-changed-body { flex: 1; min-height: 0; overflow: auto; padding: var(--app-s1); }
+.ws-changed-item {
+  display: flex; align-items: center; gap: var(--app-s2); width: 100%;
+  padding: 5px var(--app-s2); border: 0; border-radius: var(--app-r1);
+  background: none; color: var(--app-ink-2); text-align: left; cursor: pointer;
+  font: 400 var(--app-text-sm)/1.45 var(--app-mono);
+}
+.ws-changed-item:hover { background: var(--app-hover); }
+.ws-changed-item[aria-current="true"] { background: var(--app-accent-soft); color: var(--app-ink); }
+.ws-change-badge {
+  flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px;
+  border-radius: var(--app-r1); background: var(--app-surface-3);
+  font: 600 var(--app-text-xs)/1 var(--app-mono);
+}
+.ws-change-badge[data-status="A"] { color: var(--app-ok); }
+.ws-change-badge[data-status="M"] { color: var(--app-warn); }
+.ws-change-badge[data-status="D"] { color: var(--app-bad); }
+.ws-changed-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-change-stats {
+  flex: none; display: flex; gap: var(--app-s1); margin-left: auto;
+  color: var(--app-ink-3); font: 400 var(--app-text-xs)/1 var(--app-mono);
+}
+.ws-change-add { color: var(--app-ok); }
+.ws-change-del { color: var(--app-bad); }
+.ws-diff {
+  display: flex; flex-direction: column;
+  min-height: 0; min-width: 0; overflow: hidden;
+}
+.ws-diff > .ws-fill { flex: 1; }
+
+/* App: address bar plus iframe on the session's private port. */
+.ws-app { min-height: 0; }
+.ws-address {
+  flex: none; display: flex; align-items: center; gap: var(--app-s2);
+  padding: var(--app-s2) var(--app-s3); border-bottom: 1px solid var(--app-line);
+}
+.ws-address input { flex: 1; min-width: 0; height: 32px; font-family: var(--app-mono); font-size: var(--app-text-xs); }
+.ws-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--app-bg); }
+
+/* Toolbar sits at the right edge: open tooltips to the left. */
+.ws-toolbar .ui-tip { left: auto; right: calc(100% + 8px); }

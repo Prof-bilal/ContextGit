@@ -28,7 +28,7 @@ def git(root: Path | str, *args: str, check: bool = True) -> str:
     result = subprocess.run(
         ["git", "-c", "core.hooksPath=/dev/null", *args],
         cwd=root,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         capture_output=True,
         timeout=60,
     )
@@ -582,7 +582,7 @@ class IntegrationService:
             ["git", "apply", "--numstat", "-z", "-"],
             cwd=candidate,
             input=patch,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             capture_output=True,
             timeout=30,
         )
@@ -604,7 +604,7 @@ class IntegrationService:
             ["git", "apply", "--check", "-"],
             cwd=candidate,
             input=patch,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             capture_output=True,
             timeout=30,
         )
@@ -614,7 +614,7 @@ class IntegrationService:
             ["git", "apply", "-"],
             cwd=candidate,
             input=patch,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             check=True,
             capture_output=True,
             timeout=30,

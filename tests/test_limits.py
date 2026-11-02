@@ -214,7 +214,7 @@ def test_limits_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_limits_registry_covers_every_desktop_harness(monkeypatch: pytest.MonkeyPatch) -> None:
     import re
 
-    source = (Path(__file__).parents[1] / "desktop/shared/harnesses.ts").read_text()
+    source = (Path(__file__).parents[1] / "web/shared/harnesses.ts").read_text()
     expected = set(re.findall(r'id: "([a-z]+)"', source))
     monkeypatch.setattr(
         registry,

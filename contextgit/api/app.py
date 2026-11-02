@@ -1,10 +1,16 @@
 """FastAPI routes are thin validation and serialization wrappers around Repo."""
 
+import base64
 import hashlib
 import importlib
 import os
 import secrets
+import shutil
+import socket
+import subprocess
 import threading
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -29,6 +35,8 @@ from contextgit.api.schemas import (
     CommitRequest,
     CommitResponse,
     CommitStagedRequest,
+    ContextBranchRequest,
+    ContextCheckpointRequest,
     DbOpenRequest,
     DbQueryRequest,
     EndpointBisectRequest,
@@ -112,6 +120,7 @@ from contextgit.core.models import (
     HttpHistoryEntry,
     HttpRequestSpec,
     HttpResponseResult,
+    Message,
     ServerStatus,
     UsageSummary,
     WhyAnswer,
@@ -130,6 +139,7 @@ from contextgit.endpoints.tests import (
     run_suite,
 )
 from contextgit.endpoints.why import why_for, why_history
+from contextgit.gitops.diff import working_tree_diff
 from contextgit.issues import install_osv_scanner, run_scan
 from contextgit.knowledge.models import Lesson
 from contextgit.knowledge.skills import SkillDraft, SkillLibrary
@@ -185,7 +195,7 @@ def create_app(
             )
         return await call_next(request)
 
-    # Tauri supplies a fresh token on each launch. Standalone API deployments
+    # The browser launcher supplies a fresh token on each launch. Standalone API deployments
     # may opt in with the same environment variable; tests remain injectable.
     launch_token = api_token if api_token is not None else os.getenv("CONTEXTGIT_API_TOKEN")
 
@@ -203,6 +213,8 @@ def create_app(
     # The first render fires several requests at once; without this lock two of
     # them can race open/init and the loser opens a half-written database.
     repo_lock = threading.Lock()
+    editor_lock = threading.Lock()
+    editor_process: dict[str, object] = {}
 
     def get_repo() -> Repo:
         existing = state.get("repo")
@@ -217,6 +229,14 @@ def create_app(
             return state["repo"]
 
     repo_dep = Depends(get_repo)
+
+    @app.get("/api/v1/harnesses/{agent}/models")
+    def harness_models(agent: str) -> dict[str, object]:
+        from contextgit.core.cli_models import catalog
+        try:
+            return catalog(agent)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     from contextgit.integration.api import router as integration_router
 
@@ -307,6 +327,136 @@ def create_app(
             "instance_id": instance_id,
             "repo_id": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
         }
+
+    # ---------- browser project files ----------
+
+    def _project_file(current: Repo, relative: str) -> Path:
+        root = Path(current.root).parent.resolve()
+        candidate = (root / relative.lstrip("/\\")).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise HTTPException(400, "Project path escapes the selected folder.")
+        return candidate
+
+    def _file_version(file: Path) -> str:
+        info = file.stat()
+        return f"{info.st_size}:{info.st_mtime_ns}"
+
+    @app.get("/api/v1/files")
+    def files_list(relative: str = "", current: Repo = repo_dep) -> list[dict[str, object]]:
+        directory = _project_file(current, relative or ".")
+        if not directory.is_dir():
+            raise HTTPException(400, "Choose a folder in the project.")
+        root = Path(current.root).parent.resolve()
+        hidden = {"__pycache__", "node_modules", "target", "dist", "build"}
+        entries: list[dict[str, object]] = []
+        for item in directory.iterdir():
+            if item.name.startswith(".") or item.name in hidden:
+                continue
+            rel = item.relative_to(root).as_posix()
+            entries.append({"name": item.name, "path": rel, "kind": "directory" if item.is_dir() else "file"})
+        entries.sort(key=lambda item: (item["kind"] != "directory", str(item["name"]).lower()))
+        return entries
+
+    @app.get("/api/v1/files/document")
+    def file_document(relative: str, current: Repo = repo_dep) -> dict[str, object]:
+        file = _project_file(current, relative)
+        info = file.stat()
+        if info.st_size > 2_000_000:
+            raise HTTPException(413, "Use a terminal to inspect text files larger than 2 MB.")
+        try:
+            content = file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(415, "This file is not a UTF-8 text file.") from exc
+        return {"path": relative, "content": content, "version": _file_version(file), "size": info.st_size, "encoding": "utf8"}
+
+    @app.get("/api/v1/files/preview")
+    def file_preview(relative: str, current: Repo = repo_dep) -> dict[str, object]:
+        file = _project_file(current, relative)
+        info = file.stat()
+        if info.st_size > 8_000_000:
+            raise HTTPException(413, "Preview supports files up to 8 MB.")
+        extension = file.suffix.lower().lstrip(".")
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}.get(extension)
+        raw = file.read_bytes()
+        if mime:
+            content = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            kind = "image"
+        else:
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(415, "This binary file has no preview.") from exc
+            kind = "markdown" if extension in {"md", "markdown"} else "diff" if extension in {"diff", "patch"} else "text"
+        return {"path": relative, "size": info.st_size, "version": _file_version(file), "kind": kind, "content": content}
+
+    @app.put("/api/v1/files/document")
+    def file_write(body: dict[str, object], current: Repo = repo_dep) -> dict[str, object]:
+        relative = str(body.get("path") or "")
+        content = body.get("content")
+        if not isinstance(content, str):
+            raise HTTPException(422, "File content must be text.")
+        file = _project_file(current, relative)
+        info = file.stat()
+        expected = body.get("expectedVersion")
+        if isinstance(expected, str) and expected != _file_version(file):
+            raise HTTPException(409, "The file changed on disk. Reload it before saving.")
+        file.write_text(content, encoding="utf-8")
+        info = file.stat()
+        return {"path": relative, "content": content, "version": _file_version(file), "size": info.st_size, "encoding": "utf8"}
+
+    # ---------- browser editor lifecycle ----------
+
+    def editor_status() -> dict[str, object]:
+        process = editor_process.get("process")
+        if not isinstance(process, subprocess.Popen) or process.poll() is not None:
+            return {"state": "stopped", "instanceId": None, "url": None}
+        url = str(editor_process["url"])
+        try:
+            with urllib.request.urlopen(f"{url}healthz", timeout=0.35) as response:
+                ready = response.status == 200
+        except (OSError, urllib.error.URLError):
+            ready = False
+        return {"state": "ready" if ready else "starting", "instanceId": editor_process["instance"], "url": url}
+
+    @app.post("/api/v1/editor/start")
+    def editor_start(current: Repo = repo_dep) -> dict[str, object]:
+        with editor_lock:
+            current_status = editor_status()
+            if current_status["state"] != "stopped":
+                return current_status
+            executable = shutil.which("code-server")
+            if not executable:
+                return {"state": "unavailable", "instanceId": None, "url": None, "message": "code-server is not installed. Install it to use the browser editor."}
+            root = Path(current.root).parent.resolve()
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = int(sock.getsockname()[1])
+            instance = uuid4().hex
+            command = [executable, "--bind-addr", f"127.0.0.1:{port}", "--auth", "none", "--disable-telemetry", "--disable-update-check", "--disable-workspace-trust", str(root)]
+            try:
+                process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError as exc:
+                return {"state": "error", "instanceId": None, "url": None, "message": str(exc)}
+            editor_process.update({"process": process, "instance": instance, "url": f"http://127.0.0.1:{port}/"})
+            return editor_status()
+
+    @app.get("/api/v1/editor/status")
+    def get_editor_status(current: Repo = repo_dep) -> dict[str, object]:
+        del current
+        with editor_lock:
+            return editor_status()
+
+    @app.post("/api/v1/editor/{action}")
+    def editor_action(action: str, current: Repo = repo_dep) -> dict[str, object]:
+        del current
+        if action not in {"suspend", "stop"}:
+            raise HTTPException(404, "Unknown editor action.")
+        with editor_lock:
+            process = editor_process.get("process")
+            if isinstance(process, subprocess.Popen) and process.poll() is None:
+                process.terminate()
+            editor_process.clear()
+            return {"state": "stopped", "instanceId": None, "url": None}
 
     # ---------- scheduled repository issues ----------
 
@@ -414,6 +564,96 @@ def create_app(
     @app.post("/api/v1/branches")
     def create_branch(body: BranchRequest, current: Repo = repo_dep) -> dict[str, object]:
         return current.branch(body.name, body.from_commit).model_dump(mode="json")
+
+    @app.post("/api/v1/sessions/{session_id}/context-checkpoint")
+    def context_checkpoint(
+        session_id: str,
+        body: ContextCheckpointRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        """Checkpoint only ContextGit messages; code stays in the current workspace."""
+        session = current.get_session(session_id)
+        if session.agent == "opencode":
+            from contextgit.integration.transcript import CaptureUnavailable
+
+            try:
+                current.transcripts.capture(session_id)
+            except CaptureUnavailable as error:
+                raise HTTPException(
+                    409, {"status": error.status, "message": str(error)}
+                ) from error
+        had_staged = bool(current.staged(session_id))
+        commit, tag = current.context_checkpoint(
+            session_id, name=body.name, summary=body.summary
+        )
+        return {
+            "session_id": session_id,
+            "branch": session.branch,
+            "commit": commit.model_dump(mode="json"),
+            "tag": tag.model_dump(mode="json") if tag else None,
+            "created": had_staged,
+        }
+
+    @app.post("/api/v1/context-branches", status_code=201)
+    def create_context_branch(
+        body: ContextBranchRequest,
+        current: Repo = repo_dep,
+    ) -> dict[str, object]:
+        """Fork a context branch and prepare a compact handoff for a new run."""
+        source = current.get_session(body.source_session_id)
+        commit_id = body.from_commit or current.get_branch(source.branch).head_commit_id
+        current.get_commit(commit_id)  # validate before calling the provider or mutating state
+        messages = current.build_context(commit_id)
+        handoff_prompt = [
+            Message(role="system", content=(
+                "Write a compact handoff for another coding agent. Preserve the goal, "
+                "decisions, constraints, rejected approaches, and open questions. "
+                "Use short bullets and do not invent facts."
+            )),
+            Message(role="user", content="\n".join(
+                f"{message.role}: {message.content}" for message in messages[-40:]
+            )),
+        ]
+        fallback = (
+            f"Context handoff from {source.name} at {commit_id[:12]}\n"
+            f"Goal/session: {source.task or source.name}\n"
+            "Continue from the committed context above. Verify assumptions before editing."
+        )
+        handoff = fallback
+        generated = False
+        try:
+            active = llm
+            if body.provider:
+                active, _ = build_for(body.provider, current.list_providers())
+            candidate = active.complete(handoff_prompt, model=body.model or source.model)
+            if candidate.strip():
+                handoff = candidate.strip()
+                generated = True
+        except Exception:
+            # A branch must remain usable when a provider is offline or missing.
+            pass
+        branch = current.branch(body.name, from_commit=commit_id, project_path=source.project_path)
+        session = current.create_session(
+            body.name,
+            kind=source.kind,
+            branch=branch.name,
+            agent=body.agent or source.agent,
+            model=body.model or source.model,
+            project_path=source.project_path,
+            task=handoff,
+            scope=source.scope,
+            role=source.role,
+            skills=source.skills,
+            category=source.category,
+        )
+        return {
+            "branch": branch.model_dump(mode="json"),
+            "session": session.model_dump(mode="json"),
+            "source_session_id": source.id,
+            "source_commit_id": commit_id,
+            "handoff": handoff,
+            "handoff_generated": generated,
+        }
 
     @app.delete("/api/v1/branches", status_code=204)
     def delete_branch(name: str, permanent: bool = False, current: Repo = repo_dep) -> None:
@@ -843,6 +1083,15 @@ def create_app(
     def session_workspace(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
         return current.session_workspace(session_id).model_dump(mode="json")
 
+    @app.get("/api/v1/sessions/{session_id}/diff")
+    def session_diff(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Unified working-tree diff of this run's checkout for the Changes tab."""
+        session = current.get_session(session_id)
+        project = current.root.parent if current.root.name == ".contextgit" else current.root
+        root = Path(session.worktree_path) if session.worktree_path else project
+        base = session.base_commit if session.worktree_path and session.base_commit else "HEAD"
+        return working_tree_diff(root, base=base)
+
     @app.get("/api/v1/fleet")
     def fleet(current: Repo = repo_dep) -> list[dict[str, object]]:
         return [entry.model_dump(mode="json") for entry in current.fleet()]
@@ -930,6 +1179,8 @@ def create_app(
             "layout": current.team_layout(team_id).model_dump(mode="json"),
             "plan": plan.model_dump(mode="json") if plan else None,
             "skills": [link.model_dump(mode="json") for link in current.team_skills(team_id)],
+            "execution": current.team_execution.settings(team_id),
+            "integrations": current._storage.team_integrations(team_id),
         }
 
     @app.get("/api/v1/teams")
@@ -1111,6 +1362,18 @@ def create_app(
 
     @app.post("/api/v1/teams", status_code=201)
     def create_spatial_team(body: TeamCreateRequest, current: Repo = repo_dep) -> dict[str, object]:
+        if body.managed_execution:
+            from contextgit.core.cli_models import TEAM_CLIS, validate_model
+            try:
+                if body.orchestrator_agent not in TEAM_CLIS:
+                    raise ValueError("Choose a supported parent CLI")
+                validate_model(body.orchestrator_model)
+                for agent, model in body.worker_models.items():
+                    if agent not in body.allowed_agents:
+                        raise ValueError("Worker models must belong to an allowed CLI")
+                    validate_model(model)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         if body.gate_command is not None and body.gate_command != detect_gate(
             Path(body.project_path)
         ):
@@ -1128,8 +1391,15 @@ def create_app(
         if body.gate_command is not None:
             team = current.set_team_gate(team.id, body.gate_command)
         same_project = current.list_teams(project_path=team.project_path)
+        if body.managed_execution:
+            current.team_execution.configure(team.id, body.max_active, list(body.allowed_agents),
+                body.orchestrator_model, body.worker_models)
         current.save_team_layout(team.id, x=80 + (len(same_project) - 1) * 1040, y=80)
         return _spatial_team(current, team.id)
+
+    @app.delete("/api/v1/teams/{team_id}", status_code=204)
+    def archive_spatial_team(team_id: str, current: Repo = repo_dep) -> None:
+        current.archive_team(team_id)
 
     @app.patch("/api/v1/teams/{team_id}")
     def update_spatial_team(
@@ -1140,24 +1410,50 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/orchestrator/start")
     def start_team_orchestrator(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if not current.team_execution.settings(team_id):
+            return _start_team_orchestrator(team_id, current)
+        from contextgit.integration.service import project_lock
+        with project_lock(current.get_team(team_id).project_path, "team-parent"):
+            return _start_team_orchestrator(team_id, current)
+
+    def _start_team_orchestrator(team_id: str, current: Repo) -> dict[str, object]:
         team = current.get_team(team_id)
         if team.orchestrator_session_id:
             try:
-                return current.get_session(team.orchestrator_session_id).model_dump(mode="json")
+                existing = current.get_session(team.orchestrator_session_id)
+                if existing.worktree_path:
+                    ensure_mcp_config(existing.worktree_path, agent=existing.agent, model=existing.model, run_env={
+                        "CONTEXTGIT_REPO": str(current.root.resolve()),
+                        "CONTEXTGIT_ROLE": "orchestrator",
+                        "CONTEXTGIT_TEAM": team.id,
+                        "CONTEXTGIT_RUN": existing.name,
+                    })
+                return existing.model_dump(mode="json")
             except SessionNotFound:
                 pass
         agent = team.orchestrator_agent or "claude"
         ensure_mcp_config(team.project_path)
+        execution = current.team_execution.settings(team_id)
         session = current.create_session(
             f"{team.name} orchestrator",
             kind="terminal",
             agent=agent,
+            model=execution.get("orchestrator_model") if execution else None,
             project_path=team.project_path,
-            worktree=False,
-            task=team.goal,
+            worktree=bool(execution),
+            base_ref=execution["integration_branch"] if execution else None,
+            task=current.team_execution.instruction(team_id) if execution else team.goal,
             role="orchestrator",
             category="orchestration",
+            skills=[link.title for link in current.team_skills(team_id) if link.task_id is None],
         )
+        if session.worktree_path:
+            ensure_mcp_config(session.worktree_path, agent=agent, model=session.model, run_env={
+                "CONTEXTGIT_REPO": str(current.root.resolve()),
+                "CONTEXTGIT_ROLE": "orchestrator",
+                "CONTEXTGIT_TEAM": team.id,
+                "CONTEXTGIT_RUN": session.name,
+            })
         current.update_team_details(team_id, orchestrator_session_id=session.id, state="planning")
         return session.model_dump(mode="json")
 
@@ -1194,7 +1490,10 @@ def create_app(
     @app.post("/api/v1/teams/{team_id}/resume")
     def resume_spatial_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
         current.update_team_details(team_id, state="running")
-        current.launch_team(team_id)
+        if current.team_execution.settings(team_id) and current.latest_team_plan(team_id) and current.latest_team_plan(team_id).status == "approved":
+            current.team_execution.integrate(team_id)
+        else:
+            current.launch_team(team_id)
         return _spatial_team(current, team_id)
 
     @app.post("/api/v1/teams/{team_id}/tasks/{task_id}/start")
@@ -1300,6 +1599,8 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/merge/preview")
     def preview_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if current.team_execution.settings(team_id):
+            return current.team_execution.preview(team_id)
         current.get_team(team_id)
         tasks = current.list_tasks(team_id)
         unfinished = [task.title for task in tasks if task.status != "done"]
@@ -1371,6 +1672,8 @@ def create_app(
 
     @app.post("/api/v1/teams/{team_id}/merge/confirm")
     def confirm_spatial_team_merge(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        if current.team_execution.settings(team_id):
+            return current.team_execution.confirm(team_id)
         current.get_team(team_id)
         tasks = current.list_tasks(team_id)
         if not tasks or any(task.status != "done" for task in tasks):
@@ -1389,6 +1692,10 @@ def create_app(
             }
         current.update_team_details(team_id, state="completed")
         return {"entries": [entry.model_dump(mode="json") for entry in entries]}
+
+    @app.post("/api/v1/teams/{team_id}/integrate")
+    def integrate_parent_team(team_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        return current.team_execution.integrate(team_id)
 
     @app.get("/api/v1/team")
     def get_team(current: Repo = repo_dep) -> dict[str, object] | None:

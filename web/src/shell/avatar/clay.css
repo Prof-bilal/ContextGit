@@ -1,0 +1,84 @@
+/* Clay avatars — cheap by construction: only transform/opacity animate, one
+   compositor layer per avatar, and loops pause when they are not being looked at. */
+
+/* ---------------------------------------------------------------- states --- */
+
+@keyframes cg-clay-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes cg-clay-think {
+  0%,
+  100% {
+    transform: rotate(-2deg) translateY(0);
+  }
+  50% {
+    transform: rotate(2deg) translateY(-2px);
+  }
+}
+@keyframes cg-clay-work {
+  0%,
+  100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: rotate(3deg) translateY(-3px);
+  }
+}
+@keyframes cg-clay-settle {
+  0% {
+    transform: scale(1.14, 0.86);
+  }
+  55% {
+    transform: scale(0.95, 1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes cg-clay-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  20% {
+    transform: translateX(-4px) rotate(-4deg);
+  }
+  45% {
+    transform: translateX(4px) rotate(4deg);
+  }
+  70% {
+    transform: translateX(-2px) rotate(-2deg);
+  }
+}
+@keyframes cg-clay-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes cg-clay-happy {
+  0%,
+  72%,
+  100% {
+    transform: scaleY(1);
+  }
+  82% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* ------------------------------------------------------------ perf guards --- */
+
+/* Rail rows are tiny and numerous: only animate the one being looked at. */
+
+/* Window hidden or tab inactive → freeze everything. */

@@ -1,0 +1,69 @@
+.tc-dialog { width: min(720px, calc(100vw - 32px)); max-height: min(900px, calc(100dvh - 40px)); display: flex; flex-direction: column; background: #211c1a; color: #eee4de; border: 1px solid #574037; border-radius: 18px; box-shadow: 0 28px 100px #0009; overflow: hidden; font-size: 13px; }
+.tc-dialog * { box-sizing: border-box; }
+.tc-heading { display: flex; align-items: center; gap: 14px; padding: 24px 28px; border-bottom: 1px solid #ffffff0b; }
+.tc-heading-icon { width: 42px; height: 42px; display: grid; place-items: center; background: #b5774e19; color: #df9a6a; border: 1px solid #b5774e38; border-radius: 12px; font-size: 21px; }
+.tc-dialog h2, .tc-dialog h3, .tc-dialog p { margin: 0; }
+.tc-dialog h2 { font-size: 20px; font-weight: 600; letter-spacing: -.4px; }
+.tc-dialog h3 { font-size: 13px; font-weight: 600; }
+.tc-dialog p { color: #aa9990; font-size: 11px; line-height: 1.6; margin-top: 4px; }
+.tc-heading > button { margin-left: auto; width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: #b5a297; display: grid; place-items: center; }
+.tc-body { overflow-y: auto; padding: 20px 28px 24px; display: flex; flex-direction: column; gap: 22px; scrollbar-color: #65483a transparent; }
+.tc-project { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 12px; background: #ffffff03; border: 1px solid #ffffff09; border-radius: 8px; font-size: 11px; }
+.tc-project > span { color: #a58d7f; }
+.tc-project strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.tc-project small { color: #8f8077; margin-left: auto; font-size: 10px; }
+.tc-dialog label { display: flex; flex-direction: column; gap: 8px; text-transform: none; letter-spacing: 0; color: #d8c9bf; font-size: 12px; }
+.tc-dialog input:not([type=checkbox]), .tc-dialog textarea, .tc-dialog select { width: 100%; min-height: 42px; border: 1px solid #4c3931; border-radius: 8px; padding: 10px 12px; background: #171312; color: #ece1d8; font: inherit; outline: none; }
+.tc-dialog textarea { min-height: 108px; resize: vertical; line-height: 1.6; }
+.tc-dialog input::placeholder, .tc-dialog textarea::placeholder { color: #7f7068; }
+.tc-dialog input:focus-visible, .tc-dialog textarea:focus-visible, .tc-dialog select:focus-visible, .tc-dialog button:focus-visible, .tc-dialog summary:focus-visible { outline: 2px solid #c88a5c; outline-offset: 3px; }
+.tc-dialog button, .tc-dialog summary, .tc-dialog select, .tc-dialog input[type=checkbox] { cursor: pointer; }
+.tc-dialog button:disabled, .tc-dialog select:disabled { opacity: .4; cursor: not-allowed; }
+.tc-section-title { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+.tc-section-title > span { color: #bd8058; font-size: 10px; border: 1px solid #78513a66; border-radius: 5px; padding: 3px 5px; }
+.tc-cli-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 16px; }
+.tc-cli-tabs > button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px; border: 1px solid #4d3b33; border-radius: 8px; background: #191513; color: #a99689; font-size: 11px; }
+.tc-cli-tabs > button[aria-pressed=true] { background: #a66a3f22; border-color: #bf8055; color: #f3d2b9; }
+.tc-cli-tabs > button > span { font-size: 15px; }
+.tc-model { position: relative; display: grid; grid-template-columns: 1fr 36px; gap: 8px; align-items: end; min-width: 0; }
+.tc-model-control { position: relative; display: flex; align-items: center; }
+.tc-model-control > select { appearance: none; padding-right: 34px; text-overflow: ellipsis; }
+.tc-model-control > svg { position: absolute; right: 12px; pointer-events: none; color: #a08b7d; }
+.tc-model > small, .tc-model > input { grid-column: 1 / -1; }
+.tc-model > small { color: #8f8077; font-size: 10px; line-height: 1.5; }
+.tc-refresh { display: grid; place-items: center; width: 36px; height: 42px; background: #ffffff03; color: #ad9787; border: 1px solid #4c3931; border-radius: 8px; }
+.tc-workers, .tc-skills { border: 1px solid #4b3830; border-radius: 10px; background: #ffffff02; }
+.tc-dialog summary { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; list-style: none; min-height: 62px; }
+.tc-dialog summary::-webkit-details-marker { display: none; }
+.tc-dialog summary > svg { color: #b19684; transition: transform .15s; }
+.tc-dialog details[open] > summary > svg { transform: rotate(180deg); }
+.tc-concurrency { margin: 2px 16px 16px; }
+.tc-concurrency > span { display: flex; align-items: center; gap: 12px; }
+.tc-concurrency input { max-width: 78px; }
+.tc-concurrency small { font-size: 11px; color: #978277; }
+.tc-worker-list { border-top: 1px solid #ffffff08; padding: 0 16px; }
+.tc-worker { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #ffffff08; }
+.tc-worker:last-child { border: 0; }
+.tc-dialog .tc-worker-toggle { flex-direction: row; align-items: center; gap: 10px; }
+.tc-dialog input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; accent-color: #c98b5e; }
+.tc-worker-toggle > span { display: flex; flex-direction: column; gap: 4px; }
+.tc-worker-toggle small { font-size: 10px; color: #907d70; }
+.tc-worker .tc-model label { font-size: 10px; color: #a68f7e; }
+.tc-worker .tc-model > small { display: none; }
+.tc-skills h3 > span { margin-left: 6px; color: #88796f; font-size: 10px; font-weight: 400; }
+.tc-dialog .sp-run-skills { margin: 0; border: 0; border-top: 1px solid #ffffff0b; border-radius: 0; padding: 14px 16px; min-width: 0; }
+.tc-dialog .sp-run-skills legend, .tc-dialog .sp-run-skills > p { display: none; }
+.tc-dialog .sp-run-skills-tools { display: grid; grid-template-columns: 125px 1fr; gap: 8px; margin-bottom: 12px; }
+.tc-dialog .sp-run-skills-list { max-height: 220px; overflow: auto; }
+.tc-dialog .sp-run-skills-list label { display: flex; flex-direction: row; gap: 10px; padding: 10px 2px; align-items: flex-start; }
+.tc-dialog .sp-run-skills-list label small { display: block; color: #98877d; font-size: 10px; line-height: 1.6; margin-top: 4px; }
+.tc-dialog .sp-run-skills-list label strong { font-size: 12px; font-weight: 500; }
+.tc-footer { display: flex; align-items: center; gap: 10px; padding: 18px 28px; border-top: 1px solid #ffffff0c; background: #241d19; }
+.tc-footer > p { margin: 0 auto 0 0; font-size: 10px; }
+.tc-footer strong { font-weight: 400; color: #c8b5a6; }
+.tc-footer button { min-height: 42px; padding: 10px 14px; border-radius: 8px; font-size: 11px; }
+.tc-cancel { background: transparent; color: #bcaa9c; border: 1px solid #4d3b30; }
+.tc-dialog .tc-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #cf8b5c; color: #23170f; border: 1px solid #d99565; font-weight: 600; }
+.tc-dialog .tc-error { color: #edaa91; background: #a8422418; padding: 10px; border: 1px solid #af593b55; border-radius: 8px; }
+.tc-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 600px) { .tc-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; } .tc-heading { padding: 18px; } .tc-body { padding: 16px 18px; gap: 18px; } .tc-cli-tabs { grid-template-columns: repeat(2, 1fr); } .tc-worker { grid-template-columns: 1fr; gap: 10px; } .tc-project small { flex-basis: 100%; margin: 0; } .tc-footer { flex-wrap: wrap; padding: 14px 18px; } .tc-footer > p { flex-basis: 100%; } .tc-cancel { margin-left: auto; } }

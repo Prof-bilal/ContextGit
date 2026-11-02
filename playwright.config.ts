@@ -12,5 +12,5 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
   },
   // Electron-only e2e: the app spawns its own backend, no web server needed.
-  // Requires `npm run build --prefix desktop` first.
+  // Requires `npm run build --prefix web` first.
 });

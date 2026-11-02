@@ -63,7 +63,7 @@ class TestSchema:
 
     def test_migration_recorded_once(self, storage: SqliteStorage) -> None:
         versions = [r[0] for r in storage._conn.execute("SELECT version FROM schema_version")]
-        assert versions == [*range(1, 31)]
+        assert versions == [*range(1, 32)]
 
     def test_reopen_does_not_reapply(self, tmp_path: Path) -> None:
         db = tmp_path / "again.db"
@@ -71,7 +71,7 @@ class TestSchema:
         s2 = SqliteStorage(db)
         versions = [r[0] for r in s2._conn.execute("SELECT version FROM schema_version")]
         s2.close()
-        assert versions == [*range(1, 31)]
+        assert versions == [*range(1, 32)]
 
     def test_project_viewports_round_trip_without_sharing_projects(self, storage: SqliteStorage) -> None:
         from contextgit.core.models import CanvasViewport
