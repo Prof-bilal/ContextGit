@@ -131,6 +131,7 @@ from contextgit.core.repo import Repo
 from contextgit.core.task_service import TaskService
 from contextgit.dbclient.store import ConnectionStore, registry
 from contextgit.endpoints.provenance import graph_with_provenance
+from contextgit.gitops.diff import working_tree_diff
 from contextgit.endpoints.serve import detect_run_command, fetch_live_openapi, supervisor
 from contextgit.endpoints.staleness import annotate
 from contextgit.endpoints.tests import (
@@ -1081,6 +1082,15 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}/workspace")
     def session_workspace(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
         return current.session_workspace(session_id).model_dump(mode="json")
+
+    @app.get("/api/v1/sessions/{session_id}/diff")
+    def session_diff(session_id: str, current: Repo = repo_dep) -> dict[str, object]:
+        """Unified working-tree diff of this run's checkout for the Changes tab."""
+        session = current.get_session(session_id)
+        project = current.root.parent if current.root.name == ".contextgit" else current.root
+        root = Path(session.worktree_path) if session.worktree_path else project
+        base = session.base_commit if session.worktree_path and session.base_commit else "HEAD"
+        return working_tree_diff(root, base=base)
 
     @app.get("/api/v1/fleet")
     def fleet(current: Repo = repo_dep) -> list[dict[str, object]]:
