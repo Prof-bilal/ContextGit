@@ -41,6 +41,24 @@ class BranchRequest(BaseModel):
     from_commit: str | None = None
 
 
+class ContextCheckpointRequest(BaseModel):
+    """Create a named checkpoint from one session's committed context."""
+
+    name: str | None = Field(default=None, max_length=120)
+    summary: str | None = Field(default=None, max_length=240)
+
+
+class ContextBranchRequest(BaseModel):
+    """Fork an agent context without creating a code worktree."""
+
+    source_session_id: str
+    name: str = Field(min_length=1, max_length=120)
+    from_commit: str | None = None
+    agent: str | None = None
+    model: str | None = Field(default=None, max_length=200)
+    provider: str | None = None
+
+
 class CheckoutRequest(BaseModel):
     """Select a branch or commit."""
 
@@ -218,6 +236,11 @@ class TeamCreateRequest(BaseModel):
     gate_command: str | None = None
     goal: str = ""
     orchestrator_agent: str | None = None
+    managed_execution: bool = False
+    max_active: int = Field(default=4, ge=1, le=12)
+    allowed_agents: list[Literal["codex", "claude", "opencode", "commandcode"]] = Field(default_factory=lambda: ["codex", "claude"], min_length=1)
+    orchestrator_model: str | None = Field(default=None, max_length=200)
+    worker_models: dict[str, str] = Field(default_factory=dict)
 
 
 class TeamUpdateRequest(BaseModel):

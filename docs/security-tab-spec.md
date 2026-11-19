@@ -163,11 +163,11 @@ New top-level tab, wired exactly like the existing ones (verified against the cu
 
 | File | Change |
 |---|---|
-| `desktop/src/shell/TopNav.tsx` | add `"security"` to `TabId` (lines 3-16) |
-| `desktop/src/shell/Shell.tsx` | `TAB_IDS` (102), `tabs[]` (1003), `rail()` (1077), `view()` (1211), `bottomBar()` (1730, return `null`) |
-| `desktop/src/shell/views/SecurityView.tsx` | **new** — toolbar ("Run scan"), scanner toggles, findings list, severity filter, past-scans rail |
-| `desktop/src/shell/rail/SecurityRail.tsx` | **new** — scanners + scan history |
-| `desktop/src/shell/security/useSecurity.ts` | **new** — `streamSecurityScan()` consumer + `api.securityScans()` |
+| `web/src/shell/TopNav.tsx` | add `"security"` to `TabId` (lines 3-16) |
+| `web/src/shell/Shell.tsx` | `TAB_IDS` (102), `tabs[]` (1003), `rail()` (1077), `view()` (1211), `bottomBar()` (1730, return `null`) |
+| `web/src/shell/views/SecurityView.tsx` | **new** — toolbar ("Run scan"), scanner toggles, findings list, severity filter, past-scans rail |
+| `web/src/shell/rail/SecurityRail.tsx` | **new** — scanners + scan history |
+| `web/src/shell/security/useSecurity.ts` | **new** — `streamSecurityScan()` consumer + `api.securityScans()` |
 | `lib/api.ts` | **add** types + `securityScan`/`securityScans` — **note:** this file is being edited by the user right now; coordinate before touching it |
 
 Reuse `.cg-view-toolbar` / `.cg-view-body` / `.cg-row` / `Chip` (`data-tone="bad"|warn`) /

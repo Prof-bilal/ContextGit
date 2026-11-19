@@ -391,7 +391,7 @@ class ServerSupervisor:
                         shell=False,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
-                        text=True,
+                        text=True, encoding="utf-8", errors="replace",
                         env=env,
                         start_new_session=True,
                     )

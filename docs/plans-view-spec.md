@@ -186,11 +186,11 @@ Per the app's tab pattern (verified against the current tree):
 | File | Change |
 |---|---|
 | `lib/api.ts` | Add `PlanTier` / `HarnessPlan` / `ContextGitTier` / `PlansResponse` types + `plans: (refresh=false) => request<PlansResponse>('/api/v1/plans'…)`. |
-| `desktop/src/shell/TopNav.tsx` | Add `"plans"` to the `TabId` union (line 3-16). |
-| `desktop/src/shell/Shell.tsx` | `TAB_IDS` push `"plans"` (line 102); `tabs[]` push `{ id: "plans", label: "Plans" }` (line 1003); `rail()` `case "plans"` (line 1177); `view()` `case "plans"` (line 1277); `bottomBar()` early-return `if (tab === "plans") return null;` (line 1730). |
-| `desktop/src/shell/plans/usePlans.ts` | **New.** Fetch-on-enable hook, mirror `useLimits(enabled)`; load only while the tab is open. |
-| `desktop/src/shell/views/PlansView.tsx` | **New.** Reuse `.cg-view-toolbar` / `.cg-view-body` / `.cg-usage-cards` / `.cg-usage-section` / `.cg-limit` / `Chip` / `Field`. |
-| `desktop/src/shell/rail/PlansRail.tsx` | **New.** Harness list + plan badge (mirror `AgentRail`). |
+| `web/src/shell/TopNav.tsx` | Add `"plans"` to the `TabId` union (line 3-16). |
+| `web/src/shell/Shell.tsx` | `TAB_IDS` push `"plans"` (line 102); `tabs[]` push `{ id: "plans", label: "Plans" }` (line 1003); `rail()` `case "plans"` (line 1177); `view()` `case "plans"` (line 1277); `bottomBar()` early-return `if (tab === "plans") return null;` (line 1730). |
+| `web/src/shell/plans/usePlans.ts` | **New.** Fetch-on-enable hook, mirror `useLimits(enabled)`; load only while the tab is open. |
+| `web/src/shell/views/PlansView.tsx` | **New.** Reuse `.cg-view-toolbar` / `.cg-view-body` / `.cg-usage-cards` / `.cg-usage-section` / `.cg-limit` / `Chip` / `Field`. |
+| `web/src/shell/rail/PlansRail.tsx` | **New.** Harness list + plan badge (mirror `AgentRail`). |
 
 No routing config, icon map, or barrel files are involved. The dock and bottom bar are
 opted out (the view is read-only).
@@ -231,7 +231,7 @@ collaboration features are paid (`docs/plans-research.md` §4).
 ## 9. Verification
 
 - `docs/plans-view-spec.md` file list matches the current tab wiring in
-  `desktop/src/shell/Shell.tsx` (`TAB_IDS` :102, `tabs[]` :1003, `rail()` :1177,
+  `web/src/shell/Shell.tsx` (`TAB_IDS` :102, `tabs[]` :1003, `rail()` :1177,
   `view()` :1277, `bottomBar()` :1730) and `TopNav.tsx` (`TabId` :3-16).
 - Backend route mirrors the `/api/v1/limits` pattern (`app.py:1178-1190`) and the
   `contextgit/limits/` package layout.

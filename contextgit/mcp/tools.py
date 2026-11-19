@@ -113,6 +113,9 @@ def _task_view(task: Task, titles: dict[str, str]) -> dict[str, Any]:
         "contract": task.contract,
         "depends_on": [titles.get(dep, dep) for dep in task.depends_on],
         "blocked_by": [titles.get(dep, dep) for dep in task.blocked_by],
+        "dependency_ids": task.depends_on,
+        "brief": task.brief,
+        "done_criteria": task.done_criteria,
         "tokens": task.tokens,
         "gate_status": task.gate_status,
     }
@@ -304,11 +307,38 @@ def propose_team_plan(
         return error or {"error": "no team", "type": "TeamNotFound"}
     if not 1 <= len(tasks) <= 12:
         return {"error": "a team plan must contain between 1 and 12 workers", "type": "InvalidPlan"}
+    # Keep the MCP boundary tolerant of the field names orchestrators commonly
+    # use in free-form plans. The storage/approval layer intentionally has one
+    # canonical schema, but rejecting equivalent aliases makes workers appear
+    # unlaunchable even when the plan contains all required information.
+    normalised: list[dict[str, Any]] = []
+    for index, raw in enumerate(tasks, start=1):
+        item = dict(raw)
+        aliases = {
+            "name": "title",
+            "instructions": "brief",
+            "file_ownership": "scope",
+            "completion_criteria": "done_criteria",
+            "worker_role": "role",
+            "cli": "agent",
+        }
+        for source, target in aliases.items():
+            if target not in item and source in item:
+                item[target] = item[source]
+        scope = item.get("scope")
+        if isinstance(scope, str):
+            item["scope"] = [part.strip() for part in scope.split(",") if part.strip()]
+        criteria = item.get("done_criteria")
+        if isinstance(criteria, list):
+            item["done_criteria"] = "; ".join(str(value).strip() for value in criteria if str(value).strip())
+        if not item.get("id"):
+            item["id"] = f"worker-{index}"
+        normalised.append(item)
     plan = repo.save_team_plan(
         resolved,
         {
             "goal": goal,
-            "tasks": tasks,
+            "tasks": normalised,
             "completion_criteria": completion_criteria or [],
             "quality_gates": quality_gates or [],
         },
@@ -439,7 +469,10 @@ def resume_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
     if error or resolved is None:
         return error or {"error": "no team", "type": "TeamNotFound"}
     repo.update_team_details(resolved, state="running")
-    repo.launch_team(resolved)
+    if repo.team_execution.settings(resolved) and repo.latest_team_plan(resolved) and repo.latest_team_plan(resolved).status == "approved":
+        repo.team_execution.integrate(resolved)
+    else:
+        repo.launch_team(resolved)
     return repo.get_team(resolved).model_dump(mode="json")
 
 
@@ -448,6 +481,8 @@ def prepare_merge(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
     resolved, error = _orchestrator_team(repo, team_id)
     if error or resolved is None:
         return error or {"error": "no team", "type": "TeamNotFound"}
+    if repo.team_execution.settings(resolved):
+        return repo.team_execution.preview(resolved)
     tasks = repo.list_tasks(resolved)
     unfinished = [task.title for task in tasks if task.status != "done"]
     if not unfinished and tasks:
@@ -457,6 +492,14 @@ def prepare_merge(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
         "unfinished": unfinished,
         "requires_user_confirmation": True,
     }
+
+
+def integrate_team(repo: Repo, team_id: str | None = None) -> dict[str, Any]:
+    """Parent-only integration into the fixed team branch, never the user's branch."""
+    resolved, error = _orchestrator_team(repo, team_id)
+    if error or resolved is None:
+        return error or {"error": "no team", "type": "TeamNotFound"}
+    return _guard(lambda: repo.team_execution.integrate(resolved))
 
 
 def propose_skill(

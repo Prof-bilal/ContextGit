@@ -186,6 +186,10 @@ def build_server(repo_path: str | None = None) -> MCPServer:
     def prepare_merge() -> dict[str, Any]:
         return tools.prepare_merge(repo())
 
+    @server.tool(description="Orchestrator only: retry reviewed worker integration into the team's isolated branch. Never merges main or pushes.")
+    def integrate_team() -> dict[str, Any]:
+        return tools.integrate_team(repo())
+
     @server.tool(
         description=(
             "Orchestrator only: propose a reusable skill for user review; never activates it."

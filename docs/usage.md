@@ -63,7 +63,7 @@ most recent one.
 
 ## The Usage tab
 
-`desktop/src/shell/views/UsageView.tsx` (top-level tab) shows a **streak panel** (current /
+`web/src/shell/views/UsageView.tsx` (top-level tab) shows a **streak panel** (current /
 best streak, active days), four stat cards (total tokens, model calls, days active, avg per
 day), a full-year **contribution graph** (`activity`; the same `ActivityHeatmap` component
 the Git tab uses, with month/weekday labels and a Less→More legend), a **Connected AI**

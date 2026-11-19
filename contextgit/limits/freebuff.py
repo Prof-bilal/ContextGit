@@ -58,7 +58,7 @@ def _keychain_secret() -> str | None:
     else:
         return None
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     token = result.stdout.strip()

@@ -6,8 +6,7 @@ import CopyButtons from "@/components/copy-buttons";
 import Effects from "@/components/effects";
 import { FOOTER_LINKS, GITHUB, HEADER_CTA, ISSUES, NAV } from "@/lib/site";
 
-const RELEASE_URL = `${GITHUB}/releases/tag/v0.2.0-beta.6`;
-const RELEASE_ASSET_BASE = `${GITHUB}/releases/download/v0.2.0-beta.6`;
+const REPO_URL = GITHUB;
 
 export const metadata: Metadata = {
   title: "Download ContextGit",
@@ -34,10 +33,10 @@ const STEPS: Array<{ no: string; title: string; body: React.ReactNode; code?: st
   },
   {
     no: "03",
-    title: "Start the desktop app",
-    body: <>A second terminal. This opens the workbench with a local backend.</>,
-    code: `cd desktop\nnpm install\nnpm run dev`,
-    copy: "cd desktop && npm install && npm run dev",
+    title: "Start the browser workbench",
+    body: <>Launch the local API and browser UI with one command.</>,
+    code: `.venv/bin/contextgit web`,
+    copy: ".venv/bin/contextgit web",
   },
   {
     no: "04",
@@ -51,18 +50,6 @@ const STEPS: Array<{ no: string; title: string; body: React.ReactNode; code?: st
     code: `mkdir my-project && cd my-project\nctx init .\nctx commit -m "first turn"`,
     copy: "ctx init .",
   },
-];
-
-const INSTALLERS: Array<[string, string, string]> = [
-  ["Windows", "x64 · unsigned Tauri installer", `${RELEASE_ASSET_BASE}/contextgit-windows-x64-ContextGit_0.2.0-beta.6_x64-setup.exe`],
-  ["macOS Intel", "x64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-x64-ContextGit_0.2.0-beta.6_x64.dmg`],
-  ["macOS Apple Silicon", "arm64 · unsigned Tauri DMG", `${RELEASE_ASSET_BASE}/contextgit-macos-arm64-ContextGit_0.2.0-beta.6_aarch64.dmg`],
-  ["Linux x86_64 AppImage", "AMD/Intel 64-bit · any distro · recommended", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.2.0-beta.6_amd64.AppImage`],
-  ["Linux x86_64 .deb", "Debian/Ubuntu · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit_0.2.0-beta.6_amd64.deb`],
-  ["Linux x86_64 .rpm", "Fedora/RHEL/SUSE · AMD/Intel 64-bit", `${RELEASE_ASSET_BASE}/contextgit-linux-x64-ContextGit-0.2.0-beta.6-1.x86_64.rpm`],
-  ["Linux ARM64 AppImage", "ARM64/aarch64 · any distro", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit_0.2.0-beta.6_aarch64.AppImage`],
-  ["Linux ARM64 .deb", "Debian/Ubuntu · ARM64/aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit_0.2.0-beta.6_arm64.deb`],
-  ["Linux ARM64 .rpm", "Fedora/RHEL/SUSE · ARM64/aarch64", `${RELEASE_ASSET_BASE}/contextgit-linux-arm64-ContextGit-0.2.0-beta.6-1.aarch64.rpm`],
 ];
 
 const REQUIREMENTS: Array<[string, string]> = [
@@ -84,20 +71,18 @@ export default function DownloadPage() {
         <section className="section page-hero" data-section aria-labelledby="download-title">
           <div className="wrap">
             <header className="section-head reveal">
-              <p className="eyebrow"><span className="chip">Beta</span><span>Install like a normal desktop app</span></p>
-              <h1 id="download-title" className="page-h1">Download. Install. Start an agent.</h1>
+              <p className="eyebrow"><span className="chip">Beta</span><span>Install once, work in your browser</span></p>
+              <h1 id="download-title" className="page-h1">Install. Open. Start an agent.</h1>
               <p className="lede">
-                You do not need to clone the repository, create a Python environment, or start a
-                backend manually. Download the installer for your operating system and ContextGit
-                starts its local backend for you.
+                Install the local CLI once. ContextGit starts its API and opens the same workbench
+                in your browser, keeping low-end devices free from a bundled desktop runtime.
               </p>
               <p className="hero-actions reveal" style={d(80)}>
-                <a className="btn btn-primary" href={RELEASE_URL}>Open beta downloads <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-primary" href="#install">Install the workbench <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-ghost" href="#install">How installation works</a>
               </p>
               <p className="fineprint reveal" style={d(120)}>
-                Unsigned installers are published through GitHub Releases. Verify the matching
-                SHA-256 checksum before opening the app.
+                The UI, terminal sessions, and project API remain local to your machine.
               </p>
             </header>
           </div>
@@ -107,8 +92,8 @@ export default function DownloadPage() {
           <div className="wrap">
             <header className="section-head reveal">
               <p className="eyebrow"><span className="eyebrow-no">01</span>Install flow</p>
-              <h2 id="install-title">A regular desktop app, with a local backend included.</h2>
-              <p className="lede">The installer contains the desktop shell and backend. You choose a project and agent after launch.</p>
+              <h2 id="install-title">One command, then work in your browser.</h2>
+              <p className="lede">The launcher starts the local API, serves the workbench, and opens a browser tab.</p>
             </header>
 
             <ol className="dl-steps">
@@ -127,12 +112,14 @@ export default function DownloadPage() {
 
             <div className="reveal" style={d(260)}>
               <ul className="pillars">
-                {INSTALLERS.map(([platform, detail, href]) => <li key={platform}><h3 className="pillar-title"><a href={href}>{platform}</a></h3><p>{detail}</p><a className="fineprint" href={href}>Download installer <span aria-hidden="true">&rarr;</span></a></li>)}
+                <li><h3 className="pillar-title">Install dependencies</h3><p>Python 3.11+, Git, and your preferred terminal agent.</p><code className="mono">pip install -e ".[dev]"</code></li>
+                <li><h3 className="pillar-title">Start the UI</h3><p>The app stays local and opens in your default browser.</p><code className="mono">contextgit web</code></li>
+                <li><h3 className="pillar-title">Open a project</h3><p>Choose a folder from the canvas, then run agents and terminals there.</p><a className="fineprint" href={REPO_URL}>View the repository <span aria-hidden="true">&rarr;</span></a></li>
               </ul>
               <p className="fineprint" style={{ marginTop: "var(--s6)" }}>
-                Linux guide: Omarchy/Arch uses <code className="mono">.pacman</code>; Debian/Ubuntu uses <code className="mono">.deb</code>; Fedora/RHEL uses <code className="mono">.rpm</code>. AppImage and tar.gz work across distributions. x86_64 is the correct build for both AMD and Intel 64-bit PCs.
+                The browser workbench is intentionally lightweight: the machine only runs the local API and the terminal tools you choose.
               </p>
-              <p className="hero-actions" style={{ marginTop: "var(--s8)" }}><a className="btn btn-primary" href={RELEASE_URL}>Choose your installer <span aria-hidden="true">&rarr;</span></a></p>
+              <p className="hero-actions" style={{ marginTop: "var(--s8)" }}><a className="btn btn-primary" href={REPO_URL}>Read the setup guide <span aria-hidden="true">&rarr;</span></a></p>
             </div>
           </div>
         </section>
@@ -204,7 +191,7 @@ export default function DownloadPage() {
               <h2 id="download-cta-title" className="cta-title">Install once. Start locally.</h2>
               <p className="cta-lede">Download the beta, open a project, and launch the terminal agent you already use.</p>
               <div className="cta-actions">
-                <a className="btn btn-signal" href={RELEASE_URL}>Open beta downloads <span aria-hidden="true">&rarr;</span></a>
+                <a className="btn btn-signal" href={REPO_URL}>Open the repository <span aria-hidden="true">&rarr;</span></a>
                 <a className="btn btn-link-cta" href="/features">See features <span aria-hidden="true">&rarr;</span></a>
               </div>
               <p className="fineprint cta-fine">Early build. Everything stays on your machine except the model calls you make.</p>

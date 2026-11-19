@@ -143,10 +143,10 @@ remain later work, not claims made by this release.
 
 ## Validation commands
 
-- `npm run build --prefix desktop`
+- `npm run build --prefix web`
 - `npx tsc --noEmit`
 - `.venv/bin/pytest -q`
-- `npm run test:playground --prefix desktop`
+- `npm run test:playground --prefix web`
 - `npm run test:e2e -- --grep Playground`
 
 The Playground unit suite covers preservation, credential-safe previews,

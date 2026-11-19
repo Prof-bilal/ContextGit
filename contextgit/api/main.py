@@ -4,7 +4,7 @@ import os
 import secrets
 
 # A standalone server must never silently expose an unauthenticated control
-# plane. Tauri supplies its own token; CLI/uvicorn launches get one here.
+# plane. The browser launcher supplies its own token; CLI/uvicorn launches get one here.
 if not os.getenv("CONTEXTGIT_API_TOKEN"):
     token = secrets.token_urlsafe(32)
     os.environ["CONTEXTGIT_API_TOKEN"] = token

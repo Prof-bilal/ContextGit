@@ -210,7 +210,7 @@ The three paths *will* report the same turn. Rules:
 ### 6.1 Channel 1 — initial prompt (we spawn the terminal → reliable, all agents)
 ContextGit creates the session, builds the packet, prepends it as the agent's first input, and writes
 it to a file it references. Works for **any** agent CLI. Hook point already exists: `bootstrap` on
-`pty-start` in `desktop/electron/pty.ts`.
+`pty-start` in `web/electron/pty.ts`.
 
 ### 6.2 Channel 2 — file / AGENTS.md block
 **Reality check (verified): AGENTS.md is plain markdown — there is no include directive.** v1's

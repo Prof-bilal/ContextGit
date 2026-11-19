@@ -1,7 +1,7 @@
 # ContextGit — UI design plan
 
 **Prepared:** 2026-10-08
-**Scope:** the desktop workbench (`desktop/src/shell*`, `desktop/src/shell.css`) and the landing
+**Scope:** the desktop workbench (`web/src/shell*`, `web/src/shell.css`) and the landing
 site (`app/globals.css`, `app/page.tsx`). This is a research and plan document. It does not change code.
 **Companions:** `content.md` (what the product says), `pages.md` (which marketing pages exist).
 
@@ -11,7 +11,7 @@ site (`app/globals.css`, `app/page.tsx`). This is a research and plan document. 
 
 ### 1.1 Design system (as scanned)
 
-| Area | Desktop workbench (`desktop/src/shell.css`) | Landing (`app/globals.css`) |
+| Area | Desktop workbench (`web/src/shell.css`) | Landing (`app/globals.css`) |
 |---|---|---|
 | Direction | Dark-first "agent workspace", warm charcoal, scoped to `.cg-shell` | "Flight deck for a fleet": warm instrument panel, border-led, signal orange |
 | Surfaces | `--cg-bg #191612`, `--cg-surface #211d18`, 2 more raised steps | `--paper` oklch(0.155), `--paper-lift`, `--paper-deep` |
@@ -207,7 +207,7 @@ differentiator is seen, not only read about.
 | **U5 — Landing** | L1–L6 | Lighthouse performance and accessibility not lower than the current site (measure before and after) |
 | **U6 — Polish** | W7, empty-state copy, motion review | No new motion without a reduced-motion check |
 
-**Verification standard for every phase** (from `docs/desktop.md`): `cd desktop && npm run build`,
+**Verification standard for every phase** (from `docs/web.md`): `cd web && npm run build`,
 root `npx tsc --noEmit`, `.venv/bin/pytest -q`, and the Playwright e2e suite. Add screenshot diffs for U1
 and U5. Measure, don't assume, on any performance claim.
 
@@ -240,7 +240,7 @@ and U5. Measure, don't assume, on any performance claim.
 - [BridgeMind](https://www.bridgemind.ai/) — read 2026-10-08
 - [Vibe Kanban](https://www.vibekanban.com/) — read 2026-10-08
 - [1DevTool](https://1devtool.com/) and [1DevTool pricing](https://1devtool.com/pricing) — read 2026-10-08
-- Repo: `desktop/src/shell.css`, `app/globals.css`, `docs/workspace-architecture.md`, `docs/desktop.md`,
+- Repo: `web/src/shell.css`, `app/globals.css`, `docs/workspace-architecture.md`, `docs/web.md`,
   `docs/code-harness-limits.md`, `docs/multi-project.md`, `docs/all-in-one-landscape.md`
 
 **Caveat:** competitor claims are their own marketing. Their star counts, user numbers and quotes are not verified.

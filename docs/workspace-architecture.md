@@ -49,7 +49,7 @@ exact pattern the five current tabs already use.
 
 ### Adding a tab (the existing contract)
 
-`TabId` in `desktop/src/shell/TopNav.tsx` is the only cross-file type; `Shell.tsx` holds
+`TabId` in `web/src/shell/TopNav.tsx` is the only cross-file type; `Shell.tsx` holds
 the tab state and dispatches each tab through four switches. A new surface is four
 mechanical edits in `Shell.tsx` plus one view component:
 
@@ -57,7 +57,7 @@ mechanical edits in `Shell.tsx` plus one view component:
 2. `Shell.tsx` — add the id to `TAB_IDS` (deep-link validation) and to the `tabs[]` list.
 3. `Shell.tsx` — add a `case` to `rail()`, `view()` and `dock()` (and `bottomBar()` only
    if the surface needs one).
-4. `desktop/src/shell/views/<Name>View.tsx` (+ a `rail/<Name>Rail.tsx` and a polling hook
+4. `web/src/shell/views/<Name>View.tsx` (+ a `rail/<Name>Rail.tsx` and a polling hook
    `shell/<area>/use<Name>.ts` when needed).
 
 Live surfaces follow the Code-tab pattern: rendered in an always-mounted
@@ -69,7 +69,7 @@ view survive tab switches. No CSS churn — reuse `.cg-view`, `.cg-view-toolbar`
 
 Native-content panels (the in-app browser and the embedded editor) can't be a DOM
 element — they are main-process `WebContentsView`s. They are wrapped in one shared React
-component, `desktop/src/shell/views/WebViewPanel.tsx`, that measures its DIV and syncs
+component, `web/src/shell/views/WebViewPanel.tsx`, that measures its DIV and syncs
 bounds over IPC. That is the single new layout primitive; everything else reuses the
 existing shell verbatim.
 
@@ -77,8 +77,8 @@ existing shell verbatim.
 
 - **HTTP**: add typed methods to the `api` object in `lib/api.ts` for the new backend
   routes (HTTP client, DB client). Polling/SSE patterns are unchanged.
-- **IPC**: new channels in `desktop/electron/main.ts`, mirrored in `preload.ts` and
-  typed in `desktop/src/bridge.d.ts`:
+- **IPC**: new channels in `web/electron/main.ts`, mirrored in `preload.ts` and
+  typed in `web/src/bridge.d.ts`:
   - `ctx:fs-*` (listdir/read/write/stat/create/rename/delete/reveal/watch/unwatch)
   - `ctx:view-*` (create/destroy/set-bounds/set-visible/load/back/forward/reload/devtools)
   - `ctx:vscode-*` (status/start/open-path) and the `view:*` events push
@@ -108,7 +108,7 @@ existing shell verbatim.
 | F6 | DB client panel (`api-db-clients.md`) |
 | F7 | polish: floating panels, ⌘K palette, global search, settings |
 
-Each phase keeps the repo's verification standard green: `cd desktop && npm run build`,
+Each phase keeps the repo's verification standard green: `cd web && npm run build`,
 root `npx tsc --noEmit`, `.venv/bin/pytest -q`, and the Playwright e2e suite.
 
 ## Risks

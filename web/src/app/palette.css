@@ -1,0 +1,130 @@
+/* Command palette styles — only --app-* variables */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  z-index: 70;
+}
+
+.palette-card {
+  width: min(560px, 92vw);
+  background: var(--app-surface);
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-r3);
+  box-shadow: var(--app-shadow);
+  overflow: hidden;
+  animation: palette-in 150ms var(--app-ease);
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.palette-header {
+  display: flex;
+  align-items: center;
+  gap: var(--app-s2);
+  padding: var(--app-s3) var(--app-s4);
+  border-bottom: 1px solid var(--app-line);
+}
+
+.palette-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--app-ink-3);
+  font-size: var(--app-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.palette-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--app-r1);
+  border: 1px solid var(--app-line);
+  background: var(--app-surface-2);
+  color: var(--app-ink-2);
+  font: 500 var(--app-text-xs) var(--app-mono);
+}
+
+.palette-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--app-ink);
+  font: 400 var(--app-text-md) var(--app-font);
+  outline: none;
+  width: 100%;
+}
+
+.palette-input::placeholder {
+  color: var(--app-ink-3);
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--app-s2) 0;
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-s3);
+  padding: var(--app-s2) var(--app-s4);
+  cursor: pointer;
+  border-radius: var(--app-r1);
+  transition: background var(--app-ease);
+}
+
+.palette-item:hover,
+.palette-item[aria-selected="true"] {
+  background: var(--app-hover);
+}
+
+.palette-title {
+  color: var(--app-ink);
+  font-size: var(--app-text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.palette-secondary {
+  color: var(--app-ink-3);
+  font-size: var(--app-text-xs);
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: var(--app-s3);
+}
+
+.palette-empty,
+.palette-more {
+  padding: var(--app-s2) var(--app-s4);
+  color: var(--app-ink-3);
+  font-size: var(--app-text-sm);
+  text-align: center;
+}

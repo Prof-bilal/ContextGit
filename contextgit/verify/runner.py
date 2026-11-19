@@ -102,7 +102,7 @@ def run_command(
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env,
             start_new_session=True,
         )

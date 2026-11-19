@@ -284,7 +284,7 @@ def _apply_patch(root: Path, patch: str) -> str | None:
             command,
             cwd=root,
             input=patch,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             capture_output=True,
             timeout=60,
             check=False,
@@ -357,7 +357,7 @@ def approve_plan(repo: Repo, run_id: str, provider: LLMProvider) -> AgentRun:
         results: list[str] = []
         for label, argv in checks:
             result = subprocess.run(
-                argv, cwd=root, capture_output=True, text=True, timeout=120, check=False
+                argv, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False
             )
             output = (result.stdout or result.stderr or "")[:_MAX_OUTPUT]
             results.append(f"{label}: {'passed' if result.returncode == 0 else 'failed'}\n{output}")

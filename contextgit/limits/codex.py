@@ -74,7 +74,7 @@ def codex_executable() -> str | None:
         try:
             if path.stat().st_size < 4096 and "mise use -g" in path.read_text():
                 resolved = subprocess.run(
-                    ["mise", "which", "codex"], capture_output=True, text=True, timeout=3
+                    ["mise", "which", "codex"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3
                 )
                 if resolved.returncode == 0 and Path(resolved.stdout.strip()).is_file():
                     executable = resolved.stdout.strip()

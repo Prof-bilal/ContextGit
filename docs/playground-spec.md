@@ -104,7 +104,7 @@ Reuse the rail + detail idiom (`views/EndpointsView.tsx`, `chat/AddProviderDialo
 - **Install preview** — a modal/dock showing *exactly* what will be written (the `.mcp.json`
   entry / client-config diff) and the vet verdict, with a confirm button.
 
-### 3.3 Data model (typed registry, mirrors `desktop/shared/harnesses.ts`)
+### 3.3 Data model (typed registry, mirrors `web/shared/harnesses.ts`)
 ```ts
 type PlaygroundKind = "mcp" | "skill" | "tool" | "plugin";
 type Trust = "first-party" | "verified" | "community";
@@ -128,7 +128,7 @@ interface PlaygroundItem {
 ```
 
 ### 3.4 Catalog source
-- **v1: a curated static catalog in-repo** (`desktop/shared/playground.ts`) — offline,
+- **v1: a curated static catalog in-repo** (`web/shared/playground.ts`) — offline,
   reviewable, safe. This is the recommendation.
 - **Later: optional live search** against the official MCP Registry API (feature-flagged),
   with results always routed through the vet gate before install.
@@ -139,7 +139,7 @@ interface PlaygroundItem {
 | npm tool/server | hidden `npm install -g <pkg>` (or `--save-dev`), progress + PATH verify + cancel | `electron/harness.ts`, `HarnessInstall.tsx`, IPC `ctx:harness-*` |
 | MCP config entry | merge `mcpServers.<id>` into the project's `.mcp.json` (never clobber) | `contextgit/mcp/config.py` (`ensure_mcp_config`) |
 | `.mcpb` bundle | download + unpack + write manifest-derived config | new, but modelled on `scripts/fetch-*.mjs` |
-| Skill | copy a skill file/dir into the workspace skills path | `desktop/shared/roles.ts` skill model |
+| Skill | copy a skill file/dir into the workspace skills path | `web/shared/roles.ts` skill model |
 
 ### 3.6 Persistence
 - **App-wide installed manifest:** `userData/playground.json`, mirroring `electron/main.ts`'s
@@ -194,7 +194,7 @@ server) once confirmed. **Open question for the user** (see §8).
 
 | Need | Reuse (file) |
 |---|---|
-| Install npm tools: detect on PATH, hidden install, progress, cancel, verify | `desktop/shared/harnesses.ts`, `desktop/electron/harness.ts`, `terminal/HarnessInstall.tsx`, IPC `ctx:harness-check/install/cancel/progress` |
+| Install npm tools: detect on PATH, hidden install, progress, cancel, verify | `web/shared/harnesses.ts`, `web/electron/harness.ts`, `terminal/HarnessInstall.tsx`, IPC `ctx:harness-check/install/cancel/progress` |
 | Write MCP client config (merge, never clobber) | `contextgit/mcp/config.py` `ensure_mcp_config` |
 | Catalog → safe view model | `contextgit/llm/spec.py` + `llm/registry.py` (`ProviderInfo`: `configured`, `has_key`, `key_hint` — never the secret) |
 | Rail + detail + per-item action UI | `views/EndpointsView.tsx`, `chat/AddProviderDialog.tsx`, `endpoints/useEndpoints.ts` |
@@ -203,9 +203,9 @@ server) once confirmed. **Open question for the user** (see §8).
 | Backend MCP surface | `contextgit/mcp/` (server/tools/config) — **fix the audit's broken import first** (`mcp.server.mcpserver`; see `docs/codebase-audit.md`) |
 
 ### Existing "skill" ambiguity to resolve
-Two skill concepts exist today: **role skills** (`desktop/shared/roles.ts`, ~40 skills injected
+Two skill concepts exist today: **role skills** (`web/shared/roles.ts`, ~40 skills injected
 into run briefings, backed by `sessions.role/skills`) and the **Agent-tab `SKILL_CATALOG`**
-(`desktop/src/shell/agent/mission.ts`, fixture-only). The Playground should own **one Skills
+(`web/src/shell/agent/mission.ts`, fixture-only). The Playground should own **one Skills
 catalog** and state which it extends (recommend: extend role skills, since they're real and
 persisted).
 

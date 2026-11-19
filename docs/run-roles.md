@@ -7,8 +7,8 @@ of a blank prompt.
 
 ## The catalog
 
-`desktop/shared/roles.ts` is the single source of truth (the same shared-module pattern as
-`desktop/shared/harnesses.ts`). It holds one **universal skill registry** (`SKILLS`) and the
+`web/shared/roles.ts` is the single source of truth (the same shared-module pattern as
+`web/shared/harnesses.ts`). It holds one **universal skill registry** (`SKILLS`) and the
 `ROLES` that reference five ids each; a skill like `ui-build` is defined once and reused by
 frontend, full-stack, etc.
 
@@ -42,10 +42,10 @@ behavior, unchanged.
 
 ## Where it lives
 
-- Catalog: `desktop/shared/roles.ts`
-- Run form: `desktop/src/shell/rail/AgentRail.tsx` (Role select + auto-loaded skill chips);
-  the kickoff briefing is composed in `desktop/src/shell/Shell.tsx` (`startRun`).
-- Team tasks: `desktop/src/shell/team/TaskForm.tsx` (Role select); the task briefing appends
+- Catalog: `web/shared/roles.ts`
+- Run form: `web/src/shell/rail/AgentRail.tsx` (Role select + auto-loaded skill chips);
+  the kickoff briefing is composed in `web/src/shell/Shell.tsx` (`startRun`).
+- Team tasks: `web/src/shell/team/TaskForm.tsx` (Role select); the task briefing appends
   the role's skills (`Shell.briefingFor`).
 - Backend: `Session.role` / `Session.skills` (`contextgit/core/models.py`), `create_session`,
   and the `AGENTS.md` line in `contextgit/gitops/context.py`.

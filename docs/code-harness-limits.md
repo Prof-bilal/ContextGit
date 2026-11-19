@@ -77,7 +77,7 @@ and a human `message` — never an exception, never a broken panel.
 
 ## UI
 
-- **Code dock** — `desktop/src/shell/terminal/HarnessLimitsPanel.tsx` renders the
+- **Code dock** — `web/src/shell/terminal/HarnessLimitsPanel.tsx` renders the
   selected run's harness limits under the run inspector (window bars with
   `used/cap` and "resets in …", credits, period totals).
 - **Code rail** — `AgentRail` shows a compact badge on each harness group header
@@ -91,7 +91,7 @@ and a human `message` — never an exception, never a broken panel.
 network): mapping the real Command Code payload shapes, missing-auth and error
 paths, the cache, endpoint, and coverage of the CLI registry.
 
-`npm run test:lifecycle --prefix desktop` checks quota normalization, cumulative
+`npm run test:lifecycle --prefix web` checks quota normalization, cumulative
 telemetry, isolated observers, unavailable helpers, and the Codex read-only
 protocol. Desktop e2e verifies that the shell's PID and environment survive list
 omissions, duplicate session IDs, tab/mode switches, and a backend interruption.
